@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Helion",
+      "hasCanvas": true,
+      "bodyTextLen": 287,
+      "bodyTextHash": "dd6c6125df985f14e46942c1cf123c12a42bd53ef6f2052ba6c90b09c0e6129f",
+      "bodyTextPrefix": "PERSISTENT UNIVERSE HELION Wireframe space. Shared markets. Buy ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Helion",
+      "hasCanvas": true,
+      "bodyTextLen": 278,
+      "bodyTextHash": "ca71698d906df67c1163d7379f3ac5e82e0e98b744f7e4ad0732b54b73a727a1",
+      "bodyTextPrefix": "PERSISTENT UNIVERSE HELION Wireframe space. Shared markets. Buy ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

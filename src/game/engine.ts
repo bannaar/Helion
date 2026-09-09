@@ -1,0 +1,853 @@
+import * as THREE from "three";
+import { sfxPlay } from "./audio";
+import { getSystem, jumpFuelCost, systemDistance } from "./galaxy";
+import { Input } from "./input";
+import {
+  makeAsp,
+  makeAsteroid,
+  makeCanister,
+  makeCobra,
+  makePlanet,
+  makeSidewinder,
+  makeStar,
+  makeStarfield,
+  makeStation,
+  disposeSharedMaterials,
+} from "./models";
+import { cargoCapacity, cargoUsed, SHIPS } from "./ships";
+import { useGameStore } from "./store";
+import type { CommodityId, Contact, GameMode, ShipId } from "./types";
+import { logTrafficFn } from "./universe.functions";
+
+const FIXED = 1 / 60;
+const PLAYER_COLOR = 0x8fd4c8;
+const PIRATE_COLOR = 0xd07a6a;
+const POLICE_COLOR = 0x8aa4d0;
+const STATION_COLOR = 0xc5d0d4;
+const AST_COLOR = 0x8a8478;
+const CAN_COLOR = 0xd4c4a0;
+
+const _fwd = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _desired = new THREE.Vector3();
+const _look = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _tmp = new THREE.Vector3();
+
+type Npc = {
+  id: string;
+  mesh: THREE.Group;
+  pos: THREE.Vector3;
+  yaw: number;
+  pitch: number;
+  speed: number;
+  hull: number;
+  fireCd: number;
+  police: boolean;
+};
+
+type Shot = {
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  life: number;
+  friendly: boolean;
+  mesh: THREE.Mesh;
+};
+
+type Loot = {
+  mesh: THREE.Group;
+  pos: THREE.Vector3;
+  life: number;
+  good: CommodityId;
+};
+
+function shipMesh(id: ShipId, color: number): THREE.Group {
+  if (id === "sidewinder") return makeSidewinder(color);
+  if (id === "asp") return makeAsp(color);
+  return makeCobra(color);
+}
+
+export class HelionEngine {
+  private canvas: HTMLCanvasElement;
+  private renderer: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera = new THREE.PerspectiveCamera(62, 1, 0.4, 6000);
+  readonly input = new Input();
+  private running = false;
+  private acc = 0;
+  private last = 0;
+  private hudAcc = 0;
+  private mode: GameMode = "title";
+  private frozen = true;
+
+  yaw = 0;
+  pitch = 0;
+  roll = 0;
+  speed = 0;
+  throttle = 0;
+  pos = new THREE.Vector3();
+
+  private player = new THREE.Group();
+  private starfield: THREE.Points;
+  private titleRoot = new THREE.Group();
+  private spaceRoot = new THREE.Group();
+  private station = new THREE.Group();
+  private planet = new THREE.Group();
+  private star = new THREE.Group();
+  private stationPos = new THREE.Vector3(420, 18, 160);
+  private planetPos = new THREE.Vector3(1680, -140, 980);
+  private planetR = 190;
+  private npcs: Npc[] = [];
+  private shots: Shot[] = [];
+  private loot: Loot[] = [];
+  private asteroids: { mesh: THREE.Group; spin: THREE.Vector3 }[] = [];
+  private shotGeo = new THREE.BoxGeometry(0.18, 0.18, 1.8);
+  private shotMatP = new THREE.MeshBasicMaterial({ color: PLAYER_COLOR });
+  private shotMatE = new THREE.MeshBasicMaterial({ color: PIRATE_COLOR });
+  private fireCd = 0;
+  private laserHeat = 0;
+  private hitCd = 0;
+  private shake = 0;
+  private titleT = 0;
+  private jumpCharge = 0;
+  private charging = false;
+  private targetId: string | null = null;
+  private injectSteer: number | null = null;
+  private ro: ResizeObserver | null = null;
+  private shieldRegen = 0;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: false,
+      powerPreference: "low-power",
+      alpha: false,
+    });
+    this.renderer.setClearColor(0x07090c, 1);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+    this.scene.fog = new THREE.FogExp2(0x07090c, 0.00055);
+    this.starfield = makeStarfield(640);
+    this.scene.add(this.starfield);
+    this.scene.add(this.titleRoot);
+    this.scene.add(this.spaceRoot);
+    this.spaceRoot.visible = false;
+    this.buildTitle();
+    this.buildSpaceScaffold();
+    this.input.attach();
+    this.resize();
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(canvas.parentElement ?? canvas);
+    this.wireProbe();
+  }
+
+  private wireProbe() {
+    const qa =
+      import.meta.env.DEV ||
+      (typeof window !== "undefined" && /(?:\?|&)qa=1\b/.test(window.location.search));
+    if (!qa && typeof window !== "undefined") {
+      // Always expose in this product so in-preview QA can prove A/D.
+    }
+    window.__controlsTest = {
+      getYaw: () => this.yaw,
+      getSpeed: () => this.speed,
+      setKeys: (codes) => {
+        this.input.setKeys(codes);
+        if (codes.length === 0) this.injectSteer = null;
+      },
+      setSteer: (v) => {
+        this.injectSteer = v;
+      },
+    };
+  }
+
+  private buildTitle() {
+    const cobra = makeCobra(PLAYER_COLOR);
+    cobra.position.set(0, 0, 0);
+    const st = makeStation(STATION_COLOR);
+    st.position.set(28, -6, -36);
+    st.scale.setScalar(0.45);
+    const pl = makePlanet(0x6a8a9a, 22);
+    pl.position.set(-40, -8, -70);
+    this.titleRoot.add(cobra, st, pl);
+    this.titleRoot.userData.cobra = cobra;
+    this.titleRoot.userData.station = st;
+  }
+
+  private buildSpaceScaffold() {
+    this.station = makeStation(STATION_COLOR);
+    this.station.position.copy(this.stationPos);
+    this.planet = makePlanet(0x6a8a9a, this.planetR);
+    this.planet.position.copy(this.planetPos);
+    this.star = makeStar(0xf2e6c4);
+    this.player = new THREE.Group();
+    this.spaceRoot.add(this.star, this.planet, this.station, this.player);
+  }
+
+  private rebuildPlayerMesh() {
+    while (this.player.children.length) {
+      const ch = this.player.children[0]!;
+      this.player.remove(ch);
+    }
+    const id = useGameStore.getState().save.shipId;
+    this.player.add(shipMesh(id, PLAYER_COLOR));
+  }
+
+  private clearNpcs() {
+    for (const n of this.npcs) this.spaceRoot.remove(n.mesh);
+    this.npcs = [];
+    for (const s of this.shots) this.spaceRoot.remove(s.mesh);
+    this.shots = [];
+    for (const l of this.loot) this.spaceRoot.remove(l.mesh);
+    this.loot = [];
+    for (const a of this.asteroids) this.spaceRoot.remove(a.mesh);
+    this.asteroids = [];
+  }
+
+  enterSystem(systemId: string, kind: "spawn" | "undock" | "jump") {
+    const sys = getSystem(systemId);
+    if (!sys) return;
+    this.clearNpcs();
+    this.spaceRoot.remove(this.planet);
+    this.spaceRoot.remove(this.star);
+    this.planet = makePlanet(sys.planetColor, this.planetR);
+    this.planet.position.copy(this.planetPos);
+    this.star = makeStar(sys.starColor);
+    this.spaceRoot.add(this.star, this.planet);
+    this.rebuildPlayerMesh();
+
+    if (kind === "undock") {
+      this.pos.copy(this.stationPos).add(_tmp.set(70, 12, 32));
+      this.yaw = Math.atan2(
+        -(this.stationPos.x - this.pos.x),
+        -(this.stationPos.z - this.pos.z),
+      );
+      this.pitch = 0;
+      this.roll = 0;
+      this.speed = 10;
+      this.throttle = 0.16;
+    } else if (kind === "jump") {
+      this.pos.set(980, 60, -280);
+      this.yaw = Math.atan2(
+        -(this.stationPos.x - this.pos.x),
+        -(this.stationPos.z - this.pos.z),
+      );
+      this.pitch = -0.04;
+      this.speed = 22;
+      this.throttle = 0.3;
+    } else {
+      this.pos.copy(this.stationPos).add(_tmp.set(44, 8, 16));
+      this.yaw = Math.atan2(
+        -(this.stationPos.x - this.pos.x),
+        -(this.stationPos.z - this.pos.z),
+      );
+      this.pitch = 0.02;
+      this.speed = 0;
+      this.throttle = 0;
+    }
+
+    const threat = sys.pirateThreat + (useGameStore.getState().save.wanted ? 2 : 0);
+    const count = Math.min(5, threat + (sys.government === "anarchy" ? 1 : 0));
+    for (let i = 0; i < count; i += 1) this.spawnNpc(false);
+    if (useGameStore.getState().save.wanted && sys.government !== "anarchy") this.spawnNpc(true);
+
+    for (let i = 0; i < 6; i += 1) {
+      const a = makeAsteroid(AST_COLOR, 4 + Math.random() * 7);
+      a.position.set(
+        (Math.random() - 0.5) * 900,
+        (Math.random() - 0.5) * 220,
+        (Math.random() - 0.5) * 900,
+      );
+      this.spaceRoot.add(a);
+      this.asteroids.push({
+        mesh: a,
+        spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.4),
+      });
+    }
+
+    this.mode = "space";
+    this.frozen = false;
+    this.titleRoot.visible = false;
+    this.spaceRoot.visible = true;
+    this.charging = false;
+    this.jumpCharge = 0;
+    this.publishHud(true);
+  }
+
+  launch() {
+    const id = useGameStore.getState().save.systemId;
+    this.enterSystem(id, "undock");
+    useGameStore.getState().patchSave({ docked: false });
+    useGameStore.getState().setMode("space");
+    useGameStore.getState().setFlash("GEAR UP  —  CLEAR THE SLOT");
+    void logTrafficFn({
+      data: { systemId: id, kind: "undock", detail: "A trader undocked." },
+    }).catch(() => undefined);
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this.last = performance.now();
+    this.renderer.setAnimationLoop((t) => this.frame(t));
+  }
+
+  stop() {
+    this.running = false;
+    this.renderer.setAnimationLoop(null);
+  }
+
+  setPaused(v: boolean) {
+    this.frozen = v || this.mode !== "space";
+  }
+
+  setMode(mode: GameMode) {
+    this.mode = mode;
+    if (mode === "title") {
+      this.frozen = true;
+      this.titleRoot.visible = true;
+      this.spaceRoot.visible = false;
+    } else if (mode === "space") {
+      this.frozen = false;
+      this.titleRoot.visible = false;
+      this.spaceRoot.visible = true;
+    } else {
+      this.frozen = true;
+      this.spaceRoot.visible = true;
+      this.titleRoot.visible = false;
+    }
+  }
+
+  lockJump(id: string | null) {
+    useGameStore.getState().setJump(id);
+    this.charging = false;
+    this.jumpCharge = 0;
+  }
+
+  dispose() {
+    this.stop();
+    this.input.detach();
+    this.ro?.disconnect();
+    this.clearNpcs();
+    this.shotGeo.dispose();
+    this.shotMatP.dispose();
+    this.shotMatE.dispose();
+    this.renderer.dispose();
+    disposeSharedMaterials();
+    if (window.__controlsTest) delete window.__controlsTest;
+  }
+
+  private resize() {
+    const parent = this.canvas.parentElement ?? this.canvas;
+    const w = Math.max(1, parent.clientWidth);
+    const h = Math.max(1, parent.clientHeight);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h, false);
+  }
+
+  private frame(t: number) {
+    const raw = Math.min(0.1, (t - this.last) / 1000 || 0);
+    this.last = t;
+    this.acc += raw;
+    while (this.acc >= FIXED) {
+      this.step(FIXED);
+      this.acc -= FIXED;
+    }
+    this.draw(raw);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  private step(dt: number) {
+    const actions = this.input.poll();
+    this.mode = useGameStore.getState().mode;
+    this.titleRoot.visible = this.mode === "title";
+    this.spaceRoot.visible = this.mode !== "title";
+
+    if (this.mode === "title") {
+      this.titleT += dt;
+      return;
+    }
+
+    if (this.input.edges.map && (this.mode === "space" || this.mode === "map")) {
+      const next = this.mode === "map" ? "space" : "map";
+      useGameStore.getState().setMode(next);
+      this.mode = next;
+    }
+    if (this.input.edges.pause && this.mode === "space") {
+      useGameStore.getState().setPaused(!useGameStore.getState().paused);
+    }
+
+    const paused = useGameStore.getState().paused;
+    if (paused || this.mode !== "space") {
+      if (this.mode === "station" || this.mode === "dead") this.station.rotation.y += dt * 0.12;
+      return;
+    }
+
+    const save = useGameStore.getState().save;
+    const def = SHIPS[save.shipId];
+    let steer = actions.yaw;
+    if (this.injectSteer !== null) steer = this.injectSteer;
+    this.yaw += steer * def.turnRate * dt;
+    this.pitch += actions.pitch * 1.15 * dt;
+    this.pitch = Math.max(-1.15, Math.min(1.15, this.pitch));
+    this.roll += actions.roll * 1.8 * dt;
+    this.roll *= Math.max(0, 1 - 1.6 * dt);
+    this.roll = Math.max(-0.9, Math.min(0.9, this.roll));
+    this.throttle = Math.max(0, Math.min(1, this.throttle + actions.thrust * 0.7 * dt));
+    const target = this.throttle * def.maxSpeed;
+    this.speed += (target - this.speed) * Math.min(1, 2.1 * dt);
+
+    _fwd.set(
+      -Math.sin(this.yaw) * Math.cos(this.pitch),
+      Math.sin(this.pitch),
+      -Math.cos(this.yaw) * Math.cos(this.pitch),
+    );
+    this.pos.addScaledVector(_fwd, this.speed * dt);
+
+    this.collideWorld(dt);
+    this.fireCd = Math.max(0, this.fireCd - dt);
+    this.laserHeat = Math.max(0, this.laserHeat - dt * 0.35);
+    this.hitCd = Math.max(0, this.hitCd - dt);
+    this.shake *= Math.max(0, 1 - 6 * dt);
+    this.shieldRegen += dt;
+    if (this.hitCd <= 0 && this.shieldRegen > 3.5) {
+      const st = useGameStore.getState();
+      if (st.shields < st.maxShields) {
+        useGameStore.getState().setFlight({ shields: Math.min(st.maxShields, st.shields + 6 * dt) });
+      }
+    }
+
+    if (actions.fire && this.fireCd <= 0 && this.laserHeat < 1) {
+      this.fireCd = 0.16;
+      this.laserHeat = Math.min(1, this.laserHeat + 0.12);
+      this.spawnShot(true, this.pos, _fwd, def.laser);
+      sfxPlay.laser();
+    }
+
+    this.stepNpcs(dt);
+    this.stepShots(dt);
+    this.stepLoot(dt);
+    this.station.rotation.y += dt * 0.18;
+    this.planet.rotation.y += dt * 0.02;
+    for (const a of this.asteroids) {
+      a.mesh.rotation.x += a.spin.x * dt;
+      a.mesh.rotation.y += a.spin.y * dt;
+    }
+
+    const distSt = this.pos.distanceTo(this.stationPos);
+    const distPl = this.pos.distanceTo(this.planetPos);
+    const distStar = this.pos.length();
+    const canDock = distSt < 56 && this.speed < 38;
+    const massLocked = distSt < 95 || distPl < this.planetR + 90 || distStar < 140;
+
+    if (this.input.edges.dock && canDock) this.dock();
+    if (this.input.edges.target) this.cycleTarget();
+
+    const locked = useGameStore.getState().jumpLocked;
+    if (this.input.edges.jump) {
+      if (!locked) {
+        useGameStore.getState().setFlash("NO DESTINATION  —  OPEN THE CHART (M)");
+      } else if (massLocked) {
+        useGameStore.getState().setFlash("MASS LOCKED");
+        sfxPlay.warn();
+      } else {
+        this.charging = !this.charging;
+        if (!this.charging) this.jumpCharge = 0;
+        else useGameStore.getState().setFlash("HYPERDRIVE CHARGING");
+      }
+    }
+    if (this.charging && locked && !massLocked) {
+      this.jumpCharge += dt / 2.1;
+      if (this.jumpCharge >= 1) this.completeJump(locked);
+    } else if (!this.charging) {
+      this.jumpCharge = 0;
+    }
+
+    this.hudAcc += dt;
+    if (this.hudAcc > 0.09) {
+      this.hudAcc = 0;
+      this.publishHud(false, { canDock, massLocked, distSt });
+    }
+  }
+
+  private collideWorld(dt: number) {
+    void dt;
+    const bump = (pushFrom: THREE.Vector3, minDist: number, dmg: number, reason: string) => {
+      _tmp.copy(this.pos).sub(pushFrom);
+      if (_tmp.lengthSq() < 0.0001) _tmp.set(0, 1, 0);
+      _tmp.setLength(minDist);
+      this.pos.copy(pushFrom).add(_tmp);
+      this.speed *= 0.28;
+      this.throttle *= 0.4;
+      if (this.hitCd <= 0) this.damage(dmg, reason);
+    };
+    if (this.pos.length() < 48) bump(this.star.position, 52, 16, "STAR HEAT");
+    if (this.pos.distanceTo(this.planetPos) < this.planetR + 6) {
+      bump(this.planetPos, this.planetR + 14, 14, "PLANETARY IMPACT");
+    }
+    if (this.pos.distanceTo(this.stationPos) < 17) {
+      bump(this.stationPos, 20, 6, "STATION COLLISION");
+    }
+    for (const a of this.asteroids) {
+      if (this.pos.distanceTo(a.mesh.position) < 8) {
+        bump(a.mesh.position, 12, 7, "ASTEROID STRIKE");
+      }
+    }
+  }
+
+  private spawnNpc(police: boolean) {
+    const mesh = police ? makeCobra(POLICE_COLOR) : makeSidewinder(PIRATE_COLOR);
+    const ang = Math.random() * Math.PI * 2;
+    const r = 260 + Math.random() * 340;
+    const pos = new THREE.Vector3(
+      this.pos.x + Math.cos(ang) * r,
+      this.pos.y + (Math.random() - 0.5) * 80,
+      this.pos.z + Math.sin(ang) * r,
+    );
+    mesh.position.copy(pos);
+    this.spaceRoot.add(mesh);
+    this.npcs.push({
+      id: `${police ? "pol" : "pir"}-${Math.random().toString(36).slice(2, 7)}`,
+      mesh,
+      pos,
+      yaw: Math.random() * Math.PI * 2,
+      pitch: 0,
+      speed: 38 + Math.random() * 24,
+      hull: police ? 38 : 22,
+      fireCd: 1 + Math.random(),
+      police,
+    });
+  }
+
+  private spawnShot(friendly: boolean, origin: THREE.Vector3, dir: THREE.Vector3, _power: number) {
+    const mesh = new THREE.Mesh(this.shotGeo, friendly ? this.shotMatP : this.shotMatE);
+    const pos = origin.clone().addScaledVector(dir, 4);
+    mesh.position.copy(pos);
+    mesh.lookAt(pos.clone().add(dir));
+    this.spaceRoot.add(mesh);
+    this.shots.push({
+      pos,
+      vel: dir.clone().multiplyScalar(friendly ? 420 : 340),
+      life: 1.15,
+      friendly,
+      mesh,
+    });
+  }
+
+  private stepNpcs(dt: number) {
+    for (const n of this.npcs) {
+      _tmp.copy(this.pos).sub(n.pos);
+      const dist = _tmp.length();
+      const desiredYaw = Math.atan2(-_tmp.x, -_tmp.z);
+      let dy = desiredYaw - n.yaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      n.yaw += Math.max(-1.6, Math.min(1.6, dy)) * dt * 1.4;
+      const desiredPitch = Math.atan2(_tmp.y, Math.hypot(_tmp.x, _tmp.z));
+      n.pitch += (desiredPitch - n.pitch) * dt * 1.2;
+      const hold = n.police ? 70 : 90;
+      if (dist < hold) n.speed = Math.max(18, n.speed - 20 * dt);
+      else n.speed = Math.min(70, n.speed + 10 * dt);
+      const fx = -Math.sin(n.yaw) * Math.cos(n.pitch);
+      const fy = Math.sin(n.pitch);
+      const fz = -Math.cos(n.yaw) * Math.cos(n.pitch);
+      n.pos.x += fx * n.speed * dt;
+      n.pos.y += fy * n.speed * dt;
+      n.pos.z += fz * n.speed * dt;
+      n.mesh.position.copy(n.pos);
+      n.mesh.rotation.set(n.pitch, n.yaw, 0, "YXZ");
+      n.fireCd -= dt;
+      const facing = Math.abs(dy) < 0.22 && dist < 380 && dist > 28;
+      if (facing && n.fireCd <= 0) {
+        n.fireCd = 0.55;
+        this.spawnShot(false, n.pos, _tmp.copy(this.pos).sub(n.pos).normalize(), 8);
+      }
+    }
+  }
+
+  private stepShots(dt: number) {
+    const def = SHIPS[useGameStore.getState().save.shipId];
+    for (let i = this.shots.length - 1; i >= 0; i -= 1) {
+      const s = this.shots[i]!;
+      s.life -= dt;
+      s.pos.addScaledVector(s.vel, dt);
+      s.mesh.position.copy(s.pos);
+      if (s.life <= 0) {
+        this.spaceRoot.remove(s.mesh);
+        this.shots.splice(i, 1);
+        continue;
+      }
+      if (s.friendly) {
+        for (let j = this.npcs.length - 1; j >= 0; j -= 1) {
+          const n = this.npcs[j]!;
+          if (s.pos.distanceTo(n.pos) < 5.5) {
+            n.hull -= def.laser;
+            this.spaceRoot.remove(s.mesh);
+            this.shots.splice(i, 1);
+            sfxPlay.hit();
+            if (n.hull <= 0) this.killNpc(j);
+            else if (!n.police) useGameStore.getState().patchSave({ wanted: true });
+            break;
+          }
+        }
+      } else if (s.pos.distanceTo(this.pos) < 4.2) {
+        this.spaceRoot.remove(s.mesh);
+        this.shots.splice(i, 1);
+        this.damage(9, "UNDER FIRE");
+      }
+    }
+  }
+
+  private killNpc(index: number) {
+    const n = this.npcs[index]!;
+    this.spaceRoot.remove(n.mesh);
+    this.npcs.splice(index, 1);
+    const can = makeCanister(CAN_COLOR);
+    can.position.copy(n.pos);
+    this.spaceRoot.add(can);
+    const goods: CommodityId[] = ["food", "minerals", "gold", "computers", "luxuries", "alloys"];
+    this.loot.push({
+      mesh: can,
+      pos: n.pos.clone(),
+      life: 45,
+      good: goods[Math.floor(Math.random() * goods.length)]!,
+    });
+    const st = useGameStore.getState();
+    st.patchSave({ kills: st.save.kills + 1 });
+    st.setFlash(n.police ? "POLICE CRAFT DESTROYED" : "TARGET DESTROYED");
+    sfxPlay.kill();
+  }
+
+  private stepLoot(dt: number) {
+    const save = useGameStore.getState().save;
+    for (let i = this.loot.length - 1; i >= 0; i -= 1) {
+      const l = this.loot[i]!;
+      l.life -= dt;
+      l.mesh.rotation.y += dt * 1.4;
+      if (l.life <= 0) {
+        this.spaceRoot.remove(l.mesh);
+        this.loot.splice(i, 1);
+        continue;
+      }
+      if (this.pos.distanceTo(l.pos) < 10) {
+        const used = cargoUsed(save.cargo);
+        const cap = cargoCapacity(save.shipId, save.cargoUpgrade);
+        if (used < cap) {
+          const cargo = { ...save.cargo, [l.good]: (save.cargo[l.good] ?? 0) + 1 };
+          useGameStore.getState().patchSave({ cargo });
+          useGameStore.getState().setFlash(`SCOOPED 1t ${l.good.toUpperCase()}`);
+          sfxPlay.scoop();
+        } else {
+          useGameStore.getState().setFlash("HOLD FULL");
+        }
+        this.spaceRoot.remove(l.mesh);
+        this.loot.splice(i, 1);
+      }
+    }
+  }
+
+  private damage(amount: number, reason: string) {
+    const st = useGameStore.getState();
+    this.hitCd = 0.6;
+    this.shake = Math.min(1.4, this.shake + amount * 0.05);
+    this.shieldRegen = 0;
+    let shields = st.shields;
+    let hull = st.hull;
+    const absorbed = Math.min(shields, amount);
+    shields -= absorbed;
+    hull -= amount - absorbed;
+    st.setFlight({ shields, hull });
+    st.patchSave({ shields, hull }, false);
+    st.setAlert(reason);
+    sfxPlay.hull();
+    if (hull <= 0) {
+      st.setMode("dead");
+      st.setFlash("SHIP DESTROYED");
+      this.mode = "dead";
+      this.frozen = true;
+    }
+  }
+
+  private dock() {
+    const st = useGameStore.getState();
+    st.patchSave({
+      docked: true,
+      hull: st.hull,
+      shields: st.shields,
+      wanted: st.save.wanted,
+    });
+    st.setMode("station");
+    this.mode = "station";
+    this.frozen = true;
+    this.speed = 0;
+    this.throttle = 0;
+    st.setFlash("DOCKING GRANTED");
+    sfxPlay.dock();
+    void logTrafficFn({
+      data: { systemId: st.save.systemId, kind: "dock", detail: "A trader requested docking." },
+    }).catch(() => undefined);
+  }
+
+  private completeJump(toId: string) {
+    const st = useGameStore.getState();
+    const from = st.save.systemId;
+    const cost = jumpFuelCost(from, toId);
+    if (st.save.fuel < cost) {
+      st.setFlash("INSUFFICIENT FUEL");
+      this.charging = false;
+      this.jumpCharge = 0;
+      sfxPlay.warn();
+      return;
+    }
+    const dest = getSystem(toId);
+    if (!dest) return;
+    const def = SHIPS[st.save.shipId];
+    if (systemDistance(getSystem(from)!, dest) > def.jump + 0.05) {
+      st.setFlash("OUT OF RANGE");
+      this.charging = false;
+      return;
+    }
+    sfxPlay.jump();
+    st.patchSave({
+      systemId: toId,
+      fuel: Math.max(0, Math.round((st.save.fuel - cost) * 10) / 10),
+      docked: false,
+      wanted: false,
+    });
+    st.setJump(null);
+    st.setFlash(`ARRIVED  —  ${dest.name.toUpperCase()}`);
+    this.charging = false;
+    this.jumpCharge = 0;
+    this.enterSystem(toId, "jump");
+    void logTrafficFn({
+      data: { systemId: toId, kind: "jump", detail: `A ship arrived in ${dest.name}.` },
+    }).catch(() => undefined);
+  }
+
+  private cycleTarget() {
+    const list = [
+      { id: "station", dist: this.pos.distanceTo(this.stationPos) },
+      ...this.npcs.map((n) => ({ id: n.id, dist: this.pos.distanceTo(n.pos) })),
+    ].sort((a, b) => a.dist - b.dist);
+    if (!list.length) return;
+    const idx = list.findIndex((c) => c.id === this.targetId);
+    this.targetId = list[(idx + 1) % list.length]!.id;
+  }
+
+  private publishHud(force: boolean, extra?: { canDock: boolean; massLocked: boolean; distSt: number }) {
+    void force;
+    _fwd.set(
+      -Math.sin(this.yaw) * Math.cos(this.pitch),
+      Math.sin(this.pitch),
+      -Math.cos(this.yaw) * Math.cos(this.pitch),
+    );
+    _right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const contacts: Contact[] = [];
+    const push = (id: string, kind: Contact["kind"], world: THREE.Vector3) => {
+      _tmp.copy(world).sub(this.pos);
+      const dist = _tmp.length();
+      contacts.push({
+        id,
+        kind,
+        dist,
+        localX: _tmp.dot(_right),
+        localZ: _tmp.x * _fwd.x + _tmp.y * _fwd.y + _tmp.z * _fwd.z,
+      });
+    };
+    push("station", "station", this.stationPos);
+    push("planet", "planet", this.planetPos);
+    push("star", "star", _tmp.set(0, 0, 0));
+    for (const n of this.npcs) push(n.id, n.police ? "police" : "pirate", n.pos);
+    for (const l of this.loot) push("loot-" + l.good, "canister", l.pos);
+
+    let targetName: string | null = null;
+    let targetDist = 0;
+    const tgt = contacts.find((c) => c.id === this.targetId) ?? contacts[0];
+    if (tgt) {
+      this.targetId = tgt.id;
+      targetName =
+        tgt.kind === "station"
+          ? "Coriolis Station"
+          : tgt.kind === "planet"
+            ? "World"
+            : tgt.kind === "star"
+              ? "Primary star"
+              : tgt.kind === "police"
+                ? "System authority"
+                : tgt.kind === "canister"
+                  ? "Cargo canister"
+                  : "Hostile craft";
+      targetDist = tgt.dist;
+    }
+
+    const distSt = extra?.distSt ?? this.pos.distanceTo(this.stationPos);
+    useGameStore.getState().setFlight({
+      speed: this.speed,
+      throttle: this.throttle,
+      yaw: this.yaw,
+      pitch: this.pitch,
+      shields: useGameStore.getState().shields,
+      hull: useGameStore.getState().hull,
+      targetName,
+      targetDist,
+      contacts,
+      canDock: extra?.canDock ?? (distSt < 56 && this.speed < 38),
+      massLocked: extra?.massLocked ?? distSt < 95,
+      laserHeat: this.laserHeat,
+    });
+    useGameStore.getState().setJumpCharge(this.jumpCharge);
+    if (extra?.canDock) useGameStore.getState().setAlert("STATION IN RANGE  —  H TO DOCK");
+    else if (this.charging) useGameStore.getState().setAlert("HYPERDRIVE CHARGING");
+    else useGameStore.getState().setAlert("");
+  }
+
+  private draw(dt: number) {
+    this.starfield.position.copy(this.camera.position);
+    if (this.mode === "title") {
+      const t = this.titleT;
+      this.camera.position.set(Math.cos(t * 0.18) * 22, 7 + Math.sin(t * 0.12) * 3, Math.sin(t * 0.18) * 22);
+      this.camera.lookAt(0, 0, 0);
+      const cobra = this.titleRoot.userData.cobra as THREE.Group;
+      const st = this.titleRoot.userData.station as THREE.Group;
+      cobra.rotation.y += dt * 0.25;
+      cobra.rotation.x = Math.sin(t * 0.4) * 0.08;
+      st.rotation.y += dt * 0.1;
+      return;
+    }
+
+    _fwd.set(
+      -Math.sin(this.yaw) * Math.cos(this.pitch),
+      Math.sin(this.pitch),
+      -Math.cos(this.yaw) * Math.cos(this.pitch),
+    );
+    _up.set(0, 1, 0);
+    const visualRoll = this.roll - (this.input.current.yaw || 0) * 0.35;
+    this.player.position.copy(this.pos);
+    this.player.rotation.set(this.pitch, this.yaw, visualRoll, "YXZ");
+
+    if (this.mode === "station") {
+      const t = performance.now() / 1000;
+      this.camera.position.set(
+        this.stationPos.x + Math.cos(t * 0.15) * 48,
+        this.stationPos.y + 18,
+        this.stationPos.z + Math.sin(t * 0.15) * 48,
+      );
+      this.camera.lookAt(this.stationPos);
+      this.player.visible = false;
+      return;
+    }
+    this.player.visible = this.mode !== "dead";
+
+    _desired.copy(this.pos).addScaledVector(_fwd, -18);
+    _desired.y += 5.2;
+    if (this.shake > 0.01) {
+      _desired.x += (Math.random() - 0.5) * this.shake * 1.4;
+      _desired.y += (Math.random() - 0.5) * this.shake * 1.1;
+    }
+    this.camera.position.lerp(_desired, 1 - Math.exp(-4.2 * dt));
+    _look.copy(this.pos).addScaledVector(_fwd, 14);
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(_look);
+  }
+}

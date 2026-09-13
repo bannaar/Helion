@@ -1,11 +1,22 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { economyLabel, getSystem, governmentLabel } from "@/game/galaxy";
-import { cargoCapacity, cargoUsed, SHIPS, SHIP_ORDER } from "@/game/ships";
+import {
+  cargoCapacity,
+  cargoUsed,
+  MODULES,
+  SHIPS,
+  shipStats,
+  slotAccepts,
+  SHIP_CLASS_LABELS,
+  SHIP_ORDER,
+  SHIP_ROLE_LABELS,
+} from "@/game/ships";
 import { useGameStore } from "@/game/store";
 import { executeTradeFn, getBoardFn, getMarketFn } from "@/game/universe.functions";
 import { sfxPlay, unlockAudio } from "@/game/audio";
-import type { CommodityId, MarketRow } from "@/game/types";
+import { missionContracts, missionDestinationName, missionLabel } from "@/game/missions";
+import type { CommodityId, MarketRow, ModuleId } from "@/game/types";
 import type { EngineHandle } from "@/game/engineApi";
 
 type Tab = "market" | "yard" | "board";
@@ -20,9 +31,11 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const sys = getSystem(save.systemId);
-  const def = SHIPS[save.shipId];
+  const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
   const used = cargoUsed(save.cargo);
-  const cap = cargoCapacity(save.shipId, save.cargoUpgrade);
+  const cap = cargoCapacity(save.shipId, save.cargoUpgrade, save.loadout);
+  const contracts = missionContracts(save.systemId);
+  const activeMission = save.activeMission;
 
   useEffect(() => {
     let live = true;
@@ -120,7 +133,7 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
       setErr("Insufficient credits");
       return;
     }
-    const nextCap = cargoCapacity(id, save.cargoUpgrade);
+    const nextCap = cargoCapacity(id, save.cargoUpgrade, {});
     if (used > nextCap) {
       setErr("Dump cargo before transferring hull");
       return;
@@ -130,6 +143,7 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
       credits: save.credits - cost,
       hull: next.hull,
       shields: next.shields,
+      loadout: {},
     });
     useGameStore.getState().setFlight({
       hull: next.hull,
@@ -146,8 +160,79 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
       setErr("Need 2,400 CR");
       return;
     }
+
     useGameStore.getState().patchSave({ credits: save.credits - 2400, cargoUpgrade: true });
     sfxPlay.ui();
+  }
+
+  function fitModule(slot: string, moduleId: ModuleId | "") {
+    const current = save.loadout[slot];
+    if (moduleId === current) return;
+    const nextLoadout = { ...save.loadout };
+    if (!moduleId) {
+      delete nextLoadout[slot];
+      useGameStore.getState().patchSave({ loadout: nextLoadout });
+      sfxPlay.ui();
+      return;
+    }
+    const module = MODULES[moduleId];
+    if (!slotAccepts(slot, moduleId)) {
+      setErr(`${module.name} does not fit ${slot}`);
+      sfxPlay.warn();
+      return;
+    }
+    if (save.credits < module.price) {
+      setErr(`Need ${module.price.toLocaleString()} CR`);
+      sfxPlay.warn();
+      return;
+    }
+    nextLoadout[slot] = moduleId;
+    const nextStats = shipStats(save.shipId, save.cargoUpgrade, nextLoadout);
+    if (cargoUsed(save.cargo) > nextStats.cargo) {
+      setErr("Dump cargo before fitting that module");
+      return;
+    }
+    useGameStore.getState().patchSave({
+      credits: save.credits - module.price,
+      loadout: nextLoadout,
+      hull: Math.min(save.hull, nextStats.hull),
+      shields: Math.min(save.shields, nextStats.shields),
+    });
+    useGameStore.getState().setFlight({ maxHull: nextStats.hull, maxShields: nextStats.shields });
+    setErr("");
+    sfxPlay.ui();
+  }
+
+  function slotOptions(slot: string) {
+    return Object.values(MODULES).filter((module) => slotAccepts(slot, module.id));
+  }
+
+  function acceptMission(missionId: string) {
+    const mission = contracts.find((candidate) => candidate.id === missionId);
+    if (!mission || activeMission) return;
+    useGameStore.getState().patchSave({
+      activeMission: {
+        ...mission,
+        acceptedAt: Date.now(),
+        progressAtAccept:
+          mission.type === "exploration"
+            ? save.explorationData
+            : mission.type === "salvage"
+              ? save.salvageRecovered
+              : 0,
+      },
+    });
+    useGameStore.getState().setFlash(
+      `CONTRACT ACCEPTED  —  DELIVER TO ${missionDestinationName(mission).toUpperCase()}`,
+    );
+    sfxPlay.ui();
+  }
+
+  function abandonMission() {
+    if (!activeMission) return;
+    useGameStore.getState().patchSave({ activeMission: null });
+    useGameStore.getState().setFlash("CONTRACT ABANDONED");
+    sfxPlay.warn();
   }
 
   return (
@@ -247,6 +332,50 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
                 </Button>
               </div>
             </section>
+            <section className="rounded-xl border border-accent/40 bg-surface p-4 sm:col-span-2">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] tracking-[0.2em] text-accent">OUTFITTING BAY</p>
+                  <h3 className="mt-1 font-display text-lg">Fit modules</h3>
+                  <p className="mt-1 font-mono text-xs text-muted">
+                    Modules are installed into the current hull and persist between launches.
+                  </p>
+                </div>
+                <p className="font-mono text-xs text-muted">
+                  Effective laser {def.laser} · shields {def.shields} · jump {def.jump.toFixed(1)} ly
+                </p>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {[
+                  ...def.hardpoints.map((slot) => ({ id: slot.id, label: `${slot.size} hardpoint` })),
+                  ...Array.from({ length: def.utilitySlots }, (_, i) => ({ id: `U${i + 1}`, label: "utility slot" })),
+                  ...Array.from({ length: def.internalSlots }, (_, i) => ({ id: `I${i + 1}`, label: "internal slot" })),
+                ].map((slot) => {
+                  const fitted = save.loadout[slot.id];
+                  return (
+                    <label key={slot.id} className="rounded-md border border-border bg-surface-2 p-3">
+                      <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                        <span>{slot.id}</span>
+                        <span>{slot.label}</span>
+                      </span>
+                      <select
+                        value={fitted ?? ""}
+                        onChange={(event) => fitModule(slot.id, event.target.value as ModuleId | "")}
+                        className="mt-2 h-10 w-full rounded-md border border-border bg-surface px-2 font-mono text-xs text-fg"
+                      >
+                        <option value="">Empty</option>
+                        {slotOptions(slot.id).map((module) => (
+                          <option key={module.id} value={module.id}>
+                            {module.name} · {module.price.toLocaleString()} CR
+                          </option>
+                        ))}
+                      </select>
+                      {fitted ? <span className="mt-2 block font-mono text-[10px] text-accent">{MODULES[fitted].description}</span> : null}
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
             {SHIP_ORDER.map((id) => {
               const s = SHIPS[id];
               const owned = id === save.shipId;
@@ -255,8 +384,14 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
               return (
                 <section key={id} className="rounded-xl border border-border bg-surface p-4">
                   <h3 className="font-display text-lg">{s.name}</h3>
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
+                    {SHIP_CLASS_LABELS[s.class]} · {s.roles.map((role) => SHIP_ROLE_LABELS[role]).join(" / ")}
+                  </p>
                   <p className="mt-1 font-mono text-xs text-muted">
                     Hold {s.cargo}t · Jump {s.jump} ly · Speed {s.maxSpeed}
+                  </p>
+                  <p className="mt-2 font-mono text-[11px] text-muted">
+                    Hardpoints {s.hardpoints.length} · Utility {s.utilitySlots} · Internal {s.internalSlots}
                   </p>
                   <p className="mt-3 font-mono text-sm text-accent">
                     {owned ? "Current hull" : cost === 0 ? "Transfer" : `${cost.toLocaleString()} CR`}
@@ -271,7 +406,53 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
         ) : null}
 
         {tab === "board" ? (
-          <div className="rounded-xl border border-border bg-surface p-4">
+          <div className="space-y-3">
+            <section className="rounded-xl border border-accent/40 bg-surface p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] tracking-[0.2em] text-accent">CONTRACT BOARD</p>
+                  <h3 className="mt-1 font-display text-lg">Courier runs</h3>
+                  <p className="mt-1 font-mono text-xs text-muted">
+                    Accept courier, mining, exploration, or salvage work and build a career reputation.
+                  </p>
+                </div>
+                {activeMission ? (
+                  <Button size="sm" variant="ghost" onClick={abandonMission}>Abandon</Button>
+                ) : null}
+              </div>
+              {activeMission ? (
+                <div className="mt-4 rounded-md border border-border bg-surface-2 p-3 font-mono text-xs">
+                  <p className="text-accent">ACTIVE · {missionLabel(activeMission.type).toUpperCase()}</p>
+                  <p className="mt-1 text-fg">Destination: {missionDestinationName(activeMission)}</p>
+                  <p className="mt-1 text-muted">
+                    {activeMission.type === "exploration"
+                      ? "Scan the destination system"
+                      : `Deliver ${activeMission.quantity}t ${activeMission.cargo.toUpperCase()}`}
+                    {" · "}{activeMission.reward.toLocaleString()} CR
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-2">
+                  {contracts.map((mission) => (
+                    <div key={mission.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface-2 p-3">
+                      <div className="font-mono text-xs">
+                        <p className="text-fg">
+                          {missionLabel(mission.type)} ·{" "}
+                          {mission.type === "exploration" ? "scan" : `${mission.quantity}t ${mission.cargo.toUpperCase()}`}
+                          {" → "}{missionDestinationName(mission)}
+                        </p>
+                        <p className="mt-1 text-muted">
+                          {mission.reward.toLocaleString()} CR · {mission.destinationId === save.systemId ? "Local" : "Standard risk"}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="quiet" onClick={() => acceptMission(mission.id)}>Accept</Button>
+                    </div>
+                  ))}
+                  {!contracts.length ? <p className="text-sm text-muted">No contracts available from this system.</p> : null}
+                </div>
+              )}
+            </section>
+            <section className="rounded-xl border border-border bg-surface p-4">
             <h3 className="font-display text-lg">GalNet</h3>
             <p className="mt-1 font-mono text-xs text-muted">
               Shared persistent board. Prices move when anyone trades.
@@ -286,6 +467,17 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
             <p className="mt-6 font-mono text-xs text-muted">
               First run: buy cheap Food here if Helion is agricultural, jump to Zaon, sell, return with Machinery.
             </p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-md border border-border bg-surface-2 p-3 font-mono text-xs">
+                <p className="text-muted">Exploration data</p>
+                <p className="mt-1 text-accent">{save.explorationData.toLocaleString()} CR pending</p>
+              </div>
+              <div className="rounded-md border border-border bg-surface-2 p-3 font-mono text-xs">
+                <p className="text-muted">Salvage recovered</p>
+                <p className="mt-1 text-accent">{save.salvageRecovered}t alloys</p>
+              </div>
+            </div>
+            </section>
           </div>
         ) : null}
       </div>

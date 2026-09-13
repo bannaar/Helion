@@ -1,13 +1,19 @@
 import { c as jumpFuelCost, o as getSystem, u as systemDistance } from "./galaxy-CtkES_h3.mjs";
-import { a as cargoCapacity, i as SHIPS, n as logTrafficFn, o as cargoUsed, r as useGameStore, s as sfxPlay } from "./routes-C8RGMmzr.mjs";
+import { a as cargoUsed, c as moduleCount, d as setEngineLevel, f as sfxPlay, i as cargoCapacity, l as moduleScanStrength, n as logTrafficFn, o as fittedWeapon, r as useGameStore, s as hasModule, u as shipStats } from "./routes-DIF9yVib.mjs";
 import { _ as Points, a as ConeGeometry, b as TorusGeometry, c as FogExp2, d as LineBasicMaterial, f as LineSegments, g as PerspectiveCamera, h as OctahedronGeometry, i as BufferGeometry, l as Group, m as MeshBasicMaterial, n as BoxGeometry, o as CylinderGeometry, p as Mesh, r as BufferAttribute, s as EdgesGeometry, t as WebGLRenderer, u as IcosahedronGeometry, v as PointsMaterial, x as Vector3, y as Scene } from "../_libs/three.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/engine-XNc2KR_A.js
+//#region node_modules/.nitro/vite/services/ssr/assets/engine-B0FXxEoH.js
 var empty = () => ({
 	yaw: 0,
 	pitch: 0,
 	roll: 0,
 	thrust: 0,
+	dampeners: false,
 	fire: false,
+	bomb: false,
+	chaff: false,
+	mine: false,
+	scan: false,
+	salvage: false,
 	dock: false,
 	map: false,
 	jump: false,
@@ -39,6 +45,12 @@ var GAME_KEYS = /* @__PURE__ */ new Set([
 	"KeyJ",
 	"KeyM",
 	"Space",
+	"KeyB",
+	"KeyC",
+	"KeyV",
+	"KeyK",
+	"KeyL",
+	"KeyX",
 	"Tab",
 	"Escape",
 	"ArrowUp",
@@ -55,6 +67,8 @@ var Input = class {
 	touchPitch = 0;
 	touchThrust = 0;
 	touchFire = false;
+	touchMine = false;
+	touchSalvage = false;
 	touchDock = false;
 	prev = empty();
 	current = empty();
@@ -64,7 +78,10 @@ var Input = class {
 		jump: false,
 		target: false,
 		pause: false,
-		fire: false
+		fire: false,
+		bomb: false,
+		chaff: false,
+		dampeners: false
 	};
 	unbind = [];
 	enabled = true;
@@ -111,6 +128,11 @@ var Input = class {
 		if (this.held("KeyW")) a.thrust += 1;
 		if (this.held("KeyS")) a.thrust -= 1;
 		a.fire = this.held("Space") || this.touchFire;
+		a.bomb = this.held("KeyB");
+		a.chaff = this.held("KeyC");
+		a.mine = this.held("KeyK") || this.touchMine;
+		a.scan = this.held("KeyL");
+		a.salvage = this.held("KeyX") || this.touchSalvage;
 		a.dock = this.held("KeyH") || this.touchDock;
 		a.map = this.held("KeyM");
 		a.jump = this.held("KeyJ");
@@ -119,6 +141,7 @@ var Input = class {
 		a.yaw += this.touchYaw;
 		a.pitch += this.touchPitch;
 		a.thrust += this.touchThrust;
+		a.dampeners = this.held("KeyV");
 		const pads = typeof navigator !== "undefined" ? navigator.getGamepads?.() : null;
 		if (pads) for (const pad of pads) {
 			if (!pad || pad.mapping !== "standard") continue;
@@ -147,6 +170,9 @@ var Input = class {
 		this.edges.target = a.target && !this.prev.target;
 		this.edges.pause = a.pause && !this.prev.pause;
 		this.edges.fire = a.fire && !this.prev.fire;
+		this.edges.bomb = a.bomb && !this.prev.bomb;
+		this.edges.chaff = a.chaff && !this.prev.chaff;
+		this.edges.dampeners = a.dampeners && !this.prev.dampeners;
 		this.prev = { ...a };
 		this.current = a;
 		this.touchDock = false;
@@ -398,6 +424,7 @@ var HelionEngine = class {
 	roll = 0;
 	speed = 0;
 	throttle = 0;
+	inertiaDampeners = true;
 	pos = new Vector3();
 	player = new Group();
 	starfield;
@@ -406,9 +433,9 @@ var HelionEngine = class {
 	station = new Group();
 	planet = new Group();
 	star = new Group();
-	stationPos = new Vector3(640, 24, 280);
-	planetPos = new Vector3(980, -50, 420);
-	planetR = 150;
+	stationPos = new Vector3(420, 18, 160);
+	planetPos = new Vector3(1680, -140, 980);
+	planetR = 190;
 	npcs = [];
 	shots = [];
 	loot = [];
@@ -417,6 +444,12 @@ var HelionEngine = class {
 	shotMatP = new MeshBasicMaterial({ color: PLAYER_COLOR });
 	shotMatE = new MeshBasicMaterial({ color: PIRATE_COLOR });
 	fireCd = 0;
+	bombCd = 0;
+	chaffCd = 0;
+	chaffTimer = 0;
+	miningCd = 0;
+	scanCd = 0;
+	salvageCd = 0;
 	laserHeat = 0;
 	hitCd = 0;
 	shake = 0;
@@ -516,22 +549,22 @@ var HelionEngine = class {
 		this.spaceRoot.add(this.star, this.planet);
 		this.rebuildPlayerMesh();
 		if (kind === "undock") {
-			this.pos.copy(this.stationPos).add(_tmp.set(62, 10, 28));
+			this.pos.copy(this.stationPos).add(_tmp.set(70, 12, 32));
 			this.yaw = Math.atan2(-(this.stationPos.x - this.pos.x), -(this.stationPos.z - this.pos.z));
 			this.pitch = 0;
 			this.roll = 0;
-			this.speed = 8;
-			this.throttle = .18;
+			this.speed = 10;
+			this.throttle = .16;
 		} else if (kind === "jump") {
-			this.pos.set(1180, 50, -240);
+			this.pos.set(980, 60, -280);
 			this.yaw = Math.atan2(-(this.stationPos.x - this.pos.x), -(this.stationPos.z - this.pos.z));
-			this.pitch = -.08;
+			this.pitch = -.04;
 			this.speed = 22;
 			this.throttle = .3;
 		} else {
-			this.pos.copy(this.stationPos).add(_tmp.set(78, 16, 42));
+			this.pos.copy(this.stationPos).add(_tmp.set(44, 8, 16));
 			this.yaw = Math.atan2(-(this.stationPos.x - this.pos.x), -(this.stationPos.z - this.pos.z));
-			this.pitch = -.05;
+			this.pitch = .02;
 			this.speed = 0;
 			this.throttle = 0;
 		}
@@ -543,9 +576,16 @@ var HelionEngine = class {
 			const a = makeAsteroid(AST_COLOR, 4 + Math.random() * 7);
 			a.position.set((Math.random() - .5) * 900, (Math.random() - .5) * 220, (Math.random() - .5) * 900);
 			this.spaceRoot.add(a);
+			const ores = [
+				"minerals",
+				"alloys",
+				"gold"
+			];
 			this.asteroids.push({
 				mesh: a,
-				spin: new Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.4)
+				spin: new Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.4),
+				ore: ores[Math.floor(Math.random() * ores.length)],
+				remaining: 2 + Math.floor(Math.random() * 3)
 			});
 		}
 		this.mode = "space";
@@ -653,7 +693,7 @@ var HelionEngine = class {
 			return;
 		}
 		const save = useGameStore.getState().save;
-		const def = SHIPS[save.shipId];
+		const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
 		let steer = actions.yaw;
 		if (this.injectSteer !== null) steer = this.injectSteer;
 		this.yaw += steer * def.turnRate * dt;
@@ -663,12 +703,29 @@ var HelionEngine = class {
 		this.roll *= Math.max(0, 1 - 1.6 * dt);
 		this.roll = Math.max(-.9, Math.min(.9, this.roll));
 		this.throttle = Math.max(0, Math.min(1, this.throttle + actions.thrust * .7 * dt));
-		const target = this.throttle * def.maxSpeed;
-		this.speed += (target - this.speed) * Math.min(1, 2.1 * dt);
+		if (this.input.edges.dampeners) {
+			this.inertiaDampeners = !this.inertiaDampeners;
+			useGameStore.getState().setFlash(this.inertiaDampeners ? "INERTIA DAMPENERS ON" : "INERTIA DAMPENERS OFF");
+		}
+		if (this.inertiaDampeners) {
+			const target = this.throttle * def.maxSpeed;
+			this.speed += (target - this.speed) * Math.min(1, 2.1 * dt);
+		} else {
+			this.speed += actions.thrust * def.maxSpeed * .42 * dt;
+			this.speed *= Math.max(0, 1 - .035 * dt);
+			this.speed = Math.max(0, Math.min(def.maxSpeed * 1.25, this.speed));
+		}
 		_fwd.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
 		this.pos.addScaledVector(_fwd, this.speed * dt);
+		setEngineLevel(this.throttle);
 		this.collideWorld(dt);
 		this.fireCd = Math.max(0, this.fireCd - dt);
+		this.bombCd = Math.max(0, this.bombCd - dt);
+		this.chaffCd = Math.max(0, this.chaffCd - dt);
+		this.chaffTimer = Math.max(0, this.chaffTimer - dt);
+		this.miningCd = Math.max(0, this.miningCd - dt);
+		this.scanCd = Math.max(0, this.scanCd - dt);
+		this.salvageCd = Math.max(0, this.salvageCd - dt);
 		this.laserHeat = Math.max(0, this.laserHeat - dt * .35);
 		this.hitCd = Math.max(0, this.hitCd - dt);
 		this.shake *= Math.max(0, 1 - 6 * dt);
@@ -679,10 +736,18 @@ var HelionEngine = class {
 		}
 		if (actions.fire && this.fireCd <= 0 && this.laserHeat < 1) {
 			this.fireCd = .16;
-			this.laserHeat = Math.min(1, this.laserHeat + .12);
-			this.spawnShot(true, this.pos, _fwd, def.laser);
+			const cooling = hasModule(save.loadout, "cooling_springs") ? .07 : .12;
+			this.laserHeat = Math.min(1, this.laserHeat + cooling);
+			const weapon = fittedWeapon(save.loadout);
+			const shotPower = weapon === "multicannon" ? def.laser + 4 : weapon === "beam_laser" ? def.laser + 2 : def.laser;
+			this.spawnShot(true, this.pos, _fwd, shotPower, false);
 			sfxPlay.laser();
 		}
+		if (this.input.edges.bomb && this.bombCd <= 0) this.deployBomb();
+		if (this.input.edges.chaff && this.chaffCd <= 0) this.deployChaff();
+		if (actions.mine && this.miningCd <= 0) this.mineAsteroid();
+		if (actions.scan && this.scanCd <= 0) this.scanBody();
+		if (actions.salvage && this.salvageCd <= 0) this.salvageWreck();
 		this.stepNpcs(dt);
 		this.stepShots(dt);
 		this.stepLoot(dt);
@@ -695,8 +760,14 @@ var HelionEngine = class {
 		const distSt = this.pos.distanceTo(this.stationPos);
 		const distPl = this.pos.distanceTo(this.planetPos);
 		const distStar = this.pos.length();
-		const canDock = distSt < 56 && this.speed < 38;
+		const dockingComputer = hasModule(save.loadout, "docking_computer");
+		const canDock = distSt < (dockingComputer ? 86 : 56) && this.speed < (dockingComputer ? 52 : 38);
 		const massLocked = distSt < 95 || distPl < this.planetR + 90 || distStar < 140;
+		if (hasModule(save.loadout, "fuel_scoop") && distStar > 70 && distStar < 260 && save.fuel < def.tank) {
+			const nextFuel = Math.min(def.tank, save.fuel + dt * .65);
+			useGameStore.getState().patchSave({ fuel: nextFuel }, false);
+			if (Math.floor(nextFuel * 10) !== Math.floor(save.fuel * 10)) useGameStore.getState().setFlash("FUEL SCOOP ACTIVE");
+		}
 		if (this.input.edges.dock && canDock) this.dock();
 		if (this.input.edges.target) this.cycleTarget();
 		const locked = useGameStore.getState().jumpLocked;
@@ -726,26 +797,19 @@ var HelionEngine = class {
 		}
 	}
 	collideWorld(dt) {
-		if (this.pos.length() < 48) {
-			this.pos.setLength(48);
-			this.damage(18, "STAR HEAT");
-		}
-		if (this.pos.distanceTo(this.planetPos) < this.planetR + 4) {
-			_tmp.copy(this.pos).sub(this.planetPos).setLength(this.planetR + 6);
-			this.pos.copy(this.planetPos).add(_tmp);
-			this.speed *= .4;
-			this.damage(10, "PLANETARY IMPACT");
-		}
-		if (this.pos.distanceTo(this.stationPos) < 17) {
-			_tmp.copy(this.pos).sub(this.stationPos).setLength(18);
-			this.pos.copy(this.stationPos).add(_tmp);
-			this.speed *= .5;
-			this.damage(6, "STATION COLLISION");
-		}
-		for (const a of this.asteroids) if (this.pos.distanceTo(a.mesh.position) < 8) {
-			this.damage(8, "ASTEROID STRIKE");
-			this.speed *= .7;
-		}
+		const bump = (pushFrom, minDist, dmg, reason) => {
+			_tmp.copy(this.pos).sub(pushFrom);
+			if (_tmp.lengthSq() < 1e-4) _tmp.set(0, 1, 0);
+			_tmp.setLength(minDist);
+			this.pos.copy(pushFrom).add(_tmp);
+			this.speed *= .28;
+			this.throttle *= .4;
+			if (this.hitCd <= 0) this.damage(dmg, reason);
+		};
+		if (this.pos.length() < 48) bump(this.star.position, 52, 16, "STAR HEAT");
+		if (this.pos.distanceTo(this.planetPos) < this.planetR + 6) bump(this.planetPos, this.planetR + 14, 14, "PLANETARY IMPACT");
+		if (this.pos.distanceTo(this.stationPos) < 17) bump(this.stationPos, 20, 6, "STATION COLLISION");
+		for (const a of this.asteroids) if (this.pos.distanceTo(a.mesh.position) < 8) bump(a.mesh.position, 12, 7, "ASTEROID STRIKE");
 	}
 	spawnNpc(police) {
 		const mesh = police ? makeCobra(POLICE_COLOR) : makeSidewinder(PIRATE_COLOR);
@@ -766,7 +830,7 @@ var HelionEngine = class {
 			police
 		});
 	}
-	spawnShot(friendly, origin, dir, _power) {
+	spawnShot(friendly, origin, dir, power, explosive) {
 		const mesh = new Mesh(this.shotGeo, friendly ? this.shotMatP : this.shotMatE);
 		const pos = origin.clone().addScaledVector(dir, 4);
 		mesh.position.copy(pos);
@@ -777,6 +841,8 @@ var HelionEngine = class {
 			vel: dir.clone().multiplyScalar(friendly ? 420 : 340),
 			life: 1.15,
 			friendly,
+			power,
+			explosive,
 			mesh
 		});
 	}
@@ -801,14 +867,19 @@ var HelionEngine = class {
 			n.mesh.position.copy(n.pos);
 			n.mesh.rotation.set(n.pitch, n.yaw, 0, "YXZ");
 			n.fireCd -= dt;
-			if (Math.abs(dy) < .22 && dist < 380 && dist > 28 && n.fireCd <= 0) {
-				n.fireCd = .55;
-				this.spawnShot(false, n.pos, _tmp.copy(this.pos).sub(n.pos).normalize(), 8);
+			const stealth = moduleCount(useGameStore.getState().save.loadout, "stealth_mesh");
+			const ecm = hasModule(useGameStore.getState().save.loadout, "ecm_suite");
+			const eccm = hasModule(useGameStore.getState().save.loadout, "eccm_suite");
+			const electronicDisruption = ecm && !eccm && Math.random() < .12;
+			if (Math.abs(dy) < .22 && dist < 380 - stealth * 18 && dist > 28 && !electronicDisruption && n.fireCd <= 0) {
+				n.fireCd = eccm ? .42 : .55;
+				this.spawnShot(false, n.pos, _tmp.copy(this.pos).sub(n.pos).normalize(), eccm ? 9 : 8, false);
 			}
 		}
 	}
 	stepShots(dt) {
-		const def = SHIPS[useGameStore.getState().save.shipId];
+		const current = useGameStore.getState().save;
+		shipStats(current.shipId, current.cargoUpgrade, current.loadout);
 		for (let i = this.shots.length - 1; i >= 0; i -= 1) {
 			const s = this.shots[i];
 			s.life -= dt;
@@ -822,7 +893,11 @@ var HelionEngine = class {
 			if (s.friendly) for (let j = this.npcs.length - 1; j >= 0; j -= 1) {
 				const n = this.npcs[j];
 				if (s.pos.distanceTo(n.pos) < 5.5) {
-					n.hull -= def.laser;
+					n.hull -= s.power;
+					if (s.explosive) {
+						for (const nearby of this.npcs) if (nearby !== n && nearby.pos.distanceTo(s.pos) < 28) nearby.hull -= s.power * .5;
+						useGameStore.getState().setFlash("ORDNANCE DETONATION");
+					}
 					this.spaceRoot.remove(s.mesh);
 					this.shots.splice(i, 1);
 					sfxPlay.hit();
@@ -831,7 +906,7 @@ var HelionEngine = class {
 					break;
 				}
 			}
-			else if (s.pos.distanceTo(this.pos) < 4.2) {
+			else if (s.pos.distanceTo(this.pos) < 4.2 && this.chaffTimer <= 0) {
 				this.spaceRoot.remove(s.mesh);
 				this.shots.splice(i, 1);
 				this.damage(9, "UNDER FIRE");
@@ -865,7 +940,7 @@ var HelionEngine = class {
 		sfxPlay.kill();
 	}
 	stepLoot(dt) {
-		const save = useGameStore.getState().save;
+		useGameStore.getState().save;
 		for (let i = this.loot.length - 1; i >= 0; i -= 1) {
 			const l = this.loot[i];
 			l.life -= dt;
@@ -875,20 +950,171 @@ var HelionEngine = class {
 				this.loot.splice(i, 1);
 				continue;
 			}
-			if (this.pos.distanceTo(l.pos) < 10) {
-				if (cargoUsed(save.cargo) < cargoCapacity(save.shipId, save.cargoUpgrade)) {
-					const cargo = {
-						...save.cargo,
-						[l.good]: (save.cargo[l.good] ?? 0) + 1
-					};
-					useGameStore.getState().patchSave({ cargo });
-					useGameStore.getState().setFlash(`SCOOPED 1t ${l.good.toUpperCase()}`);
-					sfxPlay.scoop();
-				} else useGameStore.getState().setFlash("HOLD FULL");
-				this.spaceRoot.remove(l.mesh);
-				this.loot.splice(i, 1);
-			}
+			if (this.pos.distanceTo(l.pos) < 10) useGameStore.getState().setFlash("WRECK IN RANGE  —  X TO SALVAGE");
 		}
+	}
+	mineAsteroid() {
+		const st = useGameStore.getState();
+		if (!(hasModule(st.save.loadout, "mining_laser") || hasModule(st.save.loadout, "prospector_laser") || hasModule(st.save.loadout, "excavator_laser"))) {
+			st.setFlash("MINING LASER REQUIRED  —  FIT ONE AT A STATION");
+			sfxPlay.warn();
+			this.miningCd = 1.2;
+			return;
+		}
+		const forward = _fwd.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
+		let best = null;
+		let bestDist = 170;
+		for (const asteroid of this.asteroids) {
+			_tmp.copy(asteroid.mesh.position).sub(this.pos);
+			const dist = _tmp.length();
+			if (dist >= bestDist || _tmp.normalize().dot(forward) < .72) continue;
+			best = asteroid;
+			bestDist = dist;
+		}
+		if (!best) {
+			st.setFlash("NO ASTEROID IN BEAM");
+			this.miningCd = .8;
+			return;
+		}
+		const used = cargoUsed(st.save.cargo);
+		const cap = cargoCapacity(st.save.shipId, st.save.cargoUpgrade, st.save.loadout);
+		if (used >= cap) {
+			st.setFlash("HOLD FULL");
+			sfxPlay.warn();
+			this.miningCd = 1;
+			return;
+		}
+		const miningDrone = hasModule(st.save.loadout, "mining_drone");
+		const processor = hasModule(st.save.loadout, "ore_processor") || hasModule(st.save.loadout, "refinery_unit");
+		const yieldAmount = Math.min(cap - used, miningDrone ? processor ? 3 : 2 : 1);
+		const cargo = {
+			...st.save.cargo,
+			[best.ore]: (st.save.cargo[best.ore] ?? 0) + yieldAmount
+		};
+		best.remaining -= 1;
+		st.patchSave({ cargo });
+		st.setFlash(`MINED ${yieldAmount}t ${best.ore.toUpperCase()}  —  ${best.remaining} FRAGMENTS LEFT`);
+		sfxPlay.mining();
+		this.miningCd = .75;
+		if (best.remaining <= 0) {
+			this.spaceRoot.remove(best.mesh);
+			this.asteroids = this.asteroids.filter((candidate) => candidate !== best);
+		}
+	}
+	deployBomb() {
+		const st = useGameStore.getState();
+		const bomb = Object.values(st.save.loadout).find((id) => id === "plasma_bomb" || id === "fragmentation_bomb");
+		if (!bomb) {
+			st.setFlash("BOMB HARDPOINT REQUIRED  —  FIT PLASMA OR FRAGMENTATION BOMBS");
+			sfxPlay.warn();
+			this.bombCd = 1.2;
+			return;
+		}
+		const power = bomb === "plasma_bomb" ? 34 : 22;
+		this.spawnShot(true, this.pos, _fwd, power, true);
+		this.shots[this.shots.length - 1].vel.multiplyScalar(.32);
+		this.shots[this.shots.length - 1].life = 2.2;
+		this.bombCd = 2.5;
+		st.setFlash(`${bomb === "plasma_bomb" ? "PLASMA" : "FRAG"} BOMB DEPLOYED`);
+		sfxPlay.bomb();
+	}
+	deployChaff() {
+		const st = useGameStore.getState();
+		if (!hasModule(st.save.loadout, "chaff_launcher")) {
+			st.setFlash("CHAFF LAUNCHER REQUIRED");
+			sfxPlay.warn();
+			this.chaffCd = 1.2;
+			return;
+		}
+		this.chaffTimer = 3.5;
+		this.chaffCd = 8;
+		st.setFlash("CHAFF CLOUD DEPLOYED");
+		sfxPlay.chaff();
+	}
+	scanBody() {
+		const st = useGameStore.getState();
+		const scanStrength = moduleScanStrength(st.save.loadout);
+		if (scanStrength <= 0) {
+			st.setFlash("DISCOVERY SCANNER REQUIRED  —  FIT ONE AT A STATION");
+			sfxPlay.warn();
+			this.scanCd = 1.2;
+			return;
+		}
+		const body = [{
+			id: "star",
+			name: "PRIMARY STAR",
+			pos: this.star.position
+		}, {
+			id: "planet",
+			name: "PLANETARY BODY",
+			pos: this.planetPos
+		}].sort((a, b) => this.pos.distanceTo(a.pos) - this.pos.distanceTo(b.pos))[0];
+		const distance = this.pos.distanceTo(body.pos);
+		if (distance > 900) {
+			st.setFlash("SCAN RANGE EXCEEDED");
+			this.scanCd = 1;
+			return;
+		}
+		const key = `${st.save.systemId}:${body.id}`;
+		if (st.save.exploredSystems[key]) {
+			st.setFlash(`${body.name} ALREADY MAPPED`);
+			this.scanCd = 1;
+			return;
+		}
+		const exploredSystems = {
+			...st.save.exploredSystems,
+			[key]: true
+		};
+		const value = Math.max(120, Math.round((420 - distance * .18) * scanStrength));
+		st.patchSave({
+			exploredSystems,
+			explorationData: st.save.explorationData + value
+		});
+		st.setFlash(`SCAN COMPLETE  —  ${body.name} DATA +${value} CR`);
+		sfxPlay.scan();
+		this.scanCd = 1.4;
+	}
+	salvageWreck() {
+		const st = useGameStore.getState();
+		if (!Object.values(st.save.loadout).includes("salvage_beam")) {
+			st.setFlash("SALVAGE BEAM REQUIRED  —  FIT ONE AT A STATION");
+			sfxPlay.warn();
+			this.salvageCd = 1.2;
+			return;
+		}
+		const forward = _fwd.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
+		let best = null;
+		let bestDist = 70;
+		for (const loot of this.loot) {
+			_tmp.copy(loot.pos).sub(this.pos);
+			const distance = _tmp.length();
+			if (distance >= bestDist || _tmp.normalize().dot(forward) < .45) continue;
+			best = loot;
+			bestDist = distance;
+		}
+		if (!best) {
+			st.setFlash("NO WRECK IN SALVAGE RANGE");
+			this.salvageCd = .8;
+			return;
+		}
+		if (cargoUsed(st.save.cargo) >= cargoCapacity(st.save.shipId, st.save.cargoUpgrade, st.save.loadout)) {
+			st.setFlash("HOLD FULL");
+			this.salvageCd = 1;
+			return;
+		}
+		const cargo = {
+			...st.save.cargo,
+			alloys: (st.save.cargo.alloys ?? 0) + 1
+		};
+		st.patchSave({
+			cargo,
+			salvageRecovered: st.save.salvageRecovered + 1
+		});
+		this.spaceRoot.remove(best.mesh);
+		this.loot = this.loot.filter((loot) => loot !== best);
+		st.setFlash(`SALVAGED 1t ALLOYS  —  ${best.good.toUpperCase()} WRECK`);
+		sfxPlay.salvage();
+		this.salvageCd = .9;
 	}
 	damage(amount, reason) {
 		const st = useGameStore.getState();
@@ -899,7 +1125,8 @@ var HelionEngine = class {
 		let hull = st.hull;
 		const absorbed = Math.min(shields, amount);
 		shields -= absorbed;
-		hull -= amount - absorbed;
+		const armor = moduleCount(st.save.loadout, "armor_plating") * .1;
+		hull -= (amount - absorbed) * Math.max(.55, 1 - armor);
 		st.setFlight({
 			shields,
 			hull
@@ -919,18 +1146,36 @@ var HelionEngine = class {
 	}
 	dock() {
 		const st = useGameStore.getState();
+		const mission = st.save.activeMission;
+		const destinationMission = mission && mission.destinationId === st.save.systemId ? mission : null;
+		const missionCargo = destinationMission ? st.save.cargo[destinationMission.cargo] ?? 0 : 0;
+		const completedMission = destinationMission !== null && ((destinationMission.type === "courier" || destinationMission.type === "mining") && missionCargo >= destinationMission.quantity || destinationMission.type === "exploration" && Boolean(st.save.exploredSystems[destinationMission.destinationId]) && st.save.explorationData > destinationMission.progressAtAccept || destinationMission.type === "salvage" && st.save.salvageRecovered - destinationMission.progressAtAccept >= destinationMission.requirement) ? destinationMission : null;
+		const missionComplete = completedMission !== null;
+		const explorationPayout = st.save.explorationData;
+		const deliveredCargo = missionComplete && (completedMission.type === "courier" || completedMission.type === "mining") ? {
+			...st.save.cargo,
+			[completedMission.cargo]: missionCargo - completedMission.quantity
+		} : st.save.cargo;
+		if (destinationMission && !missionComplete && (destinationMission.type === "courier" || destinationMission.type === "mining")) st.setFlash(`CARGO REQUIRED  —  ${destinationMission.quantity}t ${destinationMission.cargo.toUpperCase()}`);
 		st.patchSave({
 			docked: true,
 			hull: st.hull,
 			shields: st.shields,
-			wanted: st.save.wanted
+			wanted: st.save.wanted,
+			cargo: deliveredCargo,
+			credits: st.save.credits + explorationPayout + (missionComplete ? completedMission.reward : 0),
+			...missionComplete ? {
+				activeMission: null,
+				completedMissions: st.save.completedMissions + 1
+			} : {},
+			...explorationPayout > 0 ? { explorationData: 0 } : {}
 		});
 		st.setMode("station");
 		this.mode = "station";
 		this.frozen = true;
 		this.speed = 0;
 		this.throttle = 0;
-		st.setFlash("DOCKING GRANTED");
+		st.setFlash(missionComplete ? `CONTRACT COMPLETE  +${(completedMission.reward + explorationPayout).toLocaleString()} CR` : explorationPayout > 0 ? `EXPLORATION DATA SOLD  +${explorationPayout.toLocaleString()} CR` : destinationMission ? `CARGO REQUIRED  —  ${destinationMission.quantity}t ${destinationMission.cargo.toUpperCase()}` : "DOCKING GRANTED");
 		sfxPlay.dock();
 		logTrafficFn({ data: {
 			systemId: st.save.systemId,
@@ -951,7 +1196,7 @@ var HelionEngine = class {
 		}
 		const dest = getSystem(toId);
 		if (!dest) return;
-		const def = SHIPS[st.save.shipId];
+		const def = shipStats(st.save.shipId, st.save.cargoUpgrade, st.save.loadout);
 		if (systemDistance(getSystem(from), dest) > def.jump + .05) {
 			st.setFlash("OUT OF RANGE");
 			this.charging = false;
@@ -1019,6 +1264,7 @@ var HelionEngine = class {
 		useGameStore.getState().setFlight({
 			speed: this.speed,
 			throttle: this.throttle,
+			dampeners: this.inertiaDampeners,
 			yaw: this.yaw,
 			pitch: this.pitch,
 			shields: useGameStore.getState().shields,

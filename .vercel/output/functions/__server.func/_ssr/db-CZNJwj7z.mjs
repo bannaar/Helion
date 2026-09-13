@@ -1,6 +1,6 @@
-import { a as getGalaxy, l as marketTemplate, o as getSystem, t as COMMODITY_IDS } from "./galaxy-CtkES_h3.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/universe.server-2oPZAY48.js
+//#region node_modules/.nitro/vite/services/ssr/assets/db-CZNJwj7z.js
 var _0002_galaxy_default = "-- Persistent galaxy: shared markets, news, and anonymous traffic.\n-- Unowned rows (no user_id). No personal data.\n\ncreate table if not exists galaxy_clock (\n  id integer primary key check (id = 1),\n  tick integer not null default 0,\n  last_tick_at timestamptz not null default now()\n);\n\ninsert into galaxy_clock (id, tick)\n  values (1, 0)\n  on conflict (id) do nothing;\n\ncreate table if not exists markets (\n  system_id text not null,\n  commodity text not null,\n  stock integer not null,\n  price integer not null,\n  primary key (system_id, commodity)\n);\n\ncreate table if not exists dispatches (\n  id serial primary key,\n  tick integer not null,\n  system_id text,\n  headline text not null,\n  created_at timestamptz not null default now()\n);\n\ncreate table if not exists traffic (\n  id serial primary key,\n  system_id text not null,\n  kind text not null,\n  detail text not null,\n  created_at timestamptz not null default now()\n);\n\ncreate index if not exists traffic_created_idx on traffic (created_at desc);\ncreate index if not exists dispatches_created_idx on dispatches (created_at desc);\n";
+var _0003_commander_profiles_default = "create table if not exists commander_profiles (\n  user_id text primary key,\n  commander_name text not null default 'JAMESON',\n  allegiance text not null default 'independent',\n  faction text not null default 'free-traders',\n  standing integer not null default 0,\n  experience integer not null default 0,\n  credits integer not null default 1500,\n  ship_id text not null default 'sidewinder',\n  inventory jsonb not null default '{}'::jsonb,\n  reputation jsonb not null default '{}'::jsonb,\n  notes text not null default '',\n  save_state jsonb not null default '{}'::jsonb,\n  created_at timestamptz not null default now(),\n  updated_at timestamptz not null default now()\n);\n\ncreate index if not exists commander_profiles_updated_idx\n  on commander_profiles (updated_at desc);\n";
 /**
 * Migration bookkeeping shared by the two appliers — `scripts/migrate.mjs`
 * (deploy, `readdir`) and `src/lib/db.ts` (PGLite preview, `import.meta.glob`).
@@ -87,7 +87,7 @@ function toSql(run) {
 }
 function createNeonSql() {
 	globalRef.__pgSqlPromise__ ??= (async () => {
-		const { Pool, types } = await import("../_libs/pg.mjs").then((n) => n.t);
+		const { Pool, types } = await import("../_libs/pg.mjs").then((n) => n.n);
 		types.setTypeParser(OID_INT8, Number);
 		types.setTypeParser(OID_DATE, identity);
 		types.setTypeParser(OID_INTERVAL, identity);
@@ -118,7 +118,10 @@ async function createPgliteSql() {
 	});
 	const pg = await globalRef.__pgliteInstance__;
 	const migrate = async () => {
-		const migrations = /* #__PURE__ */ Object.assign({ "/migrations/0002_galaxy.sql": _0002_galaxy_default });
+		const migrations = /* #__PURE__ */ Object.assign({
+			"/migrations/0002_galaxy.sql": _0002_galaxy_default,
+			"/migrations/0003_commander_profiles.sql": _0003_commander_profiles_default
+		});
 		const done = (await pg.query("select name from _migrations")).rows.map((r) => r.name);
 		for (const { name, path } of pendingMigrations(Object.keys(migrations), done)) await pg.transaction(async (tx) => {
 			await tx.exec(migrations[path]);
@@ -152,6 +155,18 @@ function getSql() {
 	return sqlPromise;
 }
 /**
+* The shared PGLite instance (preview only), with `migrations/*.sql` applied.
+* Lets Better Auth persist to the SAME embedded DB as app data in preview (via a
+* Kysely dialect). Throws when `DATABASE_URL` is set (that path uses Neon).
+*/
+async function getPglite() {
+	if (dbSource !== "pglite") throw new Error("getPglite() is only available on the PGLite fallback (no DATABASE_URL)");
+	await getSql();
+	const pg = await globalRef.__pgliteInstance__;
+	if (!pg) throw new Error("PGLite instance failed to initialize");
+	return pg;
+}
+/**
 * Finish DB bootstrap before the server handles traffic.
 *
 * - **PGLite** (preview / no `DATABASE_URL`): open the in-memory DB and apply
@@ -171,159 +186,5 @@ if (typeof window === "undefined" && dbSource === "pglite") globalBoot.__pgBoots
 	console.error("[db] PGLite bootstrap failed:", err);
 	throw err;
 });
-var TICK_MS = 9e4;
-var MAX_CATCHUP = 8;
-async function ensureClock() {
-	await (await getSql())`insert into galaxy_clock (id, tick) values (1, 0) on conflict (id) do nothing`;
-}
-async function ensureMarkets(systemId) {
-	const sys = getSystem(systemId);
-	if (!sys) throw new Error("Unknown system");
-	const sql = await getSql();
-	const existing = await sql`select system_id, commodity, stock, price from markets where system_id = ${systemId}`;
-	if (existing.length >= COMMODITY_IDS.length) return existing.map((r) => {
-		const meta = marketTemplate(sys).find((m) => m.commodity === r.commodity);
-		return {
-			commodity: r.commodity,
-			name: meta?.name ?? r.commodity,
-			price: r.price,
-			stock: r.stock,
-			base: meta?.base ?? 10
-		};
-	});
-	const rows = marketTemplate(sys);
-	for (const row of rows) await sql`
-      insert into markets (system_id, commodity, stock, price)
-      values (${systemId}, ${row.commodity}, ${row.stock}, ${row.price})
-      on conflict (system_id, commodity) do nothing
-    `;
-	return rows;
-}
-function equilibrium(systemId, commodity) {
-	const sys = getSystem(systemId);
-	const row = marketTemplate(sys).find((m) => m.commodity === commodity);
-	return {
-		price: row.price,
-		stock: row.stock
-	};
-}
-async function tickUniverse() {
-	await ensureClock();
-	const sql = await getSql();
-	const [clock] = await sql`select tick, last_tick_at::text as last_tick_at from galaxy_clock where id = 1`;
-	if (!clock) return 0;
-	const last = Date.parse(clock.last_tick_at);
-	const elapsed = Number.isFinite(last) ? Date.now() - last : TICK_MS;
-	const steps = Math.min(MAX_CATCHUP, Math.max(0, Math.floor(elapsed / TICK_MS)));
-	if (steps <= 0) return clock.tick;
-	const markets = await sql`select system_id, commodity, stock, price from markets`;
-	let tick = clock.tick;
-	for (let s = 0; s < steps; s += 1) {
-		tick += 1;
-		for (const row of markets) {
-			if (!COMMODITY_IDS.includes(row.commodity)) continue;
-			const eq = equilibrium(row.system_id, row.commodity);
-			const drift = Math.sign(eq.price - row.price) * (tick % 3 === 0 ? 1 : 0);
-			const restock = Math.sign(eq.stock - row.stock) * Math.max(1, Math.round(eq.stock * .03));
-			row.price = Math.max(2, Math.min(400, row.price + drift));
-			row.stock = Math.max(0, Math.min(400, row.stock + restock));
-		}
-	}
-	for (const row of markets) await sql`update markets set stock = ${row.stock}, price = ${row.price} where system_id = ${row.system_id} and commodity = ${row.commodity}`;
-	const galaxy = getGalaxy();
-	const sys = galaxy[tick % galaxy.length];
-	const headlines = [
-		`Food convoys rerouted through ${sys.name}.`,
-		`Pirate activity reported near ${sys.name}.`,
-		`${sys.name} station restocked industrial goods.`,
-		`Luxury demand rising in ${sys.name}.`,
-		`Refinery output steady across the ${sys.name} cluster.`
-	];
-	const headline = headlines[tick % headlines.length];
-	await sql`insert into dispatches (tick, system_id, headline) values (${tick}, ${sys.id}, ${headline})`;
-	await sql`delete from dispatches where id not in (select id from dispatches order by id desc limit 24)`;
-	await sql`delete from traffic where id not in (select id from traffic order by id desc limit 40)`;
-	await sql`update galaxy_clock set tick = ${tick}, last_tick_at = now() where id = 1`;
-	return tick;
-}
-async function readMarket(systemId) {
-	return {
-		tick: await tickUniverse(),
-		market: await ensureMarkets(systemId)
-	};
-}
-async function applyTrade(input) {
-	const qty = Math.max(1, Math.min(20, Math.floor(input.qty)));
-	if (!COMMODITY_IDS.includes(input.commodity)) throw new Error("Unknown cargo");
-	if (!getSystem(input.systemId)) throw new Error("Unknown system");
-	await tickUniverse();
-	await ensureMarkets(input.systemId);
-	const sql = await getSql();
-	const [row] = await sql`
-    select system_id, commodity, stock, price from markets
-    where system_id = ${input.systemId} and commodity = ${input.commodity}
-  `;
-	if (!row) throw new Error("No market");
-	let stock = row.stock;
-	let price = row.price;
-	let unitPrice = price;
-	if (input.side === "buy") {
-		if (stock <= 0) throw new Error("Sold out");
-		const take = Math.min(qty, stock);
-		stock -= take;
-		price = Math.max(2, price + Math.max(1, Math.round(take * .35)));
-		unitPrice = row.price;
-		await sql`update markets set stock = ${stock}, price = ${price} where system_id = ${input.systemId} and commodity = ${input.commodity}`;
-		await sql`
-      insert into traffic (system_id, kind, detail)
-      values (${input.systemId}, 'trade', ${`A trader lifted ${take}t ${input.commodity}.`})
-    `;
-		const [clock] = await sql`select tick from galaxy_clock where id = 1`;
-		return {
-			unitPrice,
-			stock,
-			price,
-			tick: clock?.tick ?? 0
-		};
-	}
-	stock = Math.min(400, stock + qty);
-	price = Math.max(2, price - Math.max(1, Math.round(qty * .3)));
-	await sql`update markets set stock = ${stock}, price = ${price} where system_id = ${input.systemId} and commodity = ${input.commodity}`;
-	await sql`
-    insert into traffic (system_id, kind, detail)
-    values (${input.systemId}, 'trade', ${`A trader offloaded ${qty}t ${input.commodity}.`})
-  `;
-	const [clock] = await sql`select tick from galaxy_clock where id = 1`;
-	return {
-		unitPrice,
-		stock,
-		price,
-		tick: clock?.tick ?? 0
-	};
-}
-async function readBoard(systemId) {
-	const tick = await tickUniverse();
-	await ensureMarkets(systemId);
-	const sql = await getSql();
-	const news = await sql`
-    select headline, tick from dispatches order by id desc limit 8
-  `;
-	const traffic = await sql`
-    select system_id, kind, detail from traffic order by id desc limit 10
-  `;
-	return {
-		tick,
-		news: news.map((n) => n.headline),
-		traffic: traffic.map((t) => ({
-			systemId: t.system_id,
-			kind: t.kind,
-			detail: t.detail
-		}))
-	};
-}
-async function insertTraffic(systemId, kind, detail) {
-	if (!getSystem(systemId)) return;
-	await (await getSql())`insert into traffic (system_id, kind, detail) values (${systemId}, ${kind}, ${detail})`;
-}
 //#endregion
-export { applyTrade, insertTraffic, readBoard, readMarket };
+export { getPglite as n, getSql as r, ensureDbReady as t };

@@ -1,38 +1,37 @@
 import { o as __toESM } from "../_runtime.mjs";
-import { a as getGalaxy, c as jumpFuelCost, i as economyLabel, n as HOME_SYSTEM_ID, o as getSystem, r as combatRank, s as governmentLabel, t as COMMODITY_IDS, u as systemDistance } from "./galaxy-CtkES_h3.mjs";
+import { Ft as number, It as object, Ot as _enum, Rt as record, kt as any, zt as string } from "../_libs/@better-auth/core+[...].mjs";
 import { R as require_react, v as require_jsx_runtime } from "../_libs/@tanstack/react-router+[...].mjs";
-import { n as TSS_SERVER_FUNCTION, r as getServerFnById, t as createServerFn } from "./ssr.mjs";
+import { a as getServerFnById, i as TSS_SERVER_FUNCTION, r as createServerFn, s as __exportAll } from "./ssr.mjs";
+import { t as authMiddleware } from "./middleware-CIWj3S0M.mjs";
+import { a as getGalaxy, c as jumpFuelCost, i as economyLabel, n as HOME_SYSTEM_ID, o as getSystem, r as combatRank, s as governmentLabel, t as COMMODITY_IDS, u as systemDistance } from "./galaxy-CtkES_h3.mjs";
 import { t as create } from "../_libs/zustand.mjs";
-import { a as string, i as object, r as number, t as _enum } from "../_libs/zod.mjs";
 import { n as clsx, t as cva } from "../_libs/class-variance-authority+clsx.mjs";
 import { t as twMerge } from "../_libs/tailwind-merge.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-C8RGMmzr.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-DIF9yVib.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
-var __defProp = Object.defineProperty;
-var __exportAll = (all, no_symbols) => {
-	let target = {};
-	for (var name in all) __defProp(target, name, {
-		get: all[name],
-		enumerable: true
-	});
-	if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
-	return target;
-};
 /** Procedural Web Audio SFX — unlock on the first gesture. */
 var ctx = null;
 var master = null;
 var sfx = null;
 var muted = false;
+var music = null;
+var musicTimer = null;
+var scene = "title";
+var engineOsc = null;
+var engineGain = null;
 function ac() {
 	if (typeof window === "undefined") return null;
 	if (!ctx) {
 		ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
 		master = ctx.createGain();
 		sfx = ctx.createGain();
+		music = ctx.createGain();
 		sfx.gain.value = .28;
 		master.gain.value = muted ? 0 : .8;
 		sfx.connect(master);
+		music.gain.value = .08;
+		music.connect(master);
 		master.connect(ctx.destination);
 	}
 	return ctx;
@@ -45,6 +44,80 @@ function unlockAudio() {
 function setMuted(v) {
 	muted = v;
 	if (master && ctx) master.gain.setTargetAtTime(v ? 0 : .8, ctx.currentTime, .03);
+}
+function musicNote(freq, duration, offset = 0) {
+	const c = ac();
+	if (!c || !music || c.state !== "running") return;
+	const osc = c.createOscillator();
+	const gain = c.createGain();
+	const start = c.currentTime + offset;
+	osc.type = "sawtooth";
+	osc.frequency.setValueAtTime(freq, start);
+	gain.gain.setValueAtTime(1e-4, start);
+	gain.gain.exponentialRampToValueAtTime(.11, start + .04);
+	gain.gain.exponentialRampToValueAtTime(1e-4, start + duration);
+	osc.connect(gain);
+	gain.connect(music);
+	osc.start(start);
+	osc.stop(start + duration + .03);
+}
+function scheduleSynthwaveBar() {
+	if (scene !== "space" || !ctx) return;
+	[
+		55,
+		55,
+		65.41,
+		73.42,
+		55,
+		55,
+		82.41,
+		73.42
+	].forEach((note, index) => musicNote(note, .24, index * .28));
+	[
+		220,
+		277.18,
+		329.63
+	].forEach((note, index) => musicNote(note, 1.8, index * .56));
+}
+function setAudioScene(next) {
+	scene = next;
+	if (!ac()) return;
+	if (musicTimer !== null) {
+		window.clearInterval(musicTimer);
+		musicTimer = null;
+	}
+	if (next === "space") {
+		scheduleSynthwaveBar();
+		musicTimer = window.setInterval(scheduleSynthwaveBar, 2200);
+	} else if (next === "station") {
+		musicNote(110, 1.8);
+		musicNote(164.81, 1.8, .5);
+		musicNote(220, 1.8, 1);
+		musicTimer = window.setInterval(() => {
+			if (scene === "station") {
+				musicNote(110, 1.8);
+				musicNote(164.81, 1.8, .5);
+				musicNote(220, 1.8, 1);
+			}
+		}, 2600);
+	}
+}
+function setEngineLevel(level) {
+	const c = ac();
+	if (!c || !sfx) return;
+	const amount = Math.max(0, Math.min(1, level));
+	if (!engineOsc) {
+		engineOsc = c.createOscillator();
+		engineGain = c.createGain();
+		engineOsc.type = "sawtooth";
+		engineOsc.frequency.value = 48;
+		engineGain.gain.value = 1e-4;
+		engineOsc.connect(engineGain);
+		engineGain.connect(sfx);
+		engineOsc.start();
+	}
+	engineOsc.frequency.setTargetAtTime(42 + amount * 44, c.currentTime, .06);
+	engineGain?.gain.setTargetAtTime(amount > .01 ? amount * .055 : 1e-4, c.currentTime, .08);
 }
 function isMuted() {
 	return muted;
@@ -71,6 +144,9 @@ function beep(freq, dur, type, gain = .2, slide = 0) {
 }
 var sfxPlay = {
 	laser: () => beep(920, .07, "square", .12, -400),
+	mining: () => beep(260, .18, "sine", .12, 180),
+	scan: () => beep(720, .24, "triangle", .1, 320),
+	salvage: () => beep(390, .2, "sine", .12, -120),
 	hit: () => beep(180, .14, "sawtooth", .18, -80),
 	hull: () => beep(90, .22, "square", .22, -40),
 	dock: () => beep(420, .28, "triangle", .16, 180),
@@ -78,7 +154,10 @@ var sfxPlay = {
 	scoop: () => beep(640, .12, "sine", .14, 200),
 	ui: () => beep(520, .05, "square", .08, 0),
 	warn: () => beep(240, .18, "square", .14, 0),
-	kill: () => beep(310, .35, "triangle", .16, -220)
+	kill: () => beep(310, .35, "triangle", .16, -220),
+	bomb: () => beep(120, .5, "sawtooth", .24, 260),
+	chaff: () => beep(1400, .16, "square", .08, -800),
+	station: () => beep(92, .5, "sine", .12, 22)
 };
 if (typeof window !== "undefined") {
 	window.addEventListener("pointerdown", unlockAudio, { once: true });
@@ -87,10 +166,344 @@ if (typeof window !== "undefined") {
 		if (!document.hidden) unlockAudio();
 	});
 }
+var MODULES = {
+	pulse_laser: {
+		id: "pulse_laser",
+		name: "Pulse Laser",
+		slot: "hardpoint",
+		size: "small",
+		price: 450,
+		description: "Reliable close-range weapon.",
+		laser: 4
+	},
+	beam_laser: {
+		id: "beam_laser",
+		name: "Beam Laser",
+		slot: "hardpoint",
+		size: "medium",
+		price: 1650,
+		description: "High-output energy weapon with stronger sustained fire.",
+		laser: 9
+	},
+	multicannon: {
+		id: "multicannon",
+		name: "Multi-Cannon",
+		slot: "hardpoint",
+		size: "medium",
+		price: 1450,
+		description: "Kinetic weapon package for reliable hull damage.",
+		laser: 7
+	},
+	missile_rack: {
+		id: "missile_rack",
+		name: "Missile Rack",
+		slot: "hardpoint",
+		size: "medium",
+		price: 2200,
+		description: "Lock-on ordnance for heavy burst damage.",
+		laser: 13
+	},
+	mine_launcher: {
+		id: "mine_launcher",
+		name: "Mine Launcher",
+		slot: "hardpoint",
+		size: "small",
+		price: 950,
+		description: "Deploys proximity mines for area denial.",
+		laser: 8
+	},
+	mining_laser: {
+		id: "mining_laser",
+		name: "Mining Laser",
+		slot: "hardpoint",
+		size: "small",
+		price: 700,
+		description: "Industrial beam tuned for asteroid work.",
+		laser: 2
+	},
+	prospector_laser: {
+		id: "prospector_laser",
+		name: "Prospector Laser",
+		slot: "hardpoint",
+		size: "small",
+		price: 820,
+		description: "Focused pulse laser for dense vein mapping and fast ore validation.",
+		laser: 3
+	},
+	excavator_laser: {
+		id: "excavator_laser",
+		name: "Excavator Laser",
+		slot: "hardpoint",
+		size: "medium",
+		price: 1550,
+		description: "Heavy-duty mining beam for larger asteroid clusters and deep strip operations.",
+		laser: 6
+	},
+	plasma_bomb: {
+		id: "plasma_bomb",
+		name: "Plasma Bomb",
+		slot: "hardpoint",
+		size: "medium",
+		price: 2100,
+		description: "High-yield ordnance for broad blast damage against shielded targets.",
+		laser: 16
+	},
+	fragmentation_bomb: {
+		id: "fragmentation_bomb",
+		name: "Fragmentation Bomb",
+		slot: "hardpoint",
+		size: "small",
+		price: 1350,
+		description: "Dense fragmentation payload for close-range anti-hull burst damage.",
+		laser: 10
+	},
+	ore_limpet: {
+		id: "ore_limpet",
+		name: "Ore Limpet",
+		slot: "utility",
+		size: "any",
+		price: 420,
+		description: "Autonomous collector for local ore retrieval and haul assistance.",
+		cargo: 2
+	},
+	repair_limpet: {
+		id: "repair_limpet",
+		name: "Repair Limpet",
+		slot: "utility",
+		size: "any",
+		price: 610,
+		description: "Deploys micro-repair drones to preserve hull integrity in the field.",
+		armor: 4
+	},
+	scanner_limpet: {
+		id: "scanner_limpet",
+		name: "Scanner Limpet",
+		slot: "utility",
+		size: "any",
+		price: 550,
+		description: "Probe drone that expands scanning range and local survey detail.",
+		scan: 2
+	},
+	discovery_scanner: {
+		id: "discovery_scanner",
+		name: "Discovery Scanner",
+		slot: "internal",
+		size: "any",
+		price: 500,
+		description: "Reveals system bodies and starts exploration scans.",
+		scan: 1
+	},
+	shield_booster: {
+		id: "shield_booster",
+		name: "Shield Booster",
+		slot: "utility",
+		size: "any",
+		price: 900,
+		description: "Projects additional shield capacity.",
+		shields: 14
+	},
+	shield_array: {
+		id: "shield_array",
+		name: "Shield Array",
+		slot: "internal",
+		size: "any",
+		price: 1480,
+		description: "Reinforced regeneration field giving stronger shield reserves.",
+		shields: 22
+	},
+	armor_plating: {
+		id: "armor_plating",
+		name: "Armor Plating",
+		slot: "internal",
+		size: "any",
+		price: 1120,
+		description: "Adds layered hull reinforcement for more survivability.",
+		armor: 16
+	},
+	cooling_springs: {
+		id: "cooling_springs",
+		name: "Cooling Springs",
+		slot: "internal",
+		size: "any",
+		price: 980,
+		description: "Improves thermal management and reduced heat buildup from repeated fire.",
+		cooling: 8
+	},
+	stealth_mesh: {
+		id: "stealth_mesh",
+		name: "Stealth Mesh",
+		slot: "internal",
+		size: "any",
+		price: 1350,
+		description: "Diffuse sensor signature for cleaner covert operations.",
+		stealth: 12
+	},
+	energy_grid: {
+		id: "energy_grid",
+		name: "Energy Grid",
+		slot: "utility",
+		size: "any",
+		price: 1260,
+		description: "Boosted power routing for stronger module output and better energy economy.",
+		power: 10
+	},
+	chaff_launcher: {
+		id: "chaff_launcher",
+		name: "Chaff Launcher",
+		slot: "utility",
+		size: "any",
+		price: 760,
+		description: "Deploys decoys to break missile locks and distract hostile scanners.",
+		chaff: 1
+	},
+	fuel_scoop: {
+		id: "fuel_scoop",
+		name: "Fuel Scoop",
+		slot: "utility",
+		size: "any",
+		price: 700,
+		description: "Improves long-range jump efficiency.",
+		jump: 1.5
+	},
+	cargo_rack: {
+		id: "cargo_rack",
+		name: "Cargo Rack",
+		slot: "internal",
+		size: "any",
+		price: 600,
+		description: "Adds four tonnes of protected capacity.",
+		cargo: 4
+	},
+	detailed_scanner: {
+		id: "detailed_scanner",
+		name: "Detailed Scanner",
+		slot: "internal",
+		size: "any",
+		price: 800,
+		description: "Maps bodies and reveals exploration data.",
+		jump: .5,
+		scan: 2
+	},
+	surface_analyzer: {
+		id: "surface_analyzer",
+		name: "Surface Analyzer",
+		slot: "internal",
+		size: "any",
+		price: 1200,
+		description: "Detailed planetary analysis increases data payouts.",
+		scan: 3
+	},
+	docking_computer: {
+		id: "docking_computer",
+		name: "Docking Computer",
+		slot: "utility",
+		size: "any",
+		price: 1e3,
+		description: "Extends safe docking approach range.",
+		docking: true
+	},
+	ecm_suite: {
+		id: "ecm_suite",
+		name: "ECM Suite",
+		slot: "utility",
+		size: "any",
+		price: 1100,
+		description: "Breaks hostile missile locks and disrupts guidance.",
+		capability: "ecm"
+	},
+	eccm_suite: {
+		id: "eccm_suite",
+		name: "ECCM Suite",
+		slot: "utility",
+		size: "any",
+		price: 1350,
+		description: "Hardens sensors against electronic countermeasures.",
+		capability: "eccm"
+	},
+	hacking_suite: {
+		id: "hacking_suite",
+		name: "Hacking Suite",
+		slot: "utility",
+		size: "any",
+		price: 1600,
+		description: "Interfaces with locked beacons, wrecks, and illicit cargo systems.",
+		capability: "hacking"
+	},
+	ore_processor: {
+		id: "ore_processor",
+		name: "Ore Processor",
+		slot: "internal",
+		size: "any",
+		price: 1180,
+		description: "Refines raw ore into better salvage value during industrial runs.",
+		processor: 3
+	},
+	refinery_unit: {
+		id: "refinery_unit",
+		name: "Refinery Unit",
+		slot: "internal",
+		size: "any",
+		price: 1460,
+		description: "Adds dedicated refinement throughput for economical material processing.",
+		refinery: 4
+	},
+	combat_drone: {
+		id: "combat_drone",
+		name: "Combat Drone",
+		slot: "utility",
+		size: "any",
+		price: 1680,
+		description: "Autonomous support drone that adds attack pressure to hostile contacts.",
+		laser: 5,
+		drone: "combat"
+	},
+	mining_drone: {
+		id: "mining_drone",
+		name: "Mining Drone",
+		slot: "utility",
+		size: "any",
+		price: 1460,
+		description: "Drone swarms increase mining yield and harvesting efficiency.",
+		laser: 2,
+		drone: "mining"
+	},
+	scanner_drone: {
+		id: "scanner_drone",
+		name: "Scanner Drone",
+		slot: "utility",
+		size: "any",
+		price: 1320,
+		description: "Autonomous probe drone for deeper survey sweeps and anomaly detection.",
+		scan: 3,
+		drone: "scanner"
+	},
+	salvage_beam: {
+		id: "salvage_beam",
+		name: "Salvage Beam",
+		slot: "utility",
+		size: "any",
+		price: 950,
+		description: "Tractors useful material from wrecked craft.",
+		cargo: 2
+	}
+};
 var SHIPS = {
 	sidewinder: {
 		id: "sidewinder",
 		name: "Sidewinder",
+		class: "scout",
+		roles: ["courier", "combat"],
+		hardpoints: [{
+			id: "S1",
+			size: "small",
+			mount: "fixed"
+		}, {
+			id: "S2",
+			size: "small",
+			mount: "fixed"
+		}],
+		utilitySlots: 1,
+		internalSlots: 3,
 		cargo: 8,
 		maxSpeed: 78,
 		shields: 42,
@@ -104,6 +517,32 @@ var SHIPS = {
 	cobra: {
 		id: "cobra",
 		name: "Cobra Mk III",
+		class: "multipurpose",
+		roles: ["courier", "combat"],
+		hardpoints: [
+			{
+				id: "S1",
+				size: "small",
+				mount: "fixed"
+			},
+			{
+				id: "S2",
+				size: "small",
+				mount: "fixed"
+			},
+			{
+				id: "M1",
+				size: "medium",
+				mount: "fixed"
+			},
+			{
+				id: "M2",
+				size: "medium",
+				mount: "fixed"
+			}
+		],
+		utilitySlots: 2,
+		internalSlots: 5,
 		cargo: 20,
 		maxSpeed: 94,
 		shields: 72,
@@ -117,6 +556,23 @@ var SHIPS = {
 	asp: {
 		id: "asp",
 		name: "Asp Explorer",
+		class: "explorer",
+		roles: [
+			"exploration",
+			"courier",
+			"combat"
+		],
+		hardpoints: [{
+			id: "M1",
+			size: "medium",
+			mount: "fixed"
+		}, {
+			id: "M2",
+			size: "medium",
+			mount: "fixed"
+		}],
+		utilitySlots: 2,
+		internalSlots: 6,
 		cargo: 16,
 		maxSpeed: 108,
 		shields: 88,
@@ -133,8 +589,62 @@ var SHIP_ORDER = [
 	"cobra",
 	"asp"
 ];
-function cargoCapacity(shipId, upgraded) {
-	return SHIPS[shipId].cargo + (upgraded ? 6 : 0);
+var SHIP_CLASS_LABELS = {
+	scout: "Scout",
+	multipurpose: "Multipurpose",
+	explorer: "Explorer"
+};
+var SHIP_ROLE_LABELS = {
+	courier: "Courier",
+	combat: "Combat",
+	exploration: "Exploration"
+};
+function cargoCapacity(shipId, upgraded, loadout = {}) {
+	return shipStats(shipId, upgraded, loadout).cargo;
+}
+function shipStats(shipId, cargoUpgrade, loadout = {}) {
+	const stats = { ...SHIPS[shipId] };
+	for (const moduleId of Object.values(loadout)) {
+		const module = MODULES[moduleId];
+		if (!module) continue;
+		stats.laser += module.laser ?? 0;
+		stats.shields += module.shields ?? 0;
+		stats.hull += module.armor ?? 0;
+		stats.laser += module.power ?? 0;
+		stats.jump += module.jump ?? 0;
+		stats.cargo += module.cargo ?? 0;
+	}
+	if (cargoUpgrade) stats.cargo += 6;
+	return stats;
+}
+var HARDPOINT_WEAPONS = [
+	"pulse_laser",
+	"beam_laser",
+	"multicannon",
+	"missile_rack",
+	"mine_launcher",
+	"mining_laser",
+	"prospector_laser",
+	"excavator_laser",
+	"plasma_bomb",
+	"fragmentation_bomb"
+];
+function fittedWeapon(loadout) {
+	for (const id of HARDPOINT_WEAPONS) if (Object.values(loadout).includes(id)) return id;
+	return null;
+}
+function moduleCount(loadout, moduleId) {
+	return Object.values(loadout).filter((id) => id === moduleId).length;
+}
+function slotAccepts(slot, moduleId) {
+	const module = MODULES[moduleId];
+	return !!module && (slot.startsWith("S") || slot.startsWith("M") ? module.slot === "hardpoint" : slot.startsWith("U") ? module.slot === "utility" : module.slot === "internal") && (module.size === "any" || slot.startsWith(module.size[0].toUpperCase()));
+}
+function hasModule(loadout, moduleId) {
+	return Object.values(loadout).includes(moduleId);
+}
+function moduleScanStrength(loadout) {
+	return Object.values(loadout).reduce((strength, moduleId) => strength + (MODULES[moduleId]?.scan ?? 0), 0);
 }
 function cargoUsed(cargo) {
 	let n = 0;
@@ -158,13 +668,30 @@ function defaultSave(name = "JAMESON") {
 		kills: 0,
 		wanted: false,
 		docked: false,
-		cargoUpgrade: false
+		cargoUpgrade: false,
+		loadout: { S1: "pulse_laser" },
+		exploredSystems: {},
+		salvageRecovered: 0,
+		explorationData: 0,
+		activeMission: null,
+		completedMissions: 0
 	};
 }
 function migrate(raw) {
+	const base = defaultSave(raw.name);
+	const activeMission = raw.activeMission ? {
+		...raw.activeMission,
+		requirement: raw.activeMission.requirement ?? raw.activeMission.quantity,
+		progressAtAccept: raw.activeMission.progressAtAccept ?? 0
+	} : null;
 	return {
-		...defaultSave(raw.name),
+		...base,
 		...raw,
+		activeMission,
+		loadout: raw.loadout ?? base.loadout,
+		exploredSystems: raw.exploredSystems ?? base.exploredSystems,
+		salvageRecovered: raw.salvageRecovered ?? base.salvageRecovered,
+		explorationData: raw.explorationData ?? base.explorationData,
 		version: 1
 	};
 }
@@ -206,13 +733,14 @@ function bootSave() {
 }
 var useGameStore = create((set, get) => {
 	const save = bootSave();
-	const def = SHIPS[save.shipId];
+	const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
 	return {
 		mode: "title",
 		paused: false,
 		save,
 		speed: 0,
 		throttle: 0,
+		dampeners: true,
 		yaw: 0,
 		pitch: 0,
 		shields: save.shields,
@@ -246,7 +774,7 @@ var useGameStore = create((set, get) => {
 			if (persist) writeSave(next);
 		},
 		replaceSave: (next, persist = true) => {
-			const defn = SHIPS[next.shipId];
+			const defn = shipStats(next.shipId, next.cargoUpgrade, next.loadout);
 			set({
 				save: next,
 				shields: next.shields,
@@ -333,6 +861,97 @@ function Button({ className, variant, size, ...props }) {
 		...props
 	});
 }
+var TTS_STORAGE_KEY = "helion.tts.enabled";
+var enabled = true;
+var initialized = false;
+var voices = [];
+function speech() {
+	if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+	return window.speechSynthesis;
+}
+function refreshVoices() {
+	const synth = speech();
+	if (!synth) return;
+	voices = synth.getVoices();
+	initialized = true;
+}
+function initializeTTS() {
+	const synth = speech();
+	if (!synth) return false;
+	if (!initialized) {
+		refreshVoices();
+		synth.addEventListener("voiceschanged", refreshVoices);
+		try {
+			enabled = window.localStorage.getItem(TTS_STORAGE_KEY) !== "false";
+		} catch {
+			enabled = true;
+		}
+	}
+	return true;
+}
+function setTTSEnabled(value) {
+	enabled = value;
+	try {
+		window.localStorage.setItem(TTS_STORAGE_KEY, String(value));
+	} catch {}
+	if (!value) speech()?.cancel();
+}
+function isTTSEnabled() {
+	return enabled;
+}
+function stopTTS() {
+	speech()?.cancel();
+}
+function speakTTS(text) {
+	const synth = speech();
+	if (!synth || !enabled || !text.trim()) return;
+	initializeTTS();
+	synth.cancel();
+	const utterance = new SpeechSynthesisUtterance(text.replace(/\s+—\s+/g, ". "));
+	utterance.lang = "en-US";
+	utterance.rate = .92;
+	utterance.pitch = .82;
+	utterance.volume = .9;
+	const voice = voices.find((candidate) => candidate.lang.toLowerCase() === "en-us") ?? voices.find((candidate) => candidate.lang.toLowerCase().startsWith("en"));
+	if (voice) utterance.voice = voice;
+	synth.speak(utterance);
+}
+var commanderProfileSchema = object({
+	commanderName: string().trim().min(2).max(16).default("JAMESON"),
+	allegiance: _enum([
+		"independent",
+		"empire",
+		"federation",
+		"pirate",
+		"union"
+	]).default("independent"),
+	faction: string().trim().min(2).max(32).default("free-traders"),
+	standing: number().int().min(-1e3).max(1e4).default(0),
+	experience: number().int().min(0).max(1e6).default(0),
+	credits: number().int().min(0).default(1500),
+	shipId: string().trim().min(2).max(32).default("sidewinder"),
+	inventory: record(string(), number().int().nonnegative()).default({}),
+	reputation: record(string(), number().int()).default({}),
+	notes: string().max(250).default(""),
+	saveState: record(string(), any()).default({})
+});
+function defaultCommanderProfile(name = "JAMESON") {
+	return {
+		commanderName: name.trim().slice(0, 16).toUpperCase() || "JAMESON",
+		allegiance: "independent",
+		faction: "free-traders",
+		standing: 0,
+		experience: 0,
+		credits: 1500,
+		shipId: "sidewinder",
+		inventory: {},
+		reputation: {},
+		notes: "",
+		saveState: {}
+	};
+}
+var loadCommanderProfile = createServerFn({ method: "GET" }).middleware([authMiddleware]).handler(createSsrRpc("4f559e749a2879a5035d393bcb79821ea7ce89b474d42d6ba75b4581b4afc9b1"));
+var saveCommanderProfile = createServerFn({ method: "POST" }).middleware([authMiddleware]).validator(commanderProfileSchema).handler(createSsrRpc("d1e14feff2ba7a3f7ad1ce277b3acfb9b00a201206c37d5a018fdd3dadf144e8"));
 function GalaxyChart({ engine }) {
 	const save = useGameStore((s) => s.save);
 	const jumpLocked = useGameStore((s) => s.jumpLocked);
@@ -340,7 +959,7 @@ function GalaxyChart({ engine }) {
 	const systems = (0, import_react.useMemo)(() => getGalaxy(), []);
 	const here = getSystem(save.systemId);
 	const selected = getSystem(jumpLocked ?? save.systemId);
-	const range = SHIPS[save.shipId].jump;
+	const range = shipStats(save.shipId, save.cargoUpgrade, save.loadout).jump;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "absolute inset-0 z-20 flex flex-col bg-bg/92 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-8",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -524,6 +1143,7 @@ function Scanner({ contacts }) {
 function Hud() {
 	const speed = useGameStore((s) => s.speed);
 	const throttle = useGameStore((s) => s.throttle);
+	const dampeners = useGameStore((s) => s.dampeners);
 	const shields = useGameStore((s) => s.shields);
 	const hull = useGameStore((s) => s.hull);
 	const maxShields = useGameStore((s) => s.maxShields);
@@ -540,9 +1160,9 @@ function Hud() {
 	const jumpCharge = useGameStore((s) => s.jumpCharge);
 	const laserHeat = useGameStore((s) => s.laserHeat);
 	const sys = getSystem(save.systemId);
-	const def = SHIPS[save.shipId];
+	const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
 	const used = cargoUsed(save.cargo);
-	const cap = cargoCapacity(save.shipId, save.cargoUpgrade);
+	const cap = cargoCapacity(save.shipId, save.cargoUpgrade, save.loadout);
 	const dest = jumpLocked ? getSystem(jumpLocked) : null;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "pointer-events-none absolute inset-0 font-mono text-[11px] tracking-wide text-fg",
@@ -574,22 +1194,35 @@ function Hud() {
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "absolute right-4 top-4 text-right sm:right-6 sm:top-6",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-					className: "text-accent tabular-nums",
-					children: [save.credits.toLocaleString(), " CR"]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-					className: "text-muted",
-					children: [
-						"FUEL ",
-						save.fuel.toFixed(1),
-						"/",
-						def.tank,
-						" · HOLD ",
-						used,
-						"/",
-						cap
-					]
-				})]
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "text-accent tabular-nums",
+						children: [save.credits.toLocaleString(), " CR"]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "text-muted",
+						children: [
+							"FUEL ",
+							save.fuel.toFixed(1),
+							"/",
+							def.tank,
+							" · HOLD ",
+							used,
+							"/",
+							cap
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "mt-1 max-w-56 text-[9px] tracking-[0.12em] text-muted",
+						children: [
+							hasModule(save.loadout, "ecm_suite") ? "ECM " : "",
+							hasModule(save.loadout, "eccm_suite") ? "ECCM " : "",
+							hasModule(save.loadout, "hacking_suite") ? "HACK " : "",
+							hasModule(save.loadout, "missile_rack") ? "MISSILES " : "",
+							hasModule(save.loadout, "mine_launcher") ? "MINES" : ""
+						]
+					})
+				]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "absolute left-1/2 top-[18%] w-[min(90%,28rem)] -translate-x-1/2 text-center",
@@ -607,7 +1240,8 @@ function Hud() {
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "flex justify-between text-muted",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: ["SPD ", speed.toFixed(0)] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-							"THR ",
+							dampeners ? "DAMP" : "DRIFT",
+							" · THR ",
 							(throttle * 100).toFixed(0),
 							"%"
 						] })]
@@ -691,7 +1325,7 @@ function Hud() {
 						}) : null,
 						canDock ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-accent",
-							children: "DOCKING COMPUTER"
+							children: hasModule(save.loadout, "docking_computer") ? "DOCKING COMPUTER" : "STATION IN RANGE"
 						}) : null
 					]
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -701,10 +1335,84 @@ function Hud() {
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 				className: "absolute bottom-3 left-1/2 hidden -translate-x-1/2 text-[10px] text-muted md:block",
-				children: "W/S throttle · A/D yaw · R/F pitch · Q/E roll · SPACE fire · H dock · M chart · J jump"
+				children: "W/S throttle · V dampeners · A/D yaw · R/F pitch · Q/E roll · SPACE fire · B bomb · C chaff · K mine · L scan · X salvage · H dock · M chart · J jump"
 			})
 		]
 	});
+}
+var CARGO_BY_ECONOMY = {
+	agri: "food",
+	industrial: "machinery",
+	extraction: "minerals",
+	refinery: "alloys",
+	hightech: "computers",
+	tourism: "luxuries",
+	military: "medicine",
+	colony: "textiles"
+};
+function missionContracts(systemId) {
+	const origin = getSystem(systemId);
+	if (!origin) return [];
+	const destinations = getGalaxy().filter((candidate) => candidate.id !== systemId && systemDistance(origin, candidate) <= 12).sort((a, b) => systemDistance(origin, a) - systemDistance(origin, b)).slice(0, 3);
+	const courierContracts = destinations.map((destination, index) => ({
+		id: `courier:${origin.id}:${destination.id}`,
+		type: "courier",
+		originId: origin.id,
+		destinationId: destination.id,
+		cargo: CARGO_BY_ECONOMY[origin.economy],
+		quantity: index === 0 ? 2 : 1,
+		reward: Math.round(320 + systemDistance(origin, destination) * 95 + index * 180),
+		acceptedAt: 0,
+		requirement: index === 0 ? 2 : 1,
+		progressAtAccept: 0
+	}));
+	const miningTarget = origin.economy === "extraction" ? 4 : 2;
+	const explorationTarget = destinations[0];
+	return [
+		...courierContracts,
+		{
+			id: `mining:${origin.id}`,
+			type: "mining",
+			originId: origin.id,
+			destinationId: origin.id,
+			cargo: "minerals",
+			quantity: miningTarget,
+			reward: 540 + miningTarget * 110,
+			acceptedAt: 0,
+			requirement: miningTarget,
+			progressAtAccept: 0
+		},
+		...explorationTarget ? [{
+			id: `exploration:${origin.id}:${explorationTarget.id}`,
+			type: "exploration",
+			originId: origin.id,
+			destinationId: explorationTarget.id,
+			cargo: "computers",
+			quantity: 1,
+			reward: Math.round(760 + systemDistance(origin, explorationTarget) * 125),
+			acceptedAt: 0,
+			requirement: 1,
+			progressAtAccept: 0
+		}] : [],
+		{
+			id: `salvage:${origin.id}`,
+			type: "salvage",
+			originId: origin.id,
+			destinationId: origin.id,
+			cargo: "alloys",
+			quantity: 2,
+			reward: 680,
+			acceptedAt: 0,
+			requirement: 2,
+			progressAtAccept: 0
+		}
+	];
+}
+function missionDestinationName(mission) {
+	return getSystem(mission.destinationId)?.name ?? mission.destinationId;
+}
+function missionLabel(type) {
+	return type === "courier" ? "Courier" : type === "mining" ? "Mining" : type === "exploration" ? "Exploration" : "Salvage";
 }
 function StationDock({ engine }) {
 	const save = useGameStore((s) => s.save);
@@ -716,9 +1424,11 @@ function StationDock({ engine }) {
 	const [busy, setBusy] = (0, import_react.useState)(false);
 	const [err, setErr] = (0, import_react.useState)("");
 	const sys = getSystem(save.systemId);
-	const def = SHIPS[save.shipId];
+	const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
 	const used = cargoUsed(save.cargo);
-	const cap = cargoCapacity(save.shipId, save.cargoUpgrade);
+	const cap = cargoCapacity(save.shipId, save.cargoUpgrade, save.loadout);
+	const contracts = missionContracts(save.systemId);
+	const activeMission = save.activeMission;
 	(0, import_react.useEffect)(() => {
 		let live = true;
 		Promise.all([getMarketFn({ data: { systemId: save.systemId } }), getBoardFn({ data: { systemId: save.systemId } })]).then(([m, b]) => {
@@ -819,7 +1529,7 @@ function StationDock({ engine }) {
 			setErr("Insufficient credits");
 			return;
 		}
-		const nextCap = cargoCapacity(id, save.cargoUpgrade);
+		const nextCap = cargoCapacity(id, save.cargoUpgrade, {});
 		if (used > nextCap) {
 			setErr("Dump cargo before transferring hull");
 			return;
@@ -828,7 +1538,8 @@ function StationDock({ engine }) {
 			shipId: id,
 			credits: save.credits - cost,
 			hull: next.hull,
-			shields: next.shields
+			shields: next.shields,
+			loadout: {}
 		});
 		useGameStore.getState().setFlight({
 			hull: next.hull,
@@ -849,6 +1560,65 @@ function StationDock({ engine }) {
 			cargoUpgrade: true
 		});
 		sfxPlay.ui();
+	}
+	function fitModule(slot, moduleId) {
+		if (moduleId === save.loadout[slot]) return;
+		const nextLoadout = { ...save.loadout };
+		if (!moduleId) {
+			delete nextLoadout[slot];
+			useGameStore.getState().patchSave({ loadout: nextLoadout });
+			sfxPlay.ui();
+			return;
+		}
+		const module = MODULES[moduleId];
+		if (!slotAccepts(slot, moduleId)) {
+			setErr(`${module.name} does not fit ${slot}`);
+			sfxPlay.warn();
+			return;
+		}
+		if (save.credits < module.price) {
+			setErr(`Need ${module.price.toLocaleString()} CR`);
+			sfxPlay.warn();
+			return;
+		}
+		nextLoadout[slot] = moduleId;
+		const nextStats = shipStats(save.shipId, save.cargoUpgrade, nextLoadout);
+		if (cargoUsed(save.cargo) > nextStats.cargo) {
+			setErr("Dump cargo before fitting that module");
+			return;
+		}
+		useGameStore.getState().patchSave({
+			credits: save.credits - module.price,
+			loadout: nextLoadout,
+			hull: Math.min(save.hull, nextStats.hull),
+			shields: Math.min(save.shields, nextStats.shields)
+		});
+		useGameStore.getState().setFlight({
+			maxHull: nextStats.hull,
+			maxShields: nextStats.shields
+		});
+		setErr("");
+		sfxPlay.ui();
+	}
+	function slotOptions(slot) {
+		return Object.values(MODULES).filter((module) => slotAccepts(slot, module.id));
+	}
+	function acceptMission(missionId) {
+		const mission = contracts.find((candidate) => candidate.id === missionId);
+		if (!mission || activeMission) return;
+		useGameStore.getState().patchSave({ activeMission: {
+			...mission,
+			acceptedAt: Date.now(),
+			progressAtAccept: mission.type === "exploration" ? save.explorationData : mission.type === "salvage" ? save.salvageRecovered : 0
+		} });
+		useGameStore.getState().setFlash(`CONTRACT ACCEPTED  —  DELIVER TO ${missionDestinationName(mission).toUpperCase()}`);
+		sfxPlay.ui();
+	}
+	function abandonMission() {
+		if (!activeMission) return;
+		useGameStore.getState().patchSave({ activeMission: null });
+		useGameStore.getState().setFlash("CONTRACT ABANDONED");
+		sfxPlay.warn();
 	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "absolute inset-0 z-20 flex flex-col bg-bg/90 pt-[max(0.75rem,env(safe-area-inset-top))]",
@@ -981,103 +1751,308 @@ function StationDock({ engine }) {
 					}) : null,
 					tab === "yard" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "grid gap-3 sm:grid-cols-2",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-							className: "rounded-xl border border-border bg-surface p-4",
-							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
-									className: "font-display text-lg",
-									children: "Services"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-									className: "mt-2 font-mono text-xs text-muted",
-									children: "Repair hull/shields · Refuel from station hydrogen"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "mt-4 flex flex-wrap gap-2",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
-											variant: "quiet",
-											onClick: repair,
-											children: "Repair"
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
-											variant: "quiet",
-											onClick: refuel,
-											children: "Refuel"
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
-											variant: "quiet",
-											disabled: save.cargoUpgrade,
-											onClick: buyCargoUpgrade,
-											children: save.cargoUpgrade ? "Hold expanded" : "Expand hold 2,400 CR"
-										})
-									]
-								})
-							]
-						}), SHIP_ORDER.map((id) => {
-							const s = SHIPS[id];
-							const owned = id === save.shipId;
-							const tradeIn = Math.round(def.price * .55);
-							const cost = Math.max(0, s.price - tradeIn);
-							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 								className: "rounded-xl border border-border bg-surface p-4",
 								children: [
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
 										className: "font-display text-lg",
-										children: s.name
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-										className: "mt-1 font-mono text-xs text-muted",
-										children: [
-											"Hold ",
-											s.cargo,
-											"t · Jump ",
-											s.jump,
-											" ly · Speed ",
-											s.maxSpeed
-										]
+										children: "Services"
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "mt-3 font-mono text-sm text-accent",
-										children: owned ? "Current hull" : cost === 0 ? "Transfer" : `${cost.toLocaleString()} CR`
+										className: "mt-2 font-mono text-xs text-muted",
+										children: "Repair hull/shields · Refuel from station hydrogen"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
-										className: "mt-3",
-										variant: owned ? "ghost" : "primary",
-										disabled: owned,
-										onClick: () => buyShip(id),
-										children: owned ? "Fitted" : "Transfer"
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "mt-4 flex flex-wrap gap-2",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+												variant: "quiet",
+												onClick: repair,
+												children: "Repair"
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+												variant: "quiet",
+												onClick: refuel,
+												children: "Refuel"
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+												variant: "quiet",
+												disabled: save.cargoUpgrade,
+												onClick: buyCargoUpgrade,
+												children: save.cargoUpgrade ? "Hold expanded" : "Expand hold 2,400 CR"
+											})
+										]
 									})
 								]
-							}, id);
-						})]
-					}) : null,
-					tab === "board" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "rounded-xl border border-border bg-surface p-4",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
-								className: "font-display text-lg",
-								children: "GalNet"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-								className: "mt-1 font-mono text-xs text-muted",
-								children: "Shared persistent board. Prices move when anyone trades."
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+								className: "rounded-xl border border-accent/40 bg-surface p-4 sm:col-span-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex flex-wrap items-end justify-between gap-3",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "font-mono text-[10px] tracking-[0.2em] text-accent",
+											children: "OUTFITTING BAY"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
+											className: "mt-1 font-display text-lg",
+											children: "Fit modules"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "mt-1 font-mono text-xs text-muted",
+											children: "Modules are installed into the current hull and persist between launches."
+										})
+									] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "font-mono text-xs text-muted",
+										children: [
+											"Effective laser ",
+											def.laser,
+											" · shields ",
+											def.shields,
+											" · jump ",
+											def.jump.toFixed(1),
+											" ly"
+										]
+									})]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "mt-4 grid gap-3 md:grid-cols-3",
+									children: [
+										...def.hardpoints.map((slot) => ({
+											id: slot.id,
+											label: `${slot.size} hardpoint`
+										})),
+										...Array.from({ length: def.utilitySlots }, (_, i) => ({
+											id: `U${i + 1}`,
+											label: "utility slot"
+										})),
+										...Array.from({ length: def.internalSlots }, (_, i) => ({
+											id: `I${i + 1}`,
+											label: "internal slot"
+										}))
+									].map((slot) => {
+										const fitted = save.loadout[slot.id];
+										return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+											className: "rounded-md border border-border bg-surface-2 p-3",
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+													className: "flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: slot.id }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: slot.label })]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+													value: fitted ?? "",
+													onChange: (event) => fitModule(slot.id, event.target.value),
+													className: "mt-2 h-10 w-full rounded-md border border-border bg-surface px-2 font-mono text-xs text-fg",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+														value: "",
+														children: "Empty"
+													}), slotOptions(slot.id).map((module) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("option", {
+														value: module.id,
+														children: [
+															module.name,
+															" · ",
+															module.price.toLocaleString(),
+															" CR"
+														]
+													}, module.id))]
+												}),
+												fitted ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+													className: "mt-2 block font-mono text-[10px] text-accent",
+													children: MODULES[fitted].description
+												}) : null
+											]
+										}, slot.id);
+									})
+								})]
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
-								className: "mt-4 space-y-2 font-mono text-sm",
-								children: news.length ? news.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
-									className: "border-l border-accent/40 pl-3 text-fg",
-									children: n
-								}, i)) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
-									className: "text-muted",
-									children: "No dispatches yet."
-								})
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-								className: "mt-6 font-mono text-xs text-muted",
-								children: "First run: buy cheap Food here if Helion is agricultural, jump to Zaon, sell, return with Machinery."
+							SHIP_ORDER.map((id) => {
+								const s = SHIPS[id];
+								const owned = id === save.shipId;
+								const tradeIn = Math.round(def.price * .55);
+								const cost = Math.max(0, s.price - tradeIn);
+								return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+									className: "rounded-xl border border-border bg-surface p-4",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
+											className: "font-display text-lg",
+											children: s.name
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-accent",
+											children: [
+												SHIP_CLASS_LABELS[s.class],
+												" · ",
+												s.roles.map((role) => SHIP_ROLE_LABELS[role]).join(" / ")
+											]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "mt-1 font-mono text-xs text-muted",
+											children: [
+												"Hold ",
+												s.cargo,
+												"t · Jump ",
+												s.jump,
+												" ly · Speed ",
+												s.maxSpeed
+											]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "mt-2 font-mono text-[11px] text-muted",
+											children: [
+												"Hardpoints ",
+												s.hardpoints.length,
+												" · Utility ",
+												s.utilitySlots,
+												" · Internal ",
+												s.internalSlots
+											]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "mt-3 font-mono text-sm text-accent",
+											children: owned ? "Current hull" : cost === 0 ? "Transfer" : `${cost.toLocaleString()} CR`
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+											className: "mt-3",
+											variant: owned ? "ghost" : "primary",
+											disabled: owned,
+											onClick: () => buyShip(id),
+											children: owned ? "Fitted" : "Transfer"
+										})
+									]
+								}, id);
 							})
 						]
+					}) : null,
+					tab === "board" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "space-y-3",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+							className: "rounded-xl border border-accent/40 bg-surface p-4",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex items-start justify-between gap-3",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "font-mono text-[10px] tracking-[0.2em] text-accent",
+										children: "CONTRACT BOARD"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
+										className: "mt-1 font-display text-lg",
+										children: "Courier runs"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "mt-1 font-mono text-xs text-muted",
+										children: "Accept courier, mining, exploration, or salvage work and build a career reputation."
+									})
+								] }), activeMission ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+									size: "sm",
+									variant: "ghost",
+									onClick: abandonMission,
+									children: "Abandon"
+								}) : null]
+							}), activeMission ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "mt-4 rounded-md border border-border bg-surface-2 p-3 font-mono text-xs",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-accent",
+										children: ["ACTIVE · ", missionLabel(activeMission.type).toUpperCase()]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "mt-1 text-fg",
+										children: ["Destination: ", missionDestinationName(activeMission)]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "mt-1 text-muted",
+										children: [
+											activeMission.type === "exploration" ? "Scan the destination system" : `Deliver ${activeMission.quantity}t ${activeMission.cargo.toUpperCase()}`,
+											" · ",
+											activeMission.reward.toLocaleString(),
+											" CR"
+										]
+									})
+								]
+							}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "mt-4 grid gap-2",
+								children: [contracts.map((mission) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface-2 p-3",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "font-mono text-xs",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "text-fg",
+											children: [
+												missionLabel(mission.type),
+												" ·",
+												" ",
+												mission.type === "exploration" ? "scan" : `${mission.quantity}t ${mission.cargo.toUpperCase()}`,
+												" → ",
+												missionDestinationName(mission)
+											]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "mt-1 text-muted",
+											children: [
+												mission.reward.toLocaleString(),
+												" CR · ",
+												mission.destinationId === save.systemId ? "Local" : "Standard risk"
+											]
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+										size: "sm",
+										variant: "quiet",
+										onClick: () => acceptMission(mission.id),
+										children: "Accept"
+									})]
+								}, mission.id)), !contracts.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-sm text-muted",
+									children: "No contracts available from this system."
+								}) : null]
+							})]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+							className: "rounded-xl border border-border bg-surface p-4",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
+									className: "font-display text-lg",
+									children: "GalNet"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "mt-1 font-mono text-xs text-muted",
+									children: "Shared persistent board. Prices move when anyone trades."
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
+									className: "mt-4 space-y-2 font-mono text-sm",
+									children: news.length ? news.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+										className: "border-l border-accent/40 pl-3 text-fg",
+										children: n
+									}, i)) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+										className: "text-muted",
+										children: "No dispatches yet."
+									})
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "mt-6 font-mono text-xs text-muted",
+									children: "First run: buy cheap Food here if Helion is agricultural, jump to Zaon, sell, return with Machinery."
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "mt-4 grid gap-2 sm:grid-cols-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "rounded-md border border-border bg-surface-2 p-3 font-mono text-xs",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "text-muted",
+											children: "Exploration data"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "mt-1 text-accent",
+											children: [save.explorationData.toLocaleString(), " CR pending"]
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "rounded-md border border-border bg-surface-2 p-3 font-mono text-xs",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "text-muted",
+											children: "Salvage recovered"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "mt-1 text-accent",
+											children: [save.salvageRecovered, "t alloys"]
+										})]
+									})]
+								})
+							]
+						})]
 					}) : null
 				]
 			}),
@@ -1137,17 +2112,23 @@ function TouchControls({ input, engine }) {
 			e.preventDefault();
 			if (!input) return;
 			if (key === "touchThrust") input.touchThrust = v;
-			else input.touchFire = Boolean(v);
+			else if (key === "touchFire") input.touchFire = Boolean(v);
+			else if (key === "touchMine") input.touchMine = Boolean(v);
+			else input.touchSalvage = Boolean(v);
 		},
 		onPointerUp: () => {
 			if (!input) return;
 			if (key === "touchThrust") input.touchThrust = 0;
-			else input.touchFire = false;
+			else if (key === "touchFire") input.touchFire = false;
+			else if (key === "touchMine") input.touchMine = false;
+			else input.touchSalvage = false;
 		},
 		onPointerCancel: () => {
 			if (!input) return;
 			if (key === "touchThrust") input.touchThrust = 0;
-			else input.touchFire = false;
+			else if (key === "touchFire") input.touchFire = false;
+			else if (key === "touchMine") input.touchMine = false;
+			else input.touchSalvage = false;
 		}
 	});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -1183,6 +2164,16 @@ function TouchControls({ input, engine }) {
 					children: "FIRE"
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					className: "h-12 min-w-14 rounded-md border border-accent/60 bg-surface/80 font-mono text-xs text-accent",
+					...hold("touchMine", true),
+					children: "MINE"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					className: "h-12 min-w-14 rounded-md border border-border bg-surface/80 font-mono text-xs text-fg",
+					...hold("touchSalvage", true),
+					children: "SALVAGE"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 					className: "h-12 min-w-14 rounded-md border border-border bg-surface/80 font-mono text-xs text-fg",
 					onPointerDown: () => {
 						if (canDock) input.touchDock = true;
@@ -1202,22 +2193,102 @@ function TouchControls({ input, engine }) {
 	});
 }
 function HelionApp() {
+	const rootRef = (0, import_react.useRef)(null);
 	const canvasRef = (0, import_react.useRef)(null);
 	const engineRef = (0, import_react.useRef)(null);
 	const [ready, setReady] = (0, import_react.useState)(false);
 	const [name, setName] = (0, import_react.useState)("JAMESON");
+	const [profile, setProfile] = (0, import_react.useState)(() => defaultCommanderProfile("JAMESON"));
+	const [profileSync, setProfileSync] = (0, import_react.useState)("idle");
 	const [hasSave, setHasSave] = (0, import_react.useState)(false);
 	const [muted, setMutedUi] = (0, import_react.useState)(false);
+	const [ttsEnabled, setTtsEnabledUi] = (0, import_react.useState)(true);
+	const [fullscreen, setFullscreen] = (0, import_react.useState)(false);
 	const mode = useGameStore((s) => s.mode);
 	const paused = useGameStore((s) => s.paused);
 	const save = useGameStore((s) => s.save);
+	(0, import_react.useEffect)(() => {
+		setAudioScene(mode === "space" ? "space" : mode === "station" ? "station" : "title");
+	}, [mode]);
+	(0, import_react.useEffect)(() => {
+		initializeTTS();
+		setTtsEnabledUi(isTTSEnabled());
+		return () => stopTTS();
+	}, []);
+	const flash = useGameStore((s) => s.flash);
+	(0, import_react.useEffect)(() => {
+		if (!flash || mode === "title") return;
+		speakTTS(flash.text);
+	}, [flash, mode]);
+	(0, import_react.useEffect)(() => {
+		const onFullscreenChange = () => {
+			setFullscreen(document.fullscreenElement === rootRef.current);
+		};
+		document.addEventListener("fullscreenchange", onFullscreenChange);
+		return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+	}, []);
+	(0, import_react.useEffect)(() => {
+		let cancelled = false;
+		loadCommanderProfile({}).then((nextProfile) => {
+			if (cancelled) return;
+			setProfile(nextProfile);
+			setName(nextProfile.commanderName);
+		}).catch(() => {
+			if (!cancelled) setProfile(defaultCommanderProfile(name));
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+	async function persistProfile(nextName = name, snapshot = save) {
+		setProfileSync("syncing");
+		const payload = {
+			...profile,
+			commanderName: nextName,
+			credits: snapshot.credits,
+			shipId: snapshot.shipId,
+			inventory: snapshot.cargo,
+			reputation: {
+				kills: snapshot.kills,
+				standing: profile.standing,
+				wanted: snapshot.wanted ? 1 : 0,
+				salvaged: snapshot.salvageRecovered,
+				explored: snapshot.explorationData,
+				missions: snapshot.completedMissions
+			},
+			saveState: {
+				systemId: snapshot.systemId,
+				docked: snapshot.docked,
+				cargoUpgrade: snapshot.cargoUpgrade,
+				loadout: snapshot.loadout,
+				hull: snapshot.hull,
+				shields: snapshot.shields
+			}
+		};
+		setProfile(payload);
+		try {
+			const saved = await saveCommanderProfile({ data: payload });
+			setProfile(saved);
+			setName(saved.commanderName);
+			setProfileSync("synced");
+		} catch {
+			setProfileSync("offline");
+		}
+	}
+	(0, import_react.useEffect)(() => {
+		if (mode === "title" || mode === "dead") return;
+		const timer = window.setTimeout(() => {
+			persistProfile(name, save);
+		}, 1200);
+		return () => window.clearTimeout(timer);
+	}, [save, mode]);
 	(0, import_react.useEffect)(() => {
 		setHasSave(!!loadSave());
 		let engine = null;
 		let cancelled = false;
 		const canvas = canvasRef.current;
 		if (!canvas) return;
-		import("./engine-XNc2KR_A.mjs").then(({ HelionEngine }) => {
+		import("./engine-B0FXxEoH.mjs").then(({ HelionEngine }) => {
 			if (cancelled) return;
 			engine = new HelionEngine(canvas);
 			engineRef.current = engine;
@@ -1238,7 +2309,7 @@ function HelionApp() {
 		};
 	}, []);
 	function applySaveToFlight(next) {
-		const def = SHIPS[next.shipId];
+		const def = shipStats(next.shipId, next.cargoUpgrade, next.loadout);
 		useGameStore.getState().replaceSave(next);
 		useGameStore.getState().setFlight({
 			hull: next.hull,
@@ -1249,15 +2320,20 @@ function HelionApp() {
 	}
 	function startNew(cmdr, eng = engineRef.current) {
 		unlockAudio();
-		applySaveToFlight(defaultSave(cmdr));
+		initializeTTS();
+		const next = defaultSave(cmdr);
+		applySaveToFlight(next);
+		persistProfile(cmdr, next);
 		eng?.enterSystem(HOME_SYSTEM_ID, "spawn");
 		useGameStore.getState().setMode("space");
 		useGameStore.getState().setFlash("STATION BEARING MARKED  —  FLY IN, H TO DOCK");
 	}
 	function continueSave() {
 		unlockAudio();
+		initializeTTS();
 		const next = loadSave() ?? defaultSave(name);
 		applySaveToFlight(next);
+		persistProfile(name, next);
 		const eng = engineRef.current;
 		eng?.enterSystem(next.systemId, next.docked ? "undock" : "spawn");
 		if (next.docked) {
@@ -1267,6 +2343,7 @@ function HelionApp() {
 	}
 	function rebuy() {
 		unlockAudio();
+		initializeTTS();
 		const fee = Math.max(400, Math.round(save.credits * .12));
 		if (save.credits < fee) {
 			clearSave();
@@ -1276,7 +2353,7 @@ function HelionApp() {
 			setHasSave(false);
 			return;
 		}
-		const def = SHIPS[save.shipId];
+		const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
 		const next = {
 			...save,
 			credits: save.credits - fee,
@@ -1290,7 +2367,18 @@ function HelionApp() {
 		engineRef.current?.setMode("station");
 		useGameStore.getState().setMode("station");
 	}
+	async function toggleFullscreen() {
+		const root = rootRef.current;
+		if (!root) return;
+		try {
+			if (document.fullscreenElement) await document.exitFullscreen();
+			else await root.requestFullscreen();
+		} catch {
+			useGameStore.getState().setFlash("FULLSCREEN BLOCKED BY BROWSER");
+		}
+	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("main", {
+		ref: rootRef,
 		className: "relative h-[100dvh] w-full overflow-hidden bg-bg text-fg",
 		style: { touchAction: "none" },
 		children: [
@@ -1324,23 +2412,85 @@ function HelionApp() {
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "mt-4 grid max-w-sm grid-cols-2 gap-2",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+							className: "font-mono text-[10px] tracking-[0.22em] text-muted",
+							children: ["Allegiance", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+								value: profile.allegiance,
+								onChange: (e) => setProfile((prev) => ({
+									...prev,
+									allegiance: e.target.value
+								})),
+								className: "mt-2 h-10 w-full rounded-md border border-border bg-surface px-2 font-mono text-[10px] tracking-[0.16em] text-fg outline-none focus:ring-2 focus:ring-accent/60",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+										value: "independent",
+										children: "Independent"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+										value: "empire",
+										children: "Empire"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+										value: "federation",
+										children: "Federation"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+										value: "pirate",
+										children: "Pirate"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+										value: "union",
+										children: "Union"
+									})
+								]
+							})]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+							className: "font-mono text-[10px] tracking-[0.22em] text-muted",
+							children: ["Faction", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								value: profile.faction,
+								onChange: (e) => setProfile((prev) => ({
+									...prev,
+									faction: e.target.value
+								})),
+								maxLength: 20,
+								className: "mt-2 h-10 w-full rounded-md border border-border bg-surface px-2 font-mono text-[10px] tracking-[0.14em] text-fg outline-none focus:ring-2 focus:ring-accent/60"
+							})]
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "mt-5 flex max-w-sm flex-col gap-2 sm:flex-row",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
-							className: "flex-1",
-							disabled: !ready,
-							onClick: () => startNew(name),
-							children: "Start"
-						}), hasSave ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
-							className: "flex-1",
-							variant: "ghost",
-							disabled: !ready,
-							onClick: continueSave,
-							children: "Continue"
-						}) : null]
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+								className: "flex-1",
+								disabled: !ready,
+								onClick: () => startNew(name),
+								children: "Start"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+								className: "flex-1",
+								variant: "ghost",
+								disabled: !ready,
+								onClick: () => void persistProfile(name, useGameStore.getState().save),
+								children: "Save profile"
+							}),
+							hasSave ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+								className: "flex-1",
+								variant: "ghost",
+								disabled: !ready,
+								onClick: continueSave,
+								children: "Continue"
+							}) : null
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "mt-3 max-w-sm font-mono text-[10px] tracking-[0.16em] text-muted",
+						"aria-live": "polite",
+						children: ["PROFILE ", profileSync === "syncing" ? "SYNCING..." : profileSync === "synced" ? "SYNCED" : profileSync === "offline" ? "LOCAL SAVE ONLY" : "READY"]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "mt-6 max-w-lg font-mono text-[11px] leading-relaxed text-muted",
-						children: "W/S throttle · A/D yaw left/right · R/F pitch · Q/E roll · Space fire · H dock · M chart · J jump"
+						children: "W/S throttle · A/D yaw left/right · R/F pitch · Q/E roll · Space fire · K mine · L scan · X salvage · H dock · M chart · J jump"
 					})
 				]
 			}) : null,
@@ -1425,14 +2575,34 @@ function HelionApp() {
 				input: engineRef.current?.input ?? null,
 				engine: engineRef.current
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-				className: "absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-40 hidden h-9 rounded-sm border border-border bg-surface/80 px-3 font-mono text-[10px] tracking-widest text-muted sm:block",
+			mode === "title" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				className: "absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-40 h-9 rounded-sm border border-border bg-surface/80 px-3 font-mono text-[10px] tracking-widest text-muted",
 				onClick: () => {
 					const next = !isMuted();
 					setMuted(next);
 					setMutedUi(next);
 				},
 				children: muted ? "SOUND OFF" : "SOUND ON"
+			}) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				"aria-label": ttsEnabled ? "Disable voice comms" : "Enable voice comms",
+				className: `absolute right-3 top-[max(6.25rem,calc(env(safe-area-inset-top)+6.25rem))] z-40 h-9 rounded-sm border px-3 font-mono text-[10px] tracking-widest ${ttsEnabled ? "border-accent/60 bg-accent/10 text-accent" : "border-border bg-surface/80 text-muted"}`,
+				onClick: () => {
+					initializeTTS();
+					const next = !ttsEnabled;
+					setTTSEnabled(next);
+					setTtsEnabledUi(next);
+					if (next) speakTTS("Voice comms online.");
+				},
+				children: ttsEnabled ? "VOICE ON" : "VOICE OFF"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				"aria-label": fullscreen ? "Exit fullscreen" : "Enter fullscreen",
+				className: "absolute right-3 top-[max(3.5rem,calc(env(safe-area-inset-top)+3.5rem))] z-40 h-9 rounded-sm border border-border bg-surface/80 px-3 font-mono text-[10px] tracking-widest text-muted",
+				onClick: () => void toggleFullscreen(),
+				children: fullscreen ? "EXIT FULLSCREEN" : "FULLSCREEN"
 			})
 		]
 	});
@@ -1442,4 +2612,4 @@ function Home() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HelionApp, {});
 }
 //#endregion
-export { cargoCapacity as a, SHIPS as i, logTrafficFn as n, cargoUsed as o, useGameStore as r, sfxPlay as s, routes_exports as t };
+export { cargoUsed as a, moduleCount as c, setEngineLevel as d, sfxPlay as f, cargoCapacity as i, moduleScanStrength as l, logTrafficFn as n, fittedWeapon as o, useGameStore as r, hasModule as s, routes_exports as t, shipStats as u };

@@ -22,12 +22,34 @@ export function defaultSave(name = "JAMESON"): CommanderSave {
     wanted: false,
     docked: false,
     cargoUpgrade: false,
+    loadout: { S1: "pulse_laser" },
+    exploredSystems: {},
+    salvageRecovered: 0,
+    explorationData: 0,
+    activeMission: null,
+    completedMissions: 0,
   };
 }
 
 function migrate(raw: CommanderSave): CommanderSave {
   const base = defaultSave(raw.name);
-  return { ...base, ...raw, version: SAVE_VERSION };
+  const activeMission = raw.activeMission
+    ? {
+        ...raw.activeMission,
+        requirement: raw.activeMission.requirement ?? raw.activeMission.quantity,
+        progressAtAccept: raw.activeMission.progressAtAccept ?? 0,
+      }
+    : null;
+  return {
+    ...base,
+    ...raw,
+    activeMission,
+    loadout: raw.loadout ?? base.loadout,
+    exploredSystems: raw.exploredSystems ?? base.exploredSystems,
+    salvageRecovered: raw.salvageRecovered ?? base.salvageRecovered,
+    explorationData: raw.explorationData ?? base.explorationData,
+    version: SAVE_VERSION,
+  };
 }
 
 export function loadSave(): CommanderSave | null {
@@ -68,5 +90,5 @@ export function clearSave(): void {
 
 export function holdFree(save: CommanderSave): number {
   const used = Object.values(save.cargo).reduce((a, b) => a + (b ?? 0), 0);
-  return cargoCapacity(save.shipId, save.cargoUpgrade) - used;
+  return cargoCapacity(save.shipId, save.cargoUpgrade, save.loadout) - used;
 }

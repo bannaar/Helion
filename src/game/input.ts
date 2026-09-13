@@ -3,7 +3,13 @@ export type Actions = {
   pitch: number;
   roll: number;
   thrust: number;
+  dampeners: boolean;
   fire: boolean;
+  bomb: boolean;
+  chaff: boolean;
+  mine: boolean;
+  scan: boolean;
+  salvage: boolean;
   dock: boolean;
   map: boolean;
   jump: boolean;
@@ -16,7 +22,13 @@ const empty = (): Actions => ({
   pitch: 0,
   roll: 0,
   thrust: 0,
+  dampeners: false,
   fire: false,
+  bomb: false,
+  chaff: false,
+  mine: false,
+  scan: false,
+  salvage: false,
   dock: false,
   map: false,
   jump: false,
@@ -44,6 +56,12 @@ const GAME_KEYS = new Set([
   "KeyJ",
   "KeyM",
   "Space",
+  "KeyB",
+  "KeyC",
+  "KeyV",
+  "KeyK",
+  "KeyL",
+  "KeyX",
   "Tab",
   "Escape",
   "ArrowUp",
@@ -61,10 +79,12 @@ export class Input {
   touchPitch = 0;
   touchThrust = 0;
   touchFire = false;
+  touchMine = false;
+  touchSalvage = false;
   touchDock = false;
   prev: Actions = empty();
   current: Actions = empty();
-  edges = { dock: false, map: false, jump: false, target: false, pause: false, fire: false };
+  edges = { dock: false, map: false, jump: false, target: false, pause: false, fire: false, bomb: false, chaff: false, dampeners: false };
   private unbind: Array<() => void> = [];
   enabled = true;
 
@@ -116,6 +136,11 @@ export class Input {
     if (this.held("KeyW")) a.thrust += 1;
     if (this.held("KeyS")) a.thrust -= 1;
     a.fire = this.held("Space") || this.touchFire;
+    a.bomb = this.held("KeyB");
+    a.chaff = this.held("KeyC");
+    a.mine = this.held("KeyK") || this.touchMine;
+    a.scan = this.held("KeyL");
+    a.salvage = this.held("KeyX") || this.touchSalvage;
     a.dock = this.held("KeyH") || this.touchDock;
     a.map = this.held("KeyM");
     a.jump = this.held("KeyJ");
@@ -125,6 +150,7 @@ export class Input {
     a.yaw += this.touchYaw;
     a.pitch += this.touchPitch;
     a.thrust += this.touchThrust;
+    a.dampeners = this.held("KeyV");
 
     const pads = typeof navigator !== "undefined" ? navigator.getGamepads?.() : null;
     if (pads) {
@@ -158,6 +184,9 @@ export class Input {
     this.edges.target = a.target && !this.prev.target;
     this.edges.pause = a.pause && !this.prev.pause;
     this.edges.fire = a.fire && !this.prev.fire;
+    this.edges.bomb = a.bomb && !this.prev.bomb;
+    this.edges.chaff = a.chaff && !this.prev.chaff;
+    this.edges.dampeners = a.dampeners && !this.prev.dampeners;
     this.prev = { ...a };
     this.current = a;
     this.touchDock = false;

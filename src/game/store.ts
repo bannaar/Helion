@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { combatRank, getSystem } from "./galaxy";
-import { cargoCapacity, cargoUsed, SHIPS } from "./ships";
+import { cargoCapacity, cargoUsed, SHIPS, shipStats } from "./ships";
 import { defaultSave, loadSave, writeSave } from "./save";
 import type { CommanderSave, Contact, GameMode, MarketRow } from "./types";
 
@@ -12,6 +12,7 @@ export type GameState = {
   save: CommanderSave;
   speed: number;
   throttle: number;
+  dampeners: boolean;
   yaw: number;
   pitch: number;
   shields: number;
@@ -42,6 +43,7 @@ export type GameState = {
         GameState,
         | "speed"
         | "throttle"
+        | "dampeners"
         | "yaw"
         | "pitch"
         | "shields"
@@ -72,13 +74,14 @@ function bootSave(): CommanderSave {
 
 export const useGameStore = create<GameState>((set, get) => {
   const save = bootSave();
-  const def = SHIPS[save.shipId];
+  const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
   return {
     mode: "title",
     paused: false,
     save,
     speed: 0,
     throttle: 0,
+    dampeners: true,
     yaw: 0,
     pitch: 0,
     shields: save.shields,
@@ -106,7 +109,7 @@ export const useGameStore = create<GameState>((set, get) => {
       if (persist) writeSave(next);
     },
     replaceSave: (next, persist = true) => {
-      const defn = SHIPS[next.shipId];
+      const defn = shipStats(next.shipId, next.cargoUpgrade, next.loadout);
       set({
         save: next,
         shields: next.shields,
@@ -136,7 +139,7 @@ export function holdStats() {
   const s = useGameStore.getState().save;
   return {
     used: cargoUsed(s.cargo),
-    cap: cargoCapacity(s.shipId, s.cargoUpgrade),
+    cap: cargoCapacity(s.shipId, s.cargoUpgrade, s.loadout),
   };
 }
 

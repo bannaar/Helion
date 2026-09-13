@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { combatRank, getSystem } from "@/game/galaxy";
-import { cargoCapacity, cargoUsed, SHIPS } from "@/game/ships";
+import { cargoCapacity, cargoUsed, hasModule, shipStats } from "@/game/ships";
 import { useGameStore } from "@/game/store";
 import type { Contact } from "@/game/types";
 
@@ -60,6 +60,7 @@ function Scanner({ contacts }: { contacts: Contact[] }) {
 export function Hud() {
   const speed = useGameStore((s) => s.speed);
   const throttle = useGameStore((s) => s.throttle);
+  const dampeners = useGameStore((s) => s.dampeners);
   const shields = useGameStore((s) => s.shields);
   const hull = useGameStore((s) => s.hull);
   const maxShields = useGameStore((s) => s.maxShields);
@@ -76,9 +77,9 @@ export function Hud() {
   const jumpCharge = useGameStore((s) => s.jumpCharge);
   const laserHeat = useGameStore((s) => s.laserHeat);
   const sys = getSystem(save.systemId);
-  const def = SHIPS[save.shipId];
+  const def = shipStats(save.shipId, save.cargoUpgrade, save.loadout);
   const used = cargoUsed(save.cargo);
-  const cap = cargoCapacity(save.shipId, save.cargoUpgrade);
+  const cap = cargoCapacity(save.shipId, save.cargoUpgrade, save.loadout);
   const dest = jumpLocked ? getSystem(jumpLocked) : null;
 
   return (
@@ -103,6 +104,13 @@ export function Hud() {
         <p className="text-muted">
           FUEL {save.fuel.toFixed(1)}/{def.tank} · HOLD {used}/{cap}
         </p>
+        <p className="mt-1 max-w-56 text-[9px] tracking-[0.12em] text-muted">
+          {hasModule(save.loadout, "ecm_suite") ? "ECM " : ""}
+          {hasModule(save.loadout, "eccm_suite") ? "ECCM " : ""}
+          {hasModule(save.loadout, "hacking_suite") ? "HACK " : ""}
+          {hasModule(save.loadout, "missile_rack") ? "MISSILES " : ""}
+          {hasModule(save.loadout, "mine_launcher") ? "MINES" : ""}
+        </p>
       </div>
 
       <div className="absolute left-1/2 top-[18%] w-[min(90%,28rem)] -translate-x-1/2 text-center">
@@ -116,7 +124,7 @@ export function Hud() {
       <div className="absolute bottom-4 left-4 w-[min(46vw,16rem)] space-y-2 sm:bottom-6 sm:left-6">
         <div className="flex justify-between text-muted">
           <span>SPD {speed.toFixed(0)}</span>
-          <span>THR {(throttle * 100).toFixed(0)}%</span>
+          <span>{dampeners ? "DAMP" : "DRIFT"} · THR {(throttle * 100).toFixed(0)}%</span>
         </div>
         <Bar value={speed} max={def.maxSpeed} tone="fg" />
         <div className="flex justify-between text-muted">
@@ -151,7 +159,11 @@ export function Hud() {
             </p>
           ) : null}
           {massLocked ? <p className="text-warn">MASS LOCK</p> : null}
-          {canDock ? <p className="text-accent">DOCKING COMPUTER</p> : null}
+          {canDock ? (
+            <p className="text-accent">
+              {hasModule(save.loadout, "docking_computer") ? "DOCKING COMPUTER" : "STATION IN RANGE"}
+            </p>
+          ) : null}
         </div>
         <div className="hidden sm:block">
           <Scanner contacts={contacts} />
@@ -159,7 +171,7 @@ export function Hud() {
       </div>
 
       <p className="absolute bottom-3 left-1/2 hidden -translate-x-1/2 text-[10px] text-muted md:block">
-        W/S throttle · A/D yaw · R/F pitch · Q/E roll · SPACE fire · H dock · M chart · J jump
+        W/S throttle · V dampeners · A/D yaw · R/F pitch · Q/E roll · SPACE fire · B bomb · C chaff · K mine · L scan · X salvage · H dock · M chart · J jump
       </p>
     </div>
   );

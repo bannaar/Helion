@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { economyLabel, getGalaxy, getSystem, governmentLabel, jumpFuelCost, systemDistance } from "@/game/galaxy";
-import { SHIPS } from "@/game/ships";
+import { shipStats } from "@/game/ships";
 import { useGameStore } from "@/game/store";
 import type { EngineHandle } from "@/game/engineApi";
 
@@ -12,7 +12,7 @@ export function GalaxyChart({ engine }: { engine: EngineHandle | null }) {
   const systems = useMemo(() => getGalaxy(), []);
   const here = getSystem(save.systemId);
   const selected = getSystem(jumpLocked ?? save.systemId);
-  const range = SHIPS[save.shipId].jump;
+  const range = shipStats(save.shipId, save.cargoUpgrade, save.loadout).jump;
 
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-bg/92 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-8">

@@ -38,22 +38,28 @@ export function TouchControls({ input, engine }: Props) {
     }
   };
 
-  const hold = (key: "touchThrust" | "touchFire", v: number | boolean) => ({
+  const hold = (key: "touchThrust" | "touchFire" | "touchMine" | "touchSalvage", v: number | boolean) => ({
     onPointerDown: (e: React.PointerEvent) => {
       e.preventDefault();
       if (!input) return;
       if (key === "touchThrust") input.touchThrust = v as number;
-      else input.touchFire = Boolean(v);
+      else if (key === "touchFire") input.touchFire = Boolean(v);
+      else if (key === "touchMine") input.touchMine = Boolean(v);
+      else input.touchSalvage = Boolean(v);
     },
     onPointerUp: () => {
       if (!input) return;
       if (key === "touchThrust") input.touchThrust = 0;
-      else input.touchFire = false;
+      else if (key === "touchFire") input.touchFire = false;
+      else if (key === "touchMine") input.touchMine = false;
+      else input.touchSalvage = false;
     },
     onPointerCancel: () => {
       if (!input) return;
       if (key === "touchThrust") input.touchThrust = 0;
-      else input.touchFire = false;
+      else if (key === "touchFire") input.touchFire = false;
+      else if (key === "touchMine") input.touchMine = false;
+      else input.touchSalvage = false;
     },
   });
 
@@ -90,6 +96,18 @@ export function TouchControls({ input, engine }: Props) {
           {...hold("touchFire", true)}
         >
           FIRE
+        </button>
+        <button
+          className="h-12 min-w-14 rounded-md border border-accent/60 bg-surface/80 font-mono text-xs text-accent"
+          {...hold("touchMine", true)}
+        >
+          MINE
+        </button>
+        <button
+          className="h-12 min-w-14 rounded-md border border-border bg-surface/80 font-mono text-xs text-fg"
+          {...hold("touchSalvage", true)}
+        >
+          SALVAGE
         </button>
         <button
           className="h-12 min-w-14 rounded-md border border-border bg-surface/80 font-mono text-xs text-fg"

@@ -12,10 +12,10 @@
 #include <vector>
 #include <unistd.h>
 #include <sys/socket.h>
+#include "shared/protocol.h"
 
 namespace {
 constexpr int kDefaultPort = 4242;
-constexpr std::size_t kMaxLine = 4096;
 std::string dataPath = "helion-server.db";
 
 struct Profile {
@@ -111,6 +111,7 @@ void loadState() {
 }
 
 bool sendLine(int fd, const std::string& line) {
+  if (!helion::protocol::validWireLine(line)) return false;
   std::string data = line;
   data.push_back('\n');
   std::lock_guard<std::mutex> lock(writeMutex);
@@ -121,26 +122,6 @@ bool sendLine(int fd, const std::string& line) {
     sent += static_cast<std::size_t>(n);
   }
   return true;
-}
-
-bool readLine(int fd, std::string& line) {
-  line.clear();
-  char ch = '\0';
-  while (line.size() < kMaxLine) {
-    const ssize_t n = recv(fd, &ch, 1, 0);
-    if (n == 0) return false;
-    if (n < 0) {
-      if (errno == EINTR) continue;
-      return false;
-    }
-    if (ch == '\n') {
-      if (!line.empty() && line.back() == '\r') line.pop_back();
-      return true;
-    }
-    line.push_back(ch);
-  }
-  sendLine(fd, "ERR line-too-long");
-  return false;
 }
 
 std::string stateLine() {
@@ -170,91 +151,97 @@ void clientLoop(int fd) {
     std::lock_guard<std::mutex> lock(stateMutex);
     clients.push_back(fd);
   }
-  sendLine(fd, "WELCOME Helion/1");
+  sendLine(fd, helion::protocol::welcomeLine());
   sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE QUIT");
 
   std::string user;
-  std::string line;
-  while (readLine(fd, line)) {
-    std::istringstream input(line);
-    std::string command;
-    input >> command;
-    if (command == "CREATE") {
-      std::string name, password, display;
-      input >> name >> password;
-      std::getline(input, display);
-      if (!display.empty() && display.front() == ' ') display.erase(0, 1);
-      if (name.empty() || password.empty() || display.empty() || name.size() > 32 ||
-          password.size() > 128 || display.size() > 64 || name.find(' ') != std::string::npos) {
-        sendLine(fd, "ERR usage=CREATE username password display");
+  helion::protocol::LineDecoder decoder;
+  bool running = true;
+  char bytes[1024];
+  while (running) {
+    const ssize_t received = recv(fd, bytes, sizeof(bytes), 0);
+    if (received == 0) break;
+    if (received < 0) {
+      if (errno == EINTR) continue;
+      break;
+    }
+    for (const auto& frame : decoder.feed(std::string_view(bytes, static_cast<std::size_t>(received)))) {
+      if (frame.kind != helion::protocol::FrameKind::line) {
+        sendLine(fd, frame.kind == helion::protocol::FrameKind::too_long ? "ERR line-too-long" : "ERR malformed-message");
         continue;
       }
-      std::lock_guard<std::mutex> lock(stateMutex);
-      if (profiles.count(name) != 0) {
-        sendLine(fd, "ERR profile-exists");
-      } else {
-        profiles.emplace(name, Profile{password, display});
-        try { saveStateLocked(); } catch (const std::exception& error) {
-          profiles.erase(name);
-          sendLine(fd, "ERR persistence-failed");
-          std::cerr << error.what() << '\n';
-          continue;
-        }
-        user = name;
-        sendLine(fd, "OK CREATED user=" + name + " display=" + display);
+      const auto request = helion::protocol::parseRequest(frame.line);
+      if (request.command == helion::protocol::Command::invalid) {
+        sendLine(fd, "ERR " + request.error);
+        continue;
       }
-    } else if (command == "LOGIN") {
-      std::string name, password;
-      input >> name >> password;
-      std::lock_guard<std::mutex> lock(stateMutex);
-      const auto it = profiles.find(name);
-      if (it == profiles.end() || it->second.password != password) {
-        sendLine(fd, "ERR invalid-login");
-      } else {
-        user = name;
-        sendLine(fd, "OK LOGIN user=" + name + " display=" + it->second.display);
-      }
-    } else if (command == "CHAT") {
-      std::string text;
-      std::getline(input, text);
-      if (!text.empty() && text.front() == ' ') text.erase(0, 1);
-      if (user.empty()) sendLine(fd, "ERR login-required");
-      else if (text.empty() || text.size() > 512) sendLine(fd, "ERR usage=CHAT message");
-      else {
-        {
-          std::lock_guard<std::mutex> lock(stateMutex);
-          messages.push_back({user, text});
+      if (request.command == helion::protocol::Command::create) {
+        const auto& name = request.first;
+        const auto& password = request.second;
+        const auto& display = request.payload;
+        std::lock_guard<std::mutex> lock(stateMutex);
+        if (profiles.count(name) != 0) {
+          sendLine(fd, "ERR profile-exists");
+        } else {
+          profiles.emplace(name, Profile{password, display});
           try { saveStateLocked(); } catch (const std::exception& error) {
-            messages.pop_back();
+            profiles.erase(name);
             sendLine(fd, "ERR persistence-failed");
             std::cerr << error.what() << '\n';
             continue;
           }
+          user = name;
+          sendLine(fd, "OK CREATED user=" + name + " display=" + display);
         }
-        broadcast("CHAT user=" + user + " text=" + text);
-      }
-    } else if (command == "PROFILE") {
-      if (user.empty()) {
-        sendLine(fd, "ERR login-required");
-      } else {
+      } else if (request.command == helion::protocol::Command::login) {
+        const auto& name = request.first;
+        const auto& password = request.second;
         std::lock_guard<std::mutex> lock(stateMutex);
-        const auto it = profiles.find(user);
-        if (it == profiles.end()) sendLine(fd, "ERR profile-missing");
-        else {
-          const Profile& profile = it->second;
-          sendLine(fd, "PROFILE user=" + user + " display=" + profile.display +
-            " faction=" + profile.faction + " ship=" + profile.ship +
-            " credits=" + std::to_string(profile.credits) +
-            " experience=" + std::to_string(profile.experience));
+        const auto it = profiles.find(name);
+        if (it == profiles.end() || it->second.password != password) {
+          sendLine(fd, "ERR invalid-login");
+        } else {
+          user = name;
+          sendLine(fd, "OK LOGIN user=" + name + " display=" + it->second.display);
         }
+      } else if (request.command == helion::protocol::Command::chat) {
+        const auto& text = request.payload;
+        if (user.empty()) sendLine(fd, "ERR login-required");
+        else {
+          {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            messages.push_back({user, text});
+            try { saveStateLocked(); } catch (const std::exception& error) {
+              messages.pop_back();
+              sendLine(fd, "ERR persistence-failed");
+              std::cerr << error.what() << '\n';
+              continue;
+            }
+          }
+          broadcast("CHAT user=" + user + " text=" + text);
+        }
+      } else if (request.command == helion::protocol::Command::profile) {
+        if (user.empty()) {
+          sendLine(fd, "ERR login-required");
+        } else {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          const auto it = profiles.find(user);
+          if (it == profiles.end()) sendLine(fd, "ERR profile-missing");
+          else {
+            const Profile& profile = it->second;
+            sendLine(fd, "PROFILE user=" + user + " display=" + profile.display +
+              " faction=" + profile.faction + " ship=" + profile.ship +
+              " credits=" + std::to_string(profile.credits) +
+              " experience=" + std::to_string(profile.experience));
+          }
+        }
+      } else if (request.command == helion::protocol::Command::state) {
+        sendLine(fd, stateLine());
+      } else if (request.command == helion::protocol::Command::quit) {
+        sendLine(fd, "OK BYE");
+        running = false;
+        break;
       }
-    } else if (command == "STATE") {
-      sendLine(fd, stateLine());
-    } else if (command == "QUIT") {
-      sendLine(fd, "OK BYE");
-      break;
-    } else if (!command.empty()) {
-      sendLine(fd, "ERR unknown-command");
     }
   }
   removeClient(fd);

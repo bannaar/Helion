@@ -1,2 +1,9 @@
 node_modules
 node_modules
+.vercel/output/
+.vscode/
+native/build/
+build/
+helion-server.db
+helion-server.db-shm
+helion-server.db-wal

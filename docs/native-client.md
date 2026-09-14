@@ -25,6 +25,11 @@ cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
 cmake --build build-native --target helion_client --parallel
 ```
 
+For a client-only build, add `-DHELION_BUILD_SERVER=OFF` when configuring.
+`HELION_BUILD_CLIENT` defaults to `ON` and is the only option that requires
+SDL2 and OpenGL. `HELION_BUILD_TESTS` defaults to `ON`; run
+`ctest --test-dir build-native --output-on-failure` after building all targets.
+
 The executable is:
 
 ```text
@@ -59,6 +64,11 @@ The current graphical shell accepts protocol commands as typed input. Use:
 /state
 /quit
 ```
+
+The client expects the versioned `WELCOME Helion/1` greeting. The shared
+protocol decoder buffers split network reads, separates multiple lines in one
+read, and rejects oversized or malformed lines. The maximum line size is 4096
+bytes before LF. Version 1 retains the existing command names.
 
 For headless diagnostics, use terminal mode:
 

@@ -4,30 +4,40 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <deque>
 #include <iostream>
 #include <mutex>
 #include <netdb.h>
 #include <string>
+#include <utility>
 #include <vector>
 #include <sys/socket.h>
 #include <unistd.h>
+#include "shared/protocol.h"
 
 namespace {
-constexpr std::size_t kMaxLine = 4096;
-
-bool readLine(int fd, std::string& line) {
-  line.clear();
-  char ch = '\0';
-  while (line.size() < kMaxLine) {
-    const ssize_t n = recv(fd, &ch, 1, 0);
-    if (n <= 0) return false;
-    if (ch == '\n') return true;
-    line.push_back(ch);
+class SocketReader {
+ public:
+  bool readLine(int fd, std::string& line) {
+    while (ready_.empty()) {
+      char bytes[1024];
+      const ssize_t count = recv(fd, bytes, sizeof(bytes), 0);
+      if (count <= 0) return false;
+      for (auto& frame : decoder_.feed(std::string_view(bytes, static_cast<std::size_t>(count)))) {
+        ready_.push_back(frame.kind == helion::protocol::FrameKind::line ? std::move(frame.line) : "ERR malformed-response");
+      }
+    }
+    line = std::move(ready_.front());
+    ready_.pop_front();
+    return true;
   }
-  return false;
-}
+ private:
+  helion::protocol::LineDecoder decoder_;
+  std::deque<std::string> ready_;
+};
 
 bool sendLine(int fd, const std::string& line) {
+  if (!helion::protocol::validWireLine(line)) return false;
   const std::string data = line + "\n";
   std::size_t sent = 0;
   while (sent < data.size()) {
@@ -90,8 +100,15 @@ void render(int width, int height, const std::vector<std::string>& log, bool con
 
 int terminalClient(int fd) {
   std::cout << "Connected. Commands: /create, /login, /chat, /profile, /state, /quit\n";
+  SocketReader reader;
   std::string line;
-  for (int i = 0; i < 2 && readLine(fd, line); ++i) std::cout << line << '\n';
+  if (!reader.readLine(fd, line)) return 1;
+  std::cout << line << '\n';
+  if (!helion::protocol::compatibleWelcome(line)) {
+    std::cerr << "incompatible server protocol; expected " << helion::protocol::welcomeLine() << '\n';
+    return 1;
+  }
+  if (reader.readLine(fd, line)) std::cout << line << '\n';
   while (std::getline(std::cin, line)) {
     if (line.rfind("/create ", 0) == 0) line.replace(0, 8, "CREATE ");
     else if (line.rfind("/login ", 0) == 0) line.replace(0, 7, "LOGIN ");
@@ -103,7 +120,7 @@ int terminalClient(int fd) {
     if (!sendLine(fd, line) || line == "QUIT") break;
     timeval timeout{0, 250000};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    while (readLine(fd, line)) std::cout << line << '\n';
+    while (reader.readLine(fd, line)) std::cout << line << '\n';
   }
   return 0;
 }
@@ -149,14 +166,15 @@ int main(int argc, char** argv) {
                                "OpenGL renderer: fixed-function 2.1-compatible"};
   bool running = true;
   bool connected = true;
-  std::string incoming;
+  helion::protocol::LineDecoder decoder;
+  bool greetingSeen = false;
   std::string typed;
   SDL_StartTextInput();
   while (running) {
     SDL_Event event{};
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) running = false;
-      if (event.type == SDL_TEXTINPUT) typed += event.text.text;
+      if (event.type == SDL_TEXTINPUT && typed.size() + std::strlen(event.text.text) <= helion::protocol::kMaxLine) typed += event.text.text;
       if (event.type == SDL_KEYDOWN) {
         if (event.key.keysym.sym == SDLK_BACKSPACE && !typed.empty()) typed.pop_back();
         if (event.key.keysym.sym == SDLK_RETURN && !typed.empty()) {
@@ -169,16 +187,27 @@ int main(int argc, char** argv) {
             else if (request == "/state") request = "STATE";
             else if (request == "/quit") running = false;
           }
-          if (running && sendLine(fd, request)) log.push_back("> " + typed);
+          if (running && connected && sendLine(fd, request)) log.push_back("> " + typed);
           typed.clear();
         }
       }
     }
-    char ch;
-    while (recv(fd, &ch, 1, MSG_DONTWAIT) > 0) {
-      if (ch == '\n') { log.push_back(incoming); incoming.clear(); }
-      else if (incoming.size() < kMaxLine) incoming.push_back(ch);
+    char bytes[1024];
+    ssize_t count;
+    while ((count = recv(fd, bytes, sizeof(bytes), MSG_DONTWAIT)) > 0) {
+      for (auto& frame : decoder.feed(std::string_view(bytes, static_cast<std::size_t>(count)))) {
+        if (!greetingSeen) {
+          greetingSeen = true;
+          if (frame.kind != helion::protocol::FrameKind::line || !helion::protocol::compatibleWelcome(frame.line)) {
+            connected = false;
+            log.push_back("ERR incompatible server protocol");
+            continue;
+          }
+        }
+        log.push_back(frame.kind == helion::protocol::FrameKind::line ? std::move(frame.line) : "ERR malformed-response");
+      }
     }
+    if (count == 0 || (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) connected = false;
     int width, height;
     SDL_GetWindowSize(window, &width, &height);
     render(width, height, log, connected);

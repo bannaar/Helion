@@ -31,6 +31,18 @@ cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
 cmake --build build-native --target helion_server --parallel
 ```
 
+For a server-only host without SDL2 or OpenGL, configure an isolated build:
+
+```sh
+cmake -S . -B build-native-server -DHELION_BUILD_CLIENT=OFF
+cmake --build build-native-server --parallel
+ctest --test-dir build-native-server --output-on-failure
+```
+
+`HELION_BUILD_SERVER` and `HELION_BUILD_TESTS` default to `ON`. Use
+`-DHELION_BUILD_TESTS=OFF` if the protocol test binary is not wanted. The
+server-only configure path does not search for SDL2 or OpenGL.
+
 The executable is written to:
 
 ```text

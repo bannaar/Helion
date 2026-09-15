@@ -11,12 +11,13 @@ Supported toolchain:
 - C++17 compiler (GCC 9+ or Clang 10+ recommended)
 - CMake 3.16+
 - `make` or Ninja
+- OpenSSL development headers and `libcrypto` (1.1.1 or newer) for scrypt
 
 Debian/Ubuntu:
 
 ```sh
 sudo apt update
-sudo apt install build-essential cmake
+sudo apt install build-essential cmake libssl-dev
 ```
 
 The server does not require SDL2 or an X11/Wayland session. Those are client
@@ -41,7 +42,8 @@ ctest --test-dir build-native-server --output-on-failure
 
 `HELION_BUILD_SERVER` and `HELION_BUILD_TESTS` default to `ON`. Use
 `-DHELION_BUILD_TESTS=OFF` if the protocol test binary is not wanted. The
-server-only configure path does not search for SDL2 or OpenGL.
+server-only configure path does not search for SDL2 or OpenGL. Configuration
+fails if OpenSSL Crypto is unavailable; there is no plaintext password fallback.
 
 The executable is written to:
 
@@ -54,10 +56,11 @@ To build both server and client together, use `cmake --build build-native
 
 ## 3. Start and configure
 
-The command accepts an optional TCP port and persistence path:
+The command accepts an optional TCP port and persistence path, plus explicit
+bind and connection-limit options:
 
 ```sh
-./build-native/native/helion_server [port] [data-file]
+./build-native/native/helion_server [port] [data-file] [--bind IPv4-address] [--max-clients 1..1024]
 ```
 
 Defaults:
@@ -66,7 +69,11 @@ Defaults:
 | --- | --- |
 | Listen port | `4242` |
 | Data file | `helion-server.db` in the current directory |
-| Bind address | all local interfaces |
+| Bind address | `127.0.0.1` only |
+| Concurrent clients | 32 (configurable, maximum 1024) |
+| Socket idle/read timeout | 30 seconds; incomplete lines also have a 30-second deadline |
+| Socket write timeout | 5 seconds |
+| Authentication requests | At most 10 per connection; disconnect after 5 failed credentials |
 | Maximum request line | 4096 bytes |
 
 Examples:
@@ -75,9 +82,15 @@ Examples:
 # Local development
 ./build-native/native/helion_server 4242 ./var/helion-server.db
 
-# Dedicated host
+# Dedicated host, still listening only on loopback
 ./build-native/native/helion_server 4242 /var/lib/helion/helion-server.db
 ```
+
+`--bind` accepts a numeric IPv4 address. Any non-loopback address, including
+`0.0.0.0`, requires this explicit option and prints a warning. The protocol
+does not yet have native TLS. For remote access, keep the server on loopback
+and carry TCP through an encrypted tunnel such as SSH or WireGuard. Do not
+expose its port directly to the public internet, even with a firewall rule.
 
 Create the data directory before startup and restrict it to the service user:
 
@@ -86,9 +99,14 @@ sudo install -d -o helion -g helion -m 750 /var/lib/helion
 sudo chown helion:helion ./build-native/native/helion_server
 ```
 
-The server writes updates to `<data-file>.tmp` and atomically replaces the
-main file. Keep both files on the same filesystem and include the data file in
-your backup plan.
+The server writes updates to a uniquely named temporary file with mode `0600`
+and atomically replaces the main file. Existing regular data files are
+restricted to owner-only mode before loading. Keep backups protected as well.
+On startup, legacy plaintext profile records are hashed before the server
+accepts clients. If migration or saving fails, startup aborts rather than
+serving plaintext credentials; preserve the original data file for recovery.
+Legacy `P` records become hashed `H` records, so even a legacy password that
+begins with `$` is migrated unambiguously.
 
 ## 4. systemd example
 
@@ -127,14 +145,15 @@ sudo systemctl status helion-server
 
 ## 5. Firewall
 
-Only expose the configured TCP port to trusted clients:
+The default loopback bind needs no inbound firewall opening. If using an
+encrypted tunnel that requires an explicit non-loopback bind, restrict its
+source addresses:
 
 ```sh
 sudo ufw allow from 203.0.113.0/24 to any port 4242 proto tcp
 ```
 
-Do not open the port globally while the reference authentication protocol is
-still plaintext.
+Do not open the Helion TCP port globally while transport encryption is absent.
 
 ## 6. Protocol smoke test
 
@@ -159,19 +178,19 @@ and experience fields.
 
 ## 7. Persistence and security limitations
 
-The line-oriented data file contains profile records and chat messages. The
-current reference server stores passwords directly in that file. Treat the file
-as a secret, use filesystem permissions such as `0600`, and never commit it to
-version control.
+The line-oriented data file contains profile records and chat messages. New
+passwords must be 12–128 bytes; migrated legacy passwords may be shorter and
+continue to work. Passwords use OpenSSL scrypt with unique random salts and
+constant-time comparison. The server does not log password values. Treat data
+files and any pre-migration backups as sensitive and never commit them.
 
 Before public deployment, add:
 
-1. Salted password hashing (Argon2id, scrypt, or bcrypt).
-2. TLS or a private tunnel.
-3. Login rate limiting and account lockout.
-4. Input normalization and stronger identity rules.
-5. Versioned migrations for profile records.
-6. A server-authoritative gameplay tick and validated state updates.
+1. Native TLS and server identity verification; use an encrypted tunnel until then.
+2. Cross-connection/IP rate limiting and durable account lockout; current limits are per connection.
+3. Input normalization and stronger identity rules.
+4. Versioned migrations for non-credential profile records.
+5. A server-authoritative gameplay tick and validated state updates.
 
 ## 8. Logs and shutdown
 

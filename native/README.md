@@ -40,8 +40,10 @@ The server sends `WELCOME Helion/1` and `INFO` lines on connect. Protocol versio
 Requests are one
 newline-terminated line: `CREATE username password display`, `LOGIN username
 password`, `CHAT message`, `STATE`, or `QUIT`. Responses are newline-terminated
-`OK`, `ERR`, `PROFILE`, `STATE`, and `CHAT` records. Passwords are stored as local server
-credentials in the data file; use filesystem permissions to protect it.
+`OK`, `ERR`, `PROFILE`, `STATE`, and `CHAT` records. The server stores salted
+scrypt password hashes, migrates existing plaintext profile records on startup,
+and creates owner-only data files. New passwords must be 12–128 bytes. The TCP
+connection is still plaintext: use only loopback or an encrypted tunnel.
 
 The shared line decoder accepts at most 4096 bytes before LF (including an
 optional CR), buffers partial reads, and emits each complete line in order.

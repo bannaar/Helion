@@ -164,8 +164,8 @@ terminal mode remains the authoritative protocol diagnostic.
 
 ## 7. Security note
 
-The current reference protocol sends credentials over the TCP connection without
-TLS and the server stores them plainly. Use it only on localhost, a trusted LAN,
-or a private tunnel. Do not use a real password. Production client work must
-add encrypted transport, password hashing, server identity verification, and a
-proper account/login UI before public use.
+The current protocol still sends credentials over TCP without TLS, although
+the server now stores salted scrypt hashes. Use the client on loopback or through
+an encrypted tunnel, not across an unprotected LAN or the public internet.
+Production client work still needs server identity verification and a proper
+account/login UI.

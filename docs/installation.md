@@ -1,41 +1,90 @@
-# Helion Native Server and Client Installation Guide
+# Helion Native Installation and Operations Guide
 
-This guide installs the Phase 2A standalone Helion C++ server and SDL2/OpenGL client on Linux Mint, Ubuntu, or another Debian-based Linux system. It is based on the verified native security patch that introduced protected accounts, loopback-first networking, connection limits, and server integration tests.
+This guide installs Helion 0.2's standalone C++ server and SDL2/OpenGL client on Linux Mint, Ubuntu, or another Debian-based Linux system. It covers local play, separate server and client installations, verified TLS, packages, updates, backups, and troubleshooting.
 
-The native project currently provides:
+The current native release includes:
 
-- a headless C++17 server;
-- a standalone SDL2/OpenGL 2.1 client;
-- a versioned line protocol (`Helion/1`);
-- salted scrypt password hashing;
-- connection limits, timeouts, and bounded messages;
-- automated protocol, security, and server tests.
+- mandatory TLS 1.2 or newer with certificate and hostname/IP verification;
+- salted scrypt password hashes and protected commander saves;
+- a 60 Hz server-authoritative flight simulation;
+- mining, docking, station trading, missions, ship upgrades, and progression;
+- persistent position, velocity, dock state, cargo, credits, XP, missions, and upgrades;
+- live player and NPC contacts;
+- an SDL2/OpenGL 2.1 client for older Linux graphics hardware;
+- `.deb` and portable `.tar.gz` packaging;
+- protocol, security, TLS, gameplay, save-lock, installer, and rendering tests.
 
-The current network transport does not yet include native TLS. Run the server on loopback and use an SSH or Tailscale SSH tunnel for connections between computers.
+## 1. Choose an installation method
 
-Repository documentation:
+Use one of these routes:
 
-- `README.md` — project status and quick start;
-- `docs/installation.md` — this complete installation guide;
-- `docs/native-server.md` — server configuration and protocol details;
-- `docs/native-client.md` — client controls, graphics, and troubleshooting.
+| Route | Best for |
+| --- | --- |
+| Install a `.deb` package | Normal Linux Mint or Ubuntu installation |
+| Build and install locally | Development or testing the newest source |
+| Server-only build | A headless dedicated host |
+| Client-only build | A player computer connecting to another server |
 
-## 1. Get the Helion source
-
-If Helion already exists at `~/Helion`, use that copy:
-
-```bash
-cd ~/Helion
-git branch --show-current
-```
-
-The current development branch is:
+The native code is currently developed on branch:
 
 ```text
 helion-local-recovery-2026-09-14
 ```
 
-For a fresh installation, authenticate with GitHub and clone that branch:
+## 2. Install a built package
+
+Install a downloaded Helion `.deb` package with APT:
+
+```bash
+cd ~/Downloads
+sudo apt install ./helion-0.2.0-Linux-x86_64.deb
+```
+
+Launch **Helion** from the XFCE Games menu or run:
+
+```bash
+helion-play
+```
+
+The launcher automatically:
+
+1. creates a private user data directory;
+2. generates a loopback-only development certificate when needed;
+3. starts the local TLS server;
+4. starts the graphical client and trusts that certificate;
+5. stops the local server when the client exits.
+
+Validate an installation without opening a graphical window:
+
+```bash
+helion-play --check
+```
+
+Start the command-line client instead of the graphical client:
+
+```bash
+helion-play --terminal
+```
+
+User data is stored in:
+
+```text
+~/.local/share/helion
+```
+
+The directory contains the commander database, TLS key and certificate, and logs. Keep it private and never commit or share its private key.
+
+## 3. Obtain the source
+
+If the repository already exists locally:
+
+```bash
+cd ~/Helion
+git branch --show-current
+git status --short
+```
+
+For a fresh clone, authenticate with GitHub and clone the current branch:
 
 ```bash
 cd ~
@@ -44,40 +93,194 @@ git clone --branch helion-local-recovery-2026-09-14 \
 cd Helion
 ```
 
-Because the repository is private, GitHub must authenticate the clone. Never put a GitHub password or token directly in the command.
+The repository is private, so GitHub authentication is required. Do not put a password or token directly in the command.
 
-If this computer cannot reach `github.com`, transfer an existing Helion source folder to it or fix its network access before continuing.
+## 4. Install build dependencies
 
-## 2. Install common build tools
-
-Install the compiler, CMake, Ninja, and Git:
+Install the full native toolchain:
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake ninja-build git
+sudo apt install \
+  build-essential \
+  cmake \
+  ninja-build \
+  libssl-dev \
+  libsdl2-dev \
+  libgl1-mesa-dev \
+  mesa-utils \
+  python3 \
+  openssl \
+  dpkg-dev \
+  util-linux \
+  coreutils
 ```
 
-Check the installed tools:
+The client requires SDL2 and OpenGL. The server does not require a graphical session, but both server and client require OpenSSL because all connections use TLS.
+
+## 5. Build and test everything
+
+Configure a release build from the repository root:
 
 ```bash
-g++ --version
-cmake --version
-ninja --version
+cd ~/Helion
+cmake -S . -B build-native -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release
 ```
 
-Helion requires CMake 3.16 or newer and a C++17 compiler. GCC 9 or newer is recommended.
-
-## 3. Install and build the server
-
-The server requires OpenSSL development files for password hashing. It does not require SDL2, OpenGL, or a desktop session.
-
-Install its dependency:
+Build and run the complete test suite:
 
 ```bash
-sudo apt install libssl-dev
+cmake --build build-native --parallel
+ctest --test-dir build-native --output-on-failure
 ```
 
-Configure a server-only build from the repository root:
+The main executables are:
+
+```text
+build-native/native/helion_server
+build-native/native/helion_client
+```
+
+Run the headless rendering check when an SDL installation is available:
+
+```bash
+SDL_VIDEODRIVER=offscreen LIBGL_ALWAYS_SOFTWARE=1 \
+  ./build-native/native/helion_client \
+  --render-check native-mining.bmp
+```
+
+## 6. Install a source build for local play
+
+Install the compiled binaries and launcher into your user account:
+
+```bash
+cmake --install build-native --prefix "$HOME/.local"
+```
+
+Ensure the user binary directory is available in the current shell:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Test and launch it:
+
+```bash
+helion-play --check
+helion-play
+```
+
+If the desktop entry does not appear immediately, log out and back in or run:
+
+```bash
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+```
+
+## 7. Run directly from the build tree
+
+Create a private local certificate for `localhost`, `127.0.0.1`, and `::1`:
+
+```bash
+cd ~/Helion
+native/scripts/helion-dev-cert /tmp/helion-local-tls
+```
+
+The helper refuses to overwrite existing certificate files. Use a new empty directory when generating another certificate.
+
+Start the server in the first terminal:
+
+```bash
+./build-native/native/helion_server \
+  4242 \
+  "$HOME/.local/share/helion-server/commander.db" \
+  --cert /tmp/helion-local-tls/server.crt \
+  --key /tmp/helion-local-tls/server.key
+```
+
+Start the graphical client in a second terminal:
+
+```bash
+./build-native/native/helion_client \
+  127.0.0.1 \
+  4242 \
+  --ca /tmp/helion-local-tls/server.crt
+```
+
+For protocol diagnostics:
+
+```bash
+./build-native/native/helion_client \
+  127.0.0.1 \
+  4242 \
+  --ca /tmp/helion-local-tls/server.crt \
+  --terminal
+```
+
+There is no plaintext mode or insecure certificate bypass.
+
+## 8. Create a commander and play
+
+Open the graphical console with **Enter** and create an account:
+
+```text
+/create pilot YOUR_NEW_PASSWORD Commander Name
+```
+
+Passwords must be 12–128 bytes. On later visits:
+
+```text
+/login pilot YOUR_NEW_PASSWORD
+```
+
+Useful commands include:
+
+```text
+/profile
+/state
+/contacts
+/mission
+/accept
+/turnin
+/buy food 1
+/buy parts 1
+/sell food 1
+/sell parts 1
+/upgrade engine
+/upgrade hull
+/chat Hello pilots
+/quit
+```
+
+Flight controls:
+
+| Key | Action |
+| --- | --- |
+| `L` | Launch from the station |
+| `W` or Up | Thrust |
+| `S` or Down | Brake |
+| `A/D` or Left/Right | Turn |
+| `E` | Mine a nearby ore asteroid |
+| `F` | Dock when close and slow enough |
+| `B` | Buy one unit of food while docked |
+| `F2` | Account/profile view |
+| `F3` | Toggle telemetry/radar |
+| Enter | Open the command console |
+| Escape | Return to flight |
+
+Mine within 85 m of an ore asteroid while travelling below 35 m/s. The extractor has a 1.25-second cooldown and the starter hold carries eight units. Return to the amber station marker and dock within 85 m below 35 m/s to sell ore.
+
+The server persists credits, XP, upgrades, missions, market cargo, mined ore, position, velocity, yaw, dock state, and station. Restarting the server resumes the saved commander state.
+
+## 9. Build only the server
+
+Install server dependencies:
+
+```bash
+sudo apt install build-essential cmake ninja-build libssl-dev python3 openssl
+```
+
+Configure, build, and test without SDL2 or OpenGL:
 
 ```bash
 cd ~/Helion
@@ -86,79 +289,21 @@ cmake -S . -B build-server -G Ninja \
   -DHELION_BUILD_SERVER=ON \
   -DHELION_BUILD_CLIENT=OFF \
   -DHELION_BUILD_TESTS=ON
-```
-
-Build and test it:
-
-```bash
 cmake --build build-server --parallel
 ctest --test-dir build-server --output-on-failure
 ```
 
-The server executable will be:
+## 10. Build only the client
 
-```text
-~/Helion/build-server/native/helion_server
-```
-
-### Start the server for a local test
-
-Create a private data directory:
+Install client dependencies:
 
 ```bash
-mkdir -p ~/.local/share/helion-server
-chmod 700 ~/.local/share/helion-server
+sudo apt install \
+  build-essential cmake ninja-build libssl-dev \
+  libsdl2-dev libgl1-mesa-dev mesa-utils
 ```
 
-Start the server:
-
-```bash
-cd ~/Helion
-./build-server/native/helion_server \
-  4242 \
-  "$HOME/.local/share/helion-server/helion-server.db"
-```
-
-The expected startup message is similar to:
-
-```text
-Helion server listening on 127.0.0.1:4242 max-clients=32
-```
-
-Keep this terminal open. Stop the server cleanly with `Ctrl+C`.
-
-The server defaults to:
-
-| Setting | Default |
-| --- | --- |
-| Address | `127.0.0.1` |
-| Port | `4242` |
-| Maximum clients | 32 |
-| Read/idle timeout | 30 seconds |
-| Write timeout | 5 seconds |
-| Maximum message line | 4096 bytes |
-| New-password length | 12–128 bytes |
-
-An alternative client limit can be set explicitly:
-
-```bash
-./build-server/native/helion_server \
-  4242 \
-  "$HOME/.local/share/helion-server/helion-server.db" \
-  --max-clients 16
-```
-
-Keep the default loopback address until native TLS is implemented.
-
-## 4. Install and build the client
-
-Install SDL2, OpenGL, and a graphics diagnostic utility:
-
-```bash
-sudo apt install libsdl2-dev libgl1-mesa-dev mesa-utils
-```
-
-Configure a client-only build:
+Configure, build, and test:
 
 ```bash
 cd ~/Helion
@@ -167,108 +312,46 @@ cmake -S . -B build-client -G Ninja \
   -DHELION_BUILD_SERVER=OFF \
   -DHELION_BUILD_CLIENT=ON \
   -DHELION_BUILD_TESTS=ON
-```
-
-Build and test it:
-
-```bash
 cmake --build build-client --parallel
 ctest --test-dir build-client --output-on-failure
 ```
 
-The client executable will be:
+## 11. Configure a remote or dedicated server
 
-```text
-~/Helion/build-client/native/helion_client
-```
+Use a certificate whose Subject Alternative Name matches the exact DNS name or IP address clients use. A loopback development certificate is not valid for a remote hostname or Tailscale address.
 
-Check the active OpenGL renderer:
+Start a remotely reachable server:
 
 ```bash
-glxinfo -B
+./helion_server \
+  4242 \
+  /var/lib/helion/commander.db \
+  --bind 0.0.0.0 \
+  --cert /etc/helion/fullchain.pem \
+  --key /etc/helion/private-key.pem \
+  --max-clients 32
 ```
 
-The native client targets OpenGL 2.1-class hardware, including the Intel graphics in an HP EliteBook 8460p.
-
-## 5. Connect on the same computer
-
-Leave the server running in its first terminal. Open a second terminal and start the diagnostic client:
+With a publicly trusted certificate, connect using the matching hostname:
 
 ```bash
-cd ~/Helion
-./build-client/native/helion_client 127.0.0.1 4242 --terminal
+helion_client game.example.org 4242
 ```
 
-Create an account using a password between 12 and 128 characters:
-
-```text
-/create pilot choose-a-long-password Cmdr Pilot
-```
-
-Then try the available commands:
-
-```text
-/login pilot choose-a-long-password
-/profile
-/state
-/chat Hello from the native client
-/quit
-```
-
-Start the graphical client with:
+With a private certificate authority, distribute only its CA certificate through a trusted channel:
 
 ```bash
-./build-client/native/helion_client 127.0.0.1 4242
+helion_client game.example.org 4242 \
+  --ca /path/to/trusted-ca.pem
 ```
 
-The graphical interface is still an early development shell. Terminal mode is currently the clearest way to test accounts, chat, profiles, and protocol responses.
+Never distribute the server private key. Unknown certificate authorities, expired certificates, and mismatched DNS/IP identities are rejected before credentials are sent.
 
-## 6. Connect from another computer through Tailscale SSH
+For Tailscale, bind the server to its Tailscale address or an appropriately firewalled interface and issue a certificate containing the Tailscale IP or MagicDNS hostname the client uses. Then connect with that same identity. TLS verification still applies inside the Tailscale network.
 
-Keep the Helion server bound to `127.0.0.1`. On the client computer, create an encrypted SSH tunnel to the server computer:
+## 12. Install the dedicated server as a system service
 
-```bash
-ssh -N -L 14242:127.0.0.1:4242 \
-  USER@TAILSCALE_IP
-```
-
-Leave the tunnel terminal open. On the client computer, connect Helion to the local end of the tunnel:
-
-```bash
-./build-client/native/helion_client 127.0.0.1 14242 --terminal
-```
-
-Or launch its graphical mode:
-
-```bash
-./build-client/native/helion_client 127.0.0.1 14242
-```
-
-The connection path is:
-
-```text
-Helion client -> local port 14242 -> encrypted SSH/Tailscale tunnel -> server port 4242
-```
-
-If the server's Tailscale address changes, obtain its current address on the server with:
-
-```bash
-tailscale ip -4
-```
-
-If Tailscale SSH is not enabled on the server:
-
-```bash
-sudo tailscale set --ssh=true
-```
-
-Do not expose Helion port `4242` directly to the internet. Passwords are hashed on disk, but native TLS transport is still under development.
-
-## 7. Install the server as a system service
-
-Complete the local foreground test before installing the service.
-
-Create a restricted service account and data directory:
+Create a service account and protected directories:
 
 ```bash
 sudo useradd --system \
@@ -276,30 +359,37 @@ sudo useradd --system \
   --shell /usr/sbin/nologin \
   helion
 sudo install -d -o helion -g helion -m 750 /var/lib/helion
+sudo install -d -o root -g helion -m 750 /etc/helion
 ```
 
-Install the server binary under `/opt/helion`:
+Install the server build:
 
 ```bash
 cd ~/Helion
 sudo cmake --install build-server --prefix /opt/helion
-sudo chown root:root /opt/helion/bin/helion_server
-sudo chmod 755 /opt/helion/bin/helion_server
 ```
 
-Create `/etc/systemd/system/helion-server.service` as an administrator with this content:
+Copy the certificate and key to `/etc/helion`, set ownership deliberately, and keep the key unreadable by other users:
+
+```bash
+sudo chown root:helion /etc/helion/fullchain.pem /etc/helion/private-key.pem
+sudo chmod 640 /etc/helion/fullchain.pem /etc/helion/private-key.pem
+```
+
+Create `/etc/systemd/system/helion-server.service`:
 
 ```ini
 [Unit]
-Description=Helion standalone server
-After=network.target
+Description=Helion standalone TLS server
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=helion
 Group=helion
 WorkingDirectory=/var/lib/helion
-ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/helion-server.db
+ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/commander.db --bind 0.0.0.0 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem --max-clients 32
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -312,192 +402,169 @@ ReadWritePaths=/var/lib/helion
 WantedBy=multi-user.target
 ```
 
-Load and start the service:
+Enable and inspect it:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now helion-server
 sudo systemctl status helion-server
-```
-
-Follow its logs:
-
-```bash
 journalctl -u helion-server -f
 ```
 
-Stop or restart it with:
+Open the port only on the network that should reach it. Example for a private subnet:
 
 ```bash
-sudo systemctl stop helion-server
-sudo systemctl restart helion-server
+sudo ufw allow from 192.0.2.0/24 to any port 4242 proto tcp
 ```
 
-## 8. Install a desktop launcher for the client
+Replace the example subnet with the real authorized network; do not copy it literally.
 
-Install the client into your user account:
+## 13. Build distributable packages
+
+Build the configured package targets:
 
 ```bash
 cd ~/Helion
-cmake --install build-client --prefix "$HOME/.local"
+cmake --build build-native --target package
 ```
 
-The installed executable is normally:
-
-```text
-~/.local/bin/helion_client
-```
-
-Create `~/.local/share/applications/helion-client.desktop` with the following content. Replace `YOUR_USERNAME` with the Linux username on that computer.
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=Helion Native Client
-Comment=Connect to a Helion standalone server
-Exec=/home/YOUR_USERNAME/.local/bin/helion_client 127.0.0.1 4242
-Terminal=false
-Categories=Game;
-```
-
-For an SSH tunnel using local port `14242`, change the last argument in `Exec` from `4242` to `14242`.
-
-Make the launcher executable:
+CMake produces versioned `.deb` and `.tar.gz` packages. Test a package before distributing it:
 
 ```bash
-chmod +x ~/.local/share/applications/helion-client.desktop
+sudo apt install ./helion-0.2.0-Linux-x86_64.deb
+helion-play --check
 ```
 
-## 9. Updating Helion
+## 14. Update and back up Helion
 
-Back up the server data file before replacing the server:
+Stop the server before a manual backup. For a local user installation:
 
 ```bash
-cp ~/.local/share/helion-server/helion-server.db \
-  ~/.local/share/helion-server/helion-server.db.backup
-chmod 600 ~/.local/share/helion-server/helion-server.db.backup
+cp ~/.local/share/helion/commander.db \
+  ~/.local/share/helion/commander.db.backup
+chmod 600 ~/.local/share/helion/commander.db.backup
 ```
 
-When normal GitHub access is available:
+For a system service:
+
+```bash
+sudo systemctl stop helion-server
+sudo cp /var/lib/helion/commander.db \
+  /var/lib/helion/commander.db.backup
+sudo chmod 600 /var/lib/helion/commander.db.backup
+```
+
+Update a clean Git checkout:
 
 ```bash
 cd ~/Helion
 git status
 git pull --ff-only
-cmake --build build-server --parallel
-cmake --build build-client --parallel
-ctest --test-dir build-server --output-on-failure
-ctest --test-dir build-client --output-on-failure
+cmake --build build-native --parallel
+ctest --test-dir build-native --output-on-failure
 ```
 
-Do not run `git pull` if `git status` reports uncommitted work you have not backed up or committed.
+Do not pull, reset, or switch branches while valuable uncommitted work is present.
 
-For a system service, reinstall and restart the server after tests pass:
+Reinstall after successful tests:
 
 ```bash
-sudo systemctl stop helion-server
+cmake --install build-native --prefix "$HOME/.local"
+```
+
+For a system service, reinstall the server and restart it:
+
+```bash
 sudo cmake --install build-server --prefix /opt/helion
 sudo systemctl start helion-server
 sudo systemctl status helion-server
 ```
 
-## 10. Troubleshooting
+## 15. Troubleshooting
 
-### GitHub cannot connect on port 443
-
-Test name resolution and HTTPS access:
+### GitHub cannot connect
 
 ```bash
 getent hosts github.com
 curl -4 -I --connect-timeout 10 https://github.com
 ```
 
-If both fail, the problem is network access rather than Git authentication. Use an existing source copy while the network problem is repaired.
+If HTTPS is unreachable, use the existing local source copy while repairing network access.
 
 ### CMake cannot find OpenSSL
 
-Install the development package and reconfigure:
-
 ```bash
-sudo apt install libssl-dev
-cmake -S . -B build-server -G Ninja \
-  -DHELION_BUILD_CLIENT=OFF
+sudo apt install libssl-dev openssl
 ```
 
-### CMake cannot find SDL2 or OpenGL
+Delete only the affected disposable build directory or re-run CMake after installing the dependency.
 
-Install the client dependencies:
+### CMake cannot find SDL2 or OpenGL
 
 ```bash
 sudo apt install libsdl2-dev libgl1-mesa-dev
 ```
 
-Then configure `build-client` again.
+### Certificate verification fails
 
-### The client reports `unable to connect`
-
-Confirm the server is listening:
+Confirm the certificate is current and contains the identity used by the client:
 
 ```bash
+openssl x509 -in /path/to/server.crt \
+  -noout -dates -subject -issuer -ext subjectAltName
+```
+
+Use `--ca` only with the intended trusted CA or local certificate. Never disable certificate verification.
+
+### The local launcher reports an expired certificate
+
+Stop Helion, back up the private `tls` directory, then move it aside and let the launcher generate a new loopback certificate. Do not remove `commander.db`.
+
+### The server says the data file is already in use
+
+Another Helion server process is using the same commander database. Check before stopping anything:
+
+```bash
+pgrep -af helion_server
+```
+
+Each running server needs its own data file. The `.lock` sidecar prevents two servers from corrupting one save.
+
+### The client cannot connect
+
+Check the service, listening socket, firewall, address, and TLS identity:
+
+```bash
+systemctl status helion-server
 ss -ltn | grep 4242
 ```
 
-Test the local port:
+For a local certificate:
 
 ```bash
-nc -vz 127.0.0.1 4242
+openssl s_client \
+  -connect 127.0.0.1:4242 \
+  -CAfile /path/to/server.crt \
+  -verify_return_error \
+  -verify_ip 127.0.0.1
 ```
 
-For a tunnel using port `14242`:
+### SDL or OpenGL fails
 
-```bash
-nc -vz 127.0.0.1 14242
-```
-
-### SDL initialization fails
-
-Run the graphical client from the XFCE desktop session and inspect:
-
-```bash
-echo "$DISPLAY"
-echo "$WAYLAND_DISPLAY"
-```
-
-Terminal mode does not need a graphical window.
-
-### OpenGL window creation fails
-
-Inspect the driver:
+Run the graphical client inside the XFCE desktop session and inspect the renderer:
 
 ```bash
 glxinfo -B
 ```
 
-Test software rendering to distinguish a driver problem from an application problem:
+Test software rendering for diagnosis:
 
 ```bash
 LIBGL_ALWAYS_SOFTWARE=1 \
-  ./build-client/native/helion_client 127.0.0.1 4242
+  helion_client 127.0.0.1 4242 \
+  --ca /path/to/server.crt
 ```
 
-### Account creation returns `ERR password-length`
+## 16. Current development limits
 
-Use a password between 12 and 128 bytes.
-
-### The server refuses to load its data file
-
-Do not delete the file. Stop the server, preserve a copy, and inspect the service logs:
-
-```bash
-sudo systemctl stop helion-server
-sudo cp /var/lib/helion/helion-server.db \
-  /var/lib/helion/helion-server.db.recovery-copy
-sudo chmod 600 /var/lib/helion/helion-server.db.recovery-copy
-journalctl -u helion-server -n 100 --no-pager
-```
-
-The server aborts startup when it detects malformed persistence data or cannot migrate legacy credentials safely.
-
-## 11. Current development limits
-
-The native foundation builds and its automated tests pass, but it is not yet a complete game. The graphical client still needs a polished login interface and text rendering. The server does not yet run an authoritative ship simulation, trading economy, missions, or combat. Native TLS is the next networking milestone; until it lands, use loopback or an encrypted tunnel.
+The native client/server now forms a playable career slice with secure transport, mining, trading, missions, upgrades, persistent flight, and live contacts. Remaining major systems include combat, broader mission chains, functional hull damage and repair, deeper economy simulation, shared asteroid depletion, and richer exploration.

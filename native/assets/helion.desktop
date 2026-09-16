@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Helion
+Comment=Fly, mine ore, and build your space career
+Exec=helion-play
+Icon=helion
+Terminal=false
+Categories=Game;Simulation;
+StartupNotify=false

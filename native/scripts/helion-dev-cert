@@ -1,0 +1,16 @@
+#!/bin/sh
+# Local-only certificate, valid for localhost and IPv4/IPv6 loopback.
+set -eu
+if [ "$#" -ne 1 ]; then echo 'Usage: helion-dev-cert OUTPUT_DIRECTORY' >&2; exit 2; fi
+umask 077
+mkdir -p "$1"
+if [ -e "$1/server.key" ] || [ -e "$1/server.crt" ]; then
+  echo 'Certificate files already exist; refusing to overwrite them.' >&2
+  exit 1
+fi
+openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 365 \
+  -keyout "$1/server.key" -out "$1/server.crt" -subj '/CN=localhost' \
+  -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
+  -addext 'keyUsage=critical,digitalSignature,keyEncipherment' \
+  -addext 'extendedKeyUsage=serverAuth'
+echo "Local TLS certificate created in $1"

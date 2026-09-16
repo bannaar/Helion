@@ -1,132 +1,136 @@
 # Helion
 
-Helion is an in-development standalone space game built around a native C++ server and SDL2/OpenGL client. The earlier browser application remains a gameplay prototype and design reference; current development is focused on the independent native client/server architecture.
+Helion is a low-resource space career game prototype with two runtimes:
 
-## Current native foundation
+- **Browser reference game** — a playable Three.js/TanStack application used for
+  rapid gameplay and UI development.
+- **Standalone native foundation** — a C++17 TCP server and SDL2/OpenGL client
+  designed for Linux systems with OpenGL 2.1-era hardware, including older
+  Intel integrated graphics.
 
-The current recovery branch includes:
+The native runtime now provides a playable mining career loop, procedural
+ship/station/asteroid assets, account creation/login, durable commander
+profiles, shared chat, and mandatory verified TLS transport. Linux packages
+and a desktop local-play launcher are available. See [installation](docs/native-install.md)
+and [project state](docs/PROJECT_STATE.md). It is not yet a complete port of
+the browser simulation.
 
-- independent server-only, client-only, and test builds;
-- a versioned `Helion/1` line protocol with bounded messages;
-- a headless POSIX TCP server;
-- an SDL2 client using an OpenGL 2.1-compatible renderer;
-- persistent commander profiles and chat;
-- salted OpenSSL scrypt password hashes;
-- automatic migration of legacy plaintext credentials;
-- loopback binding by default;
-- connection limits, authentication limits, and socket timeouts;
-- protocol, security, and server integration tests.
+## Repository layout
 
-The native project compiles and its current automated tests pass, but it is still a foundation. The graphical login experience, server-authoritative flight simulation, economy, missions, and combat remain under development.
+| Path | Purpose |
+| --- | --- |
+| `src/` | Browser game, simulation, UI, audio, and persistence adapters |
+| `native/server/` | Standalone POSIX TCP server |
+| `native/client/` | Standalone SDL2/OpenGL client |
+| `native/README.md` | Native quick start and protocol reference |
+| `docs/installation.md` | Complete source, package, server, and client installation guide |
+| `docs/native-server.md` | Server installation and production configuration |
+| `docs/native-client.md` | Client installation, launcher usage, and graphics troubleshooting |
+| `migrations/` | Browser database migrations |
+| `CMakeLists.txt` | Native build entry point |
+| `startup.sh` | Browser preview startup contract |
 
-## Quick start on Linux Mint or Ubuntu
+## Quick start: browser game
 
-Install all server and client dependencies:
+Requirements: Node.js 22 or newer and npm.
 
-```bash
-sudo apt update
-sudo apt install \
-  build-essential \
-  cmake \
-  ninja-build \
-  libssl-dev \
-  libsdl2-dev \
-  libgl1-mesa-dev \
-  mesa-utils
+```sh
+npm install
+npm run dev
 ```
 
-Configure, build, and test everything from the repository root:
+Open the preview served by the development environment. Useful checks:
 
-```bash
-cmake -S . -B build-native -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release
+```sh
+npm run typecheck
+npm run test
+npm run build
+```
+
+The browser version uses local save storage by default. Authenticated profile,
+market, news, and GalNet persistence use the existing database adapters when
+configured.
+
+## Quick start: standalone native runtime
+
+On Debian/Ubuntu, install the native build dependencies:
+
+```sh
+sudo apt install build-essential cmake libsdl2-dev libgl1-mesa-dev libssl-dev python3 openssl
+```
+
+Build from the repository root:
+
+```sh
+cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
 cmake --build build-native --parallel
-ctest --test-dir build-native --output-on-failure
 ```
 
-Start the server in one terminal:
+Start the server:
 
-```bash
-mkdir -p ~/.local/share/helion-server
-chmod 700 ~/.local/share/helion-server
-./build-native/native/helion_server \
-  4242 \
-  "$HOME/.local/share/helion-server/helion-server.db"
+```sh
+native/scripts/helion-dev-cert /tmp/helion-local-tls
+./build-native/native/helion_server 4242 helion-server.db \
+  --cert /tmp/helion-local-tls/server.crt --key /tmp/helion-local-tls/server.key
 ```
 
-Connect from another terminal:
+Connect with the graphical client:
 
-```bash
-./build-native/native/helion_client 127.0.0.1 4242 --terminal
+```sh
+./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt
 ```
 
-Create and inspect a commander profile:
+For protocol diagnostics without a graphical session:
+
+```sh
+./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt --terminal
+```
+
+See the [native server guide](docs/native-server.md) and
+[native client guide](docs/native-client.md) for service setup, firewall
+configuration, data-file handling, and troubleshooting.
+
+## Native protocol snapshot
+
+Requests are newline-terminated:
 
 ```text
-/create pilot choose-a-long-password Cmdr Pilot
-/login pilot choose-a-long-password
-/profile
-/state
-/quit
+CREATE username password display
+LOGIN username password
+CHAT message
+PROFILE
+STATE
+LAUNCH
+INPUT 1 0 0
+FLIGHT
+MINE
+DOCK
+QUIT
 ```
 
-New passwords must be 12–128 bytes.
+The native server stores salted scrypt password hashes and requires TLS 1.2+
+for all connections. Clients verify certificate trust and server identity;
+there is no plaintext fallback. Live player and NPC contacts are replicated,
+while shared asteroid depletion, player-to-player collision, and
+cross-connection/IP rate limiting remain future work.
 
-## Separate builds
+## Graphics compatibility
 
-Build the headless server without SDL2 or OpenGL:
+The client requests an OpenGL 2.1 context and uses fixed-function calls only.
+It avoids shaders, VAOs, and modern OpenGL-only features. A 960×600 window is
+created by default and can be resized. Software rendering may work for
+diagnostics but is not recommended for gameplay.
 
-```bash
-cmake -S . -B build-server -G Ninja \
-  -DHELION_BUILD_CLIENT=OFF
-cmake --build build-server --parallel
-ctest --test-dir build-server --output-on-failure
-```
+## Current gameplay scope
 
-Build the client without the server or OpenSSL server dependency:
+The browser reference currently includes low-poly ships and stations, multiple
+ship classes and factions, outfitting, trading, cargo, missions, mining,
+salvage, scanning, combat, police/pirate/alien contacts, GalNet news/chat,
+procedural audio, TTS, and local commander saves. Native gameplay is being
+implemented incrementally against the same concepts.
 
-```bash
-cmake -S . -B build-client -G Ninja \
-  -DHELION_BUILD_SERVER=OFF
-cmake --build build-client --parallel
-ctest --test-dir build-client --output-on-failure
-```
+## License and contribution
 
-The three CMake switches are:
-
-| Option | Default | Purpose |
-| --- | --- | --- |
-| `HELION_BUILD_SERVER` | `ON` | Build the headless server |
-| `HELION_BUILD_CLIENT` | `ON` | Build the SDL2/OpenGL client |
-| `HELION_BUILD_TESTS` | `ON` | Build and register native tests |
-
-## Network security
-
-The server binds to `127.0.0.1` by default. Passwords are protected at rest with salted scrypt hashes, but the current TCP transport does not yet include native TLS.
-
-For another computer, keep the server on loopback and use an encrypted SSH or Tailscale SSH tunnel. Do not expose port `4242` directly to the public internet.
-
-Example client-side tunnel:
-
-```bash
-ssh -N -L 14242:127.0.0.1:4242 USER@TAILSCALE_IP
-```
-
-Then connect Helion to the local tunnel endpoint:
-
-```bash
-./build-native/native/helion_client 127.0.0.1 14242
-```
-
-## Documentation
-
-- [Complete installation guide](docs/installation.md)
-- [Native server guide](docs/native-server.md)
-- [Native client guide](docs/native-client.md)
-- [Native implementation overview](native/README.md)
-
-## Development direction
-
-The next networking milestone is native TLS with server identity verification. Later milestones add a polished native login interface, authoritative movement and physics, docking and travel, trading and missions, followed by combat, factions, scanning, mining, and salvage.
-
-Keep generated builds, server databases, credentials, certificates, and private keys out of Git.
+This repository is an evolving prototype. Keep changes focused, preserve the
+OpenGL 2.1 compatibility target for native client work, and run the relevant
+browser type checks or native CMake build before submitting changes.

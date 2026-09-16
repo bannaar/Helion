@@ -11,7 +11,7 @@ Supported toolchain:
 - C++17 compiler (GCC 9+ or Clang 10+ recommended)
 - CMake 3.16+
 - `make` or Ninja
-- OpenSSL development headers and `libcrypto` (1.1.1 or newer) for scrypt
+- OpenSSL development headers, `libssl` and `libcrypto` (1.1.1 or newer) for TLS and scrypt
 
 Debian/Ubuntu:
 
@@ -43,7 +43,8 @@ ctest --test-dir build-native-server --output-on-failure
 `HELION_BUILD_SERVER` and `HELION_BUILD_TESTS` default to `ON`. Use
 `-DHELION_BUILD_TESTS=OFF` if the protocol test binary is not wanted. The
 server-only configure path does not search for SDL2 or OpenGL. Configuration
-fails if OpenSSL Crypto is unavailable; there is no plaintext password fallback.
+fails if OpenSSL SSL/Crypto is unavailable; there is no unencrypted transport
+or plaintext password fallback. Tests also need Python 3 and the OpenSSL CLI.
 
 The executable is written to:
 
@@ -60,7 +61,7 @@ The command accepts an optional TCP port and persistence path, plus explicit
 bind and connection-limit options:
 
 ```sh
-./build-native/native/helion_server [port] [data-file] [--bind IPv4-address] [--max-clients 1..1024]
+./build-native/native/helion_server [port] [data-file] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem
 ```
 
 Defaults:
@@ -70,6 +71,8 @@ Defaults:
 | Listen port | `4242` |
 | Data file | `helion-server.db` in the current directory |
 | Bind address | `127.0.0.1` only |
+| Transport | TLS 1.2+; certificate and key required |
+| Handshake deadline | 5 seconds; counts against the client limit |
 | Concurrent clients | 32 (configurable, maximum 1024) |
 | Socket idle/read timeout | 30 seconds; incomplete lines also have a 30-second deadline |
 | Socket write timeout | 5 seconds |
@@ -80,17 +83,32 @@ Examples:
 
 ```sh
 # Local development
-./build-native/native/helion_server 4242 ./var/helion-server.db
+./build-native/native/helion_server 4242 ./var/helion-server.db \
+  --cert ./tls/server.crt --key ./tls/server.key
 
 # Dedicated host, still listening only on loopback
-./build-native/native/helion_server 4242 /var/lib/helion/helion-server.db
+./build-native/native/helion_server 4242 /var/lib/helion/helion-server.db \
+  --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem
 ```
 
-`--bind` accepts a numeric IPv4 address. Any non-loopback address, including
-`0.0.0.0`, requires this explicit option and prints a warning. The protocol
-does not yet have native TLS. For remote access, keep the server on loopback
-and carry TCP through an encrypted tunnel such as SSH or WireGuard. Do not
-expose its port directly to the public internet, even with a firewall rule.
+`--bind` accepts a numeric IPv4 address. The default remains loopback-only;
+remote servers must opt into a non-loopback bind. All connections require
+TLS 1.2 or newer, including loopback. Supply a PEM certificate chain and its
+matching PEM private key; missing or mismatched files prevent startup.
+Certificates are loaded at startup, so restart after renewal.
+
+Remote certificates must include the DNS name or IP used by clients in their
+Subject Alternative Name. Clients use operating-system CA roots or an
+explicit `--ca` trust file; invalid identities are rejected before credentials
+are sent. The server authenticates players with passwords, not client
+certificates. Handshakes are bounded to five seconds, consume client slots,
+and are interrupted by server shutdown. At capacity, connections are closed
+before the handshake, with no plaintext error response.
+
+For local development, `native/scripts/helion-dev-cert /private/tls-directory`
+creates a one-year loopback certificate; pass its `server.crt` to the client
+with `--ca`. The private key stays on the server. For an installed local game,
+`helion-play` handles this setup automatically. See `docs/native-install.md`.
 
 Create the data directory before startup and restrict it to the service user:
 
@@ -108,6 +126,17 @@ serving plaintext credentials; preserve the original data file for recovery.
 Legacy `P` records become hashed `H` records, so even a legacy password that
 begins with `$` is migrated unambiguously.
 
+Before loading or migrating, the server takes an exclusive non-blocking lock
+on `<data-file>.lock`. A second server using the same save exits with
+`persistence file is already in use by another server`, even on a different
+port. The sidecar remains owner-only and must stay in place: do not remove it
+while any server may be running. The operating system releases ownership on
+shutdown or process exit, so restarting needs no lock-file cleanup. Symlink,
+hard-linked, foreign-owned, and non-regular lock files are rejected. This is
+an advisory lock for cooperating Helion processes on a local filesystem;
+keep the directory writable only by the service user and stop the server
+before restoring or manually editing a save.
+
 ## 4. systemd example
 
 Create `/etc/systemd/system/helion-server.service`:
@@ -122,7 +151,7 @@ Type=simple
 User=helion
 Group=helion
 WorkingDirectory=/opt/helion
-ExecStart=/opt/helion/build-native/native/helion_server 4242 /var/lib/helion/helion-server.db
+ExecStart=/opt/helion/build-native/native/helion_server 4242 /var/lib/helion/helion-server.db --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -145,15 +174,15 @@ sudo systemctl status helion-server
 
 ## 5. Firewall
 
-The default loopback bind needs no inbound firewall opening. If using an
-encrypted tunnel that requires an explicit non-loopback bind, restrict its
-source addresses:
+The default loopback bind needs no inbound firewall opening. For a remote server, bind explicitly and restrict inbound access to the
+intended clients or network:
 
 ```sh
 sudo ufw allow from 203.0.113.0/24 to any port 4242 proto tcp
 ```
 
-Do not open the Helion TCP port globally while transport encryption is absent.
+TLS protects transport; it does not replace admission controls or per-IP
+rate limits. Keep the server restricted while those limits are developed.
 
 ## 6. Protocol smoke test
 
@@ -186,11 +215,17 @@ files and any pre-migration backups as sensitive and never commit them.
 
 Before public deployment, add:
 
-1. Native TLS and server identity verification; use an encrypted tunnel until then.
+1. Certificate renewal automation and operational monitoring. TLS and server
+   identity verification are implemented.
 2. Cross-connection/IP rate limiting and durable account lockout; current limits are per connection.
 3. Input normalization and stronger identity rules.
 4. Versioned migrations for non-credential profile records.
-5. A server-authoritative gameplay tick and validated state updates.
+5. Cross-sector simulation and richer world persistence. The current mining
+   sector uses a 60 Hz authoritative flight tick, persists in-flight position
+   and unsold cargo, and validates extraction and docking rewards. Live player
+   positions and deterministic NPC traffic are available through contact
+   snapshots. Shared asteroid depletion and player-to-player collision remain
+   future work.
 
 ## 8. Logs and shutdown
 
@@ -205,3 +240,21 @@ Stop cleanly with `Ctrl-C` in the foreground or:
 ```sh
 sudo systemctl stop helion-server
 ```
+
+## 9. Mining gameplay
+
+The native client now flies a Sidewinder in Kepler Reach. Authenticated
+`LAUNCH`, `INPUT`, `FLIGHT`, `MINE`, and `DOCK` commands implement the mining
+loop. The server advances positions at 60 Hz, resolves asteroid hull
+collisions, bounds the sector to 1200 m, expires controls after 0.5 seconds,
+and validates proximity, speed, extractor cooldown, and cargo capacity.
+
+Docking sells ore at 60 credits and 5 XP per unit. Rewards are acknowledged
+only after the profile snapshot is saved; a failed write restores cargo,
+flight state, credits, and XP so the player can retry. The profile format now
+persists position, velocity, yaw, dock state, mined ore, market cargo, station,
+missions, and upgrades. A server restart resumes the commander's saved flight.
+Asteroid depletion remains per-commander, while chat and contact positions are
+shared.
+
+See `native/README.md` for controls, command arguments, and snapshot fields.

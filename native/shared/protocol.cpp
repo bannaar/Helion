@@ -71,6 +71,35 @@ Request parseRequest(std::string_view line) {
       return request;
     }
     request.command = Command::chat;
+  } else if (command == "MISSION" || command == "ACCEPT" || command == "TURNIN" || command == "UPGRADE") {
+    if (input >> request.first) { request.error = "malformed-message"; return request; }
+    request.command = command == "MISSION" ? Command::mission : command == "ACCEPT" ? Command::accept :
+      command == "TURNIN" ? Command::turnin : Command::upgrade;
+  } else if (command == "BUY" || command == "SELL") {
+    std::string extra;
+    if (!(input>>request.first>>request.second) || (input>>extra) ||
+        (request.first!="food" && request.first!="parts") || request.second.size()!=1 ||
+        request.second[0]<'1' || request.second[0]>'8') {
+      request.error="usage=BUY|SELL food|parts quantity:1..8"; return request;
+    }
+    request.command=command=="BUY" ? Command::buy : Command::sell;
+  } else if (command == "INPUT") {
+    std::string thrust, turn, brake, extra;
+    if (!(input >> thrust >> turn >> brake) || (input >> extra) ||
+        (thrust != "0" && thrust != "1") ||
+        (turn != "-1" && turn != "0" && turn != "1") || (brake != "0" && brake != "1")) {
+      request.error = "usage=INPUT thrust:0|1 turn:-1|0|1 brake:0|1";
+      return request;
+    }
+    request.thrust = thrust == "1";
+    request.turn = turn == "-1" ? -1 : turn == "1" ? 1 : 0;
+    request.brake = brake == "1";
+    request.command = Command::input;
+  } else if (command == "LAUNCH" || command == "FLIGHT" || command == "MINE" || command == "DOCK" || command == "CONTACTS") {
+    std::string extra;
+    if (input >> extra) { request.error = "malformed-message"; return request; }
+    request.command = command == "LAUNCH" ? Command::launch : command == "FLIGHT" ? Command::flight :
+      command == "MINE" ? Command::mine : command == "CONTACTS" ? Command::contacts : Command::dock;
   } else if (command == "PROFILE" || command == "STATE" || command == "QUIT") {
     std::string extra;
     if (input >> extra) { request.error = "malformed-message"; return request; }

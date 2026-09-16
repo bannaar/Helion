@@ -1,0 +1,59 @@
+#!/bin/sh
+# Installed local-play entry point. Only user data is written at runtime.
+set -eu
+bin_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+data_dir=${HELION_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/helion}
+port=${HELION_PORT:-4242}
+mode=${1:-}
+case "$mode" in ''|--terminal|--check) ;; *) echo 'Usage: helion-play [--terminal|--check]' >&2; exit 2 ;; esac
+fail() {
+  echo "$1" >&2
+  if [ -z "$mode" ] && command -v zenity >/dev/null 2>&1; then
+    zenity --error --title=Helion --text="$1" || true
+  fi
+  exit 1
+}
+for tool in openssl flock timeout; do command -v "$tool" >/dev/null 2>&1 || fail "Missing runtime dependency: $tool"; done
+[ -x "$bin_dir/helion_server" ] && [ -x "$bin_dir/helion_client" ] || fail 'Install both the Helion server and client for local play.'
+umask 077
+mkdir -p "$data_dir"
+exec 9>"$data_dir/launcher.lock"
+flock -n 9 || fail 'Helion local play is already running.'
+if [ ! -e "$data_dir/tls/server.crt" ] && [ ! -e "$data_dir/tls/server.key" ]; then
+  "$bin_dir/helion-dev-cert" "$data_dir/tls" >"$data_dir/certificate.log" 2>&1 || fail "Certificate setup failed. See $data_dir/certificate.log"
+fi
+[ -f "$data_dir/tls/server.crt" ] && [ -f "$data_dir/tls/server.key" ] || fail 'Local TLS files are incomplete; restore the missing certificate or key.'
+openssl x509 -checkend 0 -noout -in "$data_dir/tls/server.crt" >/dev/null 2>&1 || fail 'Local TLS certificate expired or is invalid. Renew it using the installation guide; your commander save is separate.'
+server_pid=
+client_pid=
+cleanup() {
+  if [ -n "$client_pid" ]; then kill "$client_pid" 2>/dev/null || true; wait "$client_pid" 2>/dev/null || true; fi
+  if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+"$bin_dir/helion_server" "$port" "$data_dir/commander.db" --cert "$data_dir/tls/server.crt" --key "$data_dir/tls/server.key" >"$data_dir/server.log" 2>&1 &
+server_pid=$!
+attempt=0
+while :; do
+  kill -0 "$server_pid" 2>/dev/null || fail "Local server could not start. See $data_dir/server.log (the port may already be in use)."
+  if timeout 2 openssl s_client -connect "127.0.0.1:$port" -CAfile "$data_dir/tls/server.crt" -verify_return_error -verify_ip 127.0.0.1 </dev/null >/dev/null 2>&1; then break; fi
+  attempt=$((attempt + 1))
+  [ "$attempt" -lt 30 ] || fail "Local TLS server did not become ready. See $data_dir/server.log"
+  sleep 0.1
+done
+if [ "$mode" = --check ]; then
+  printf '/state\n/quit\n' | "$bin_dir/helion_client" 127.0.0.1 "$port" --ca "$data_dir/tls/server.crt" --terminal
+else
+  # Run in the foreground to preserve terminal stdin; trap still owns the server.
+  set +e
+  if [ "$mode" = --terminal ]; then
+    "$bin_dir/helion_client" 127.0.0.1 "$port" --ca "$data_dir/tls/server.crt" --terminal
+  else
+    "$bin_dir/helion_client" 127.0.0.1 "$port" --ca "$data_dir/tls/server.crt" >>"$data_dir/client.log" 2>&1
+  fi
+  result=$?
+  set -e
+  [ "$result" -eq 0 ] || fail "Client exited with an error. See $data_dir/client.log"
+fi

@@ -7,7 +7,7 @@
 
 namespace helion::protocol {
 
-inline constexpr int kVersion = 1;
+inline constexpr int kVersion = 2;
 inline constexpr std::size_t kMaxLine = 4096; // Bytes before LF, including an optional CR.
 
 enum class FrameKind { line, too_long, malformed };
@@ -26,13 +26,14 @@ class LineDecoder {
   bool malformed_ = false;
 };
 
-enum class Command { create, login, chat, profile, state, quit, invalid };
+enum class Command { create, login, chat, profile, state, quit, launch, input, flight, mine, dock, contacts, buy, sell, mission, accept, turnin, upgrade, invalid };
 struct Request {
   Command command = Command::invalid;
   std::string first;
   std::string second;
   std::string payload;
   std::string error;
+  int thrust = 0, turn = 0, brake = 0;
 };
 
 Request parseRequest(std::string_view line);

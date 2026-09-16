@@ -18,9 +18,9 @@ void check(bool condition, const char* caseName) {
 }
 
 int main() {
-  check(helion::protocol::kVersion == 1, "protocol version");
-  check(helion::protocol::compatibleWelcome("WELCOME Helion/1"), "matching protocol accepted");
-  check(!helion::protocol::compatibleWelcome("WELCOME Helion/2"), "different protocol rejected");
+  check(helion::protocol::kVersion == 2, "protocol version");
+  check(helion::protocol::compatibleWelcome("WELCOME Helion/2"), "matching protocol accepted");
+  check(!helion::protocol::compatibleWelcome("WELCOME Helion/3"), "different protocol rejected");
 
   LineDecoder partial;
   check(partial.feed("PRO").empty(), "partial frame waits");

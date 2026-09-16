@@ -1,0 +1,36 @@
+name: Helion native
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libssl-dev libsdl2-dev libgl1-mesa-dev python3 openssl
+      - name: Configure
+        run: cmake -S . -B build-native -G Ninja -DCMAKE_BUILD_TYPE=Debug -DHELION_BUILD_CLIENT=ON -DHELION_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build-native --parallel
+      - name: Test
+        run: ctest --test-dir build-native --output-on-failure
+      - name: Package
+        run: cmake --build build-native --target package
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libssl-dev libsdl2-dev libgl1-mesa-dev python3 openssl
+      - name: Configure sanitizers
+        run: cmake -S . -B build-sanitize -G Ninja -DCMAKE_BUILD_TYPE=Debug -DHELION_BUILD_CLIENT=OFF -DHELION_SANITIZERS=ON
+      - name: Build and test
+        run: cmake --build build-sanitize --parallel && ASAN_OPTIONS=detect_leaks=1 ctest --test-dir build-sanitize --output-on-failure

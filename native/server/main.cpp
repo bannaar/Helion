@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
@@ -25,6 +26,9 @@
 #include "shared/protocol.h"
 #include "server/security.h"
 #include "server/connection_limit.h"
+#include "server/data_lock.h"
+#include "shared/flight.h"
+#include "shared/tls.h"
 
 namespace {
 constexpr int kDefaultPort = 4242;
@@ -47,6 +51,10 @@ struct Profile {
   int credits = 1500;
   int experience = 0;
   bool legacyCredential = false;
+  helion::flight::State flight{};
+  int missionStage = 0;
+  int hullLevel = 1;
+  int engineLevel = 1;
 };
 
 struct ChatMessage {
@@ -59,6 +67,8 @@ std::mutex writeMutex;
 std::unordered_map<std::string, Profile> profiles;
 std::vector<ChatMessage> messages;
 std::vector<int> clients;
+std::mutex transportMutex;
+std::unordered_map<int, std::shared_ptr<helion::tls::Connection>> transports;
 
 std::string encode(const std::string& value) {
   std::string out;
@@ -91,7 +101,11 @@ void saveStateLocked() {
     snapshot << "H\t" << encode(name) << '\t' << encode(profile.passwordHash) << '\t'
          << encode(profile.display) << '\t' << encode(profile.faction) << '\t'
          << encode(profile.ship) << '\t' << profile.credits << '\t'
-         << profile.experience << '\n';
+         << profile.experience << '\t' << profile.missionStage << '\t' << profile.hullLevel << '\t'
+         << profile.engineLevel << '\t' << profile.flight.x << '\t' << profile.flight.y << '\t'
+         << profile.flight.vx << '\t' << profile.flight.vy << '\t' << profile.flight.yaw << '\t'
+         << profile.flight.docked << '\t' << profile.flight.cargo << '\t' << profile.flight.food << '\t'
+         << profile.flight.parts << '\t' << profile.flight.station << '\n';
   }
   for (const auto& message : messages) {
     snapshot << "M\t" << encode(message.user) << '\t' << encode(message.text) << '\n';
@@ -170,6 +184,21 @@ void loadState() {
         };
         profile.credits = parseNumber(creditsText, profile.credits);
         profile.experience = parseNumber(experienceText, profile.experience);
+        std::string value;
+        std::getline(input, value, '\t'); profile.missionStage = parseNumber(value, 0);
+        std::getline(input, value, '\t'); profile.hullLevel = std::clamp(parseNumber(value, 1), 1, 5);
+        std::getline(input, value, '\t'); profile.engineLevel = std::clamp(parseNumber(value, 1), 1, 5);
+        std::getline(input, value, '\t'); profile.flight.x = std::stod(value.empty()?"0":value);
+        std::getline(input, value, '\t'); profile.flight.y = std::stod(value.empty()?"0":value);
+        std::getline(input, value, '\t'); profile.flight.vx = std::stod(value.empty()?"0":value);
+        std::getline(input, value, '\t'); profile.flight.vy = std::stod(value.empty()?"0":value);
+        std::getline(input, value, '\t'); profile.flight.yaw = std::stod(value.empty()?"0":value);
+        std::getline(input, value, '\t'); profile.flight.docked = value.empty() || value == "1";
+        std::getline(input, value, '\t'); profile.flight.cargo = parseNumber(value, 0);
+        std::getline(input, value, '\t'); profile.flight.food = parseNumber(value, 0);
+        std::getline(input, value, '\t'); profile.flight.parts = parseNumber(value, 0);
+        std::getline(input, value, '\t'); profile.flight.station = parseNumber(value, 0);
+        profile.flight.inputAge = 1;
         if (!profiles.emplace(decode(first), std::move(profile)).second)
           throw std::runtime_error("duplicate profile in persistence file");
       } else if (kind == "M" && !first.empty() && !second.empty()) {
@@ -209,16 +238,15 @@ void migrateLegacyProfiles() {
 
 bool sendLine(int fd, const std::string& line) {
   if (!helion::protocol::validWireLine(line)) return false;
-  std::string data = line;
-  data.push_back('\n');
-  std::lock_guard<std::mutex> lock(writeMutex);
-  std::size_t sent = 0;
-  while (sent < data.size()) {
-    const ssize_t n = send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
-    if (n <= 0) return false;
-    sent += static_cast<std::size_t>(n);
+  std::shared_ptr<helion::tls::Connection> connection;
+  {
+    std::lock_guard<std::mutex> lock(transportMutex);
+    const auto found = transports.find(fd);
+    if (found == transports.end()) return false;
+    connection = found->second;
   }
-  return true;
+  std::lock_guard<std::mutex> lock(writeMutex);
+  return connection->sendAll(line + "\n");
 }
 
 std::string stateLine() {
@@ -233,6 +261,18 @@ void broadcast(const std::string& line) {
   for (const int fd : clients) sendLine(fd, line);
 }
 
+std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
+  std::vector<helion::flight::Contact> result;
+  for (const auto& [name, profile] : profiles) {
+    if (name == user) continue;
+    result.push_back({name, "pilot", profile.flight.x, profile.flight.y, profile.flight.yaw, profile.flight.docked});
+  }
+  const double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  result.push_back({"HAULER-7", "hauler", 420.0 + std::cos(t * 0.08) * 180.0,
+                    160.0 + std::sin(t * 0.08) * 120.0, 0, false});
+  return result;
+}
+
 void removeClient(int fd) {
   std::lock_guard<std::mutex> lock(stateMutex);
   for (auto it = clients.begin(); it != clients.end(); ++it) {
@@ -243,13 +283,13 @@ void removeClient(int fd) {
   }
 }
 
-void clientLoop(int fd) {
+void clientLoop(int fd, helion::tls::Connection& connection) {
   {
     std::lock_guard<std::mutex> lock(stateMutex);
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -259,7 +299,7 @@ void clientLoop(int fd) {
   auto lastCompleteLine = std::chrono::steady_clock::now();
   char bytes[1024];
   while (running) {
-    const ssize_t received = recv(fd, bytes, sizeof(bytes), 0);
+    const ssize_t received = connection.receive(bytes, sizeof(bytes));
     if (received == 0) break;
     if (received < 0) {
       if (errno == EINTR) continue;
@@ -364,6 +404,82 @@ void clientLoop(int fd) {
               " experience=" + std::to_string(profile.experience));
           }
         }
+      } else if (request.command == helion::protocol::Command::mission || request.command == helion::protocol::Command::accept || request.command == helion::protocol::Command::turnin) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        auto& profile = profiles.at(user);
+        if (request.command == helion::protocol::Command::mission) {
+          sendLine(fd, profile.missionStage == 0 ? "MISSION 1 title=First Ore objective=mine-1 reward=250" : profile.missionStage == 1 ? "MISSION 1 active objective=mine-1 reward=250" : "MISSION 1 complete");
+        } else if (request.command == helion::protocol::Command::accept) {
+          if (profile.missionStage != 0) sendLine(fd, "ERR mission-unavailable");
+          else { profile.missionStage = 1; saveStateLocked(); sendLine(fd, "OK MISSION ACCEPTED id=1"); }
+        } else if (profile.missionStage != 1) sendLine(fd, "ERR mission-not-active");
+        else if (!profile.flight.docked || profile.flight.cargo < 1) sendLine(fd, "ERR objective-incomplete");
+        else { profile.missionStage = 2; profile.credits += 250; profile.experience += 25; saveStateLocked(); sendLine(fd, "OK MISSION COMPLETE reward=250"); }
+      } else if (request.command == helion::protocol::Command::upgrade) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        auto& profile = profiles.at(user);
+        if (!profile.flight.docked) { sendLine(fd, "ERR dock-required"); continue; }
+        if (request.first != "hull" && request.first != "engine") { sendLine(fd, "ERR unknown-upgrade"); continue; }
+        int& level = request.first == "hull" ? profile.hullLevel : profile.engineLevel;
+        const int cost = level * 500;
+        if (level >= 5) sendLine(fd, "ERR upgrade-max");
+        else if (profile.credits < cost) sendLine(fd, "ERR insufficient-credits");
+        else { profile.credits -= cost; ++level; saveStateLocked(); sendLine(fd, "OK UPGRADE " + request.first + " level=" + std::to_string(level) + " cost=" + std::to_string(cost)); }
+      } else if (request.command == helion::protocol::Command::contacts) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        for (const auto& contact : contactsFor(user)) sendLine(fd, helion::flight::contactLine(contact));
+        sendLine(fd, "CONTACTS END");
+      } else if (request.command == helion::protocol::Command::buy || request.command == helion::protocol::Command::sell) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        auto& profile = profiles.at(user);
+        int quantity = 0;
+        try { quantity = std::stoi(request.second); } catch (...) { sendLine(fd, "ERR invalid-quantity"); continue; }
+        const auto before = profile;
+        const auto result = helion::flight::trade(profile.flight, profile.credits,
+          request.command == helion::protocol::Command::buy, request.first, quantity);
+        if (result.rfind("OK", 0) == 0) {
+          try { saveStateLocked(); } catch (const std::exception& error) {
+            profile = before; sendLine(fd, "ERR persistence-failed"); std::cerr << error.what() << '\n'; continue;
+          }
+        }
+        sendLine(fd, result);
+        sendLine(fd, helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+      } else if (request.command == helion::protocol::Command::launch ||
+                 request.command == helion::protocol::Command::input ||
+                 request.command == helion::protocol::Command::flight ||
+                 request.command == helion::protocol::Command::mine ||
+                 request.command == helion::protocol::Command::dock) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        auto& profile = profiles.at(user);
+        auto& flight = profile.flight;
+        if (request.command == helion::protocol::Command::input) {
+          flight.input = {request.thrust, request.turn, request.brake};
+          flight.inputAge = 0;
+          try { saveStateLocked(); } catch (const std::exception& error) { std::cerr << error.what() << '\n'; }
+        } else if (request.command == helion::protocol::Command::launch) {
+          sendLine(fd, helion::flight::launch(flight));
+        } else if (request.command == helion::protocol::Command::mine) {
+          sendLine(fd, helion::flight::mine(flight));
+        } else if (request.command == helion::protocol::Command::dock) {
+          const auto before = profile;
+          const auto result = helion::flight::dock(flight, profile.credits, profile.experience);
+          if (result.rfind("OK", 0) == 0) {
+            try { saveStateLocked(); }
+            catch (const std::exception& error) {
+              profile = before;
+              sendLine(fd, "ERR persistence-failed");
+              std::cerr << error.what() << '\n';
+              continue;
+            }
+          }
+          sendLine(fd, result);
+        }
+        sendLine(fd, helion::flight::snapshot(flight, profile.credits, profile.experience));
       } else if (request.command == helion::protocol::Command::state) {
         sendLine(fd, stateLine());
       } else if (request.command == helion::protocol::Command::quit) {
@@ -383,6 +499,7 @@ int main(int argc, char** argv) {
   int port = kDefaultPort;
   std::size_t maxClients = kDefaultMaxClients;
   std::string bindAddress = "127.0.0.1";
+  std::string certificate, privateKey;
   int positional = 0;
   auto number = [](const std::string& value, unsigned long maximum) -> unsigned long {
     std::size_t end = 0;
@@ -394,6 +511,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
       const std::string arg = argv[i];
       if (arg == "--bind" && i + 1 < argc) bindAddress = argv[++i];
+      else if (arg == "--cert" && i + 1 < argc) certificate = argv[++i];
+      else if (arg == "--key" && i + 1 < argc) privateKey = argv[++i];
       else if (arg == "--max-clients" && i + 1 < argc) maxClients = number(argv[++i], 1024);
       else if (arg.rfind("--", 0) == 0) throw std::invalid_argument("unknown option");
       else if (positional++ == 0) port = static_cast<int>(number(arg, 65535));
@@ -401,7 +520,7 @@ int main(int argc, char** argv) {
       else throw std::invalid_argument("too many arguments");
     }
   } catch (const std::exception&) {
-    std::cerr << "usage: helion_server [port] [data-file] [--bind IPv4-address] [--max-clients 1..1024]\n";
+    std::cerr << "usage: helion_server [port] [data-file] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem\n";
     return 2;
   }
   sockaddr_in address{};
@@ -411,9 +530,12 @@ int main(int argc, char** argv) {
     std::cerr << "--bind requires a numeric IPv4 address\n";
     return 2;
   }
-  const bool loopback = (ntohl(address.sin_addr.s_addr) & 0xff000000U) == 0x7f000000U;
-  if (!loopback) std::cerr << "WARNING: non-loopback bind; credentials travel without TLS. Use an encrypted tunnel and restrict access.\n";
+  helion::tls::Context tlsContext(nullptr, SSL_CTX_free);
+  try { tlsContext = helion::tls::serverContext(certificate, privateKey); }
+  catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+  std::unique_ptr<helion::server::DataLock> dataLock;
   try {
+    dataLock = std::make_unique<helion::server::DataLock>(dataPath);
     std::lock_guard<std::mutex> lock(stateMutex);
     dummyPasswordHash = helion::security::hashPassword(std::string(12, 'x'));
     loadState();
@@ -433,7 +555,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cout << "Helion server listening on " << bindAddress << ':' << port
-            << " max-clients=" << maxClients << '\n';
+            << " TLS enabled; max-clients=" << maxClients << '\n';
   helion::server::ConnectionLimit limit(maxClients);
   struct Worker { std::thread thread; std::shared_ptr<std::atomic<bool>> done; };
   std::vector<Worker> workers;
@@ -446,10 +568,27 @@ int main(int argc, char** argv) {
       } else ++it;
     }
   };
+  auto lastTick = std::chrono::steady_clock::now();
+  double accumulator = 0;
   while (!stopping) {
+    const auto now = std::chrono::steady_clock::now();
+    accumulator += std::min(0.1, std::chrono::duration<double>(now - lastTick).count());
+    lastTick = now;
+    {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      while (accumulator >= 1.0 / 60) {
+        for (auto& entry : profiles) {
+          helion::flight::step(entry.second.flight, 1.0 / 60);
+          const double engine = 1.0 + 0.12 * (entry.second.engineLevel - 1);
+          entry.second.flight.vx *= engine;
+          entry.second.flight.vy *= engine;
+        }
+        accumulator -= 1.0 / 60;
+      }
+    }
     reap();
     pollfd ready{server, POLLIN, 0};
-    const int polled = poll(&ready, 1, 500);
+    const int polled = poll(&ready, 1, 16);
     if (polled < 0 && errno == EINTR) continue;
     if (polled < 0) { std::perror("poll"); break; }
     if (polled == 0 || !(ready.revents & POLLIN)) continue;
@@ -469,29 +608,45 @@ int main(int argc, char** argv) {
       continue;
     }
     if (!limit.tryAcquire()) {
-      sendLine(client, "ERR server-busy");
+      // Refuse overload before a handshake; never emit plaintext on the TLS port.
       close(client);
       continue;
     }
     try {
+      auto connection = std::make_shared<helion::tls::Connection>(tlsContext.get(), client);
+      {
+        std::lock_guard<std::mutex> lock(transportMutex);
+        transports.emplace(client, connection);
+      }
       auto done = std::make_shared<std::atomic<bool>>(false);
-      workers.push_back({std::thread([client, done, &limit]() {
-        try { clientLoop(client); } catch (...) { /* Close this connection. */ }
+      workers.push_back({std::thread([client, connection, done, &limit]() {
+        try {
+          connection->handshake(true);
+          clientLoop(client, *connection);
+          connection->closeNotify();
+        } catch (const std::exception& error) {
+          std::cerr << "client connection rejected: " << error.what() << '\n';
+        }
         removeClient(client);
+        {
+          std::lock_guard<std::mutex> lock(transportMutex);
+          transports.erase(client);
+        }
         shutdown(client, SHUT_RDWR);
         close(client);
         done->store(true);
         limit.release();
       }), done});
     } catch (const std::exception&) {
+      { std::lock_guard<std::mutex> lock(transportMutex); transports.erase(client); }
       close(client);
       limit.release();
     }
   }
   close(server);
   {
-    std::lock_guard<std::mutex> lock(stateMutex);
-    for (int fd : clients) shutdown(fd, SHUT_RDWR);
+    std::lock_guard<std::mutex> lock(transportMutex);
+    for (const auto& entry : transports) shutdown(entry.first, SHUT_RDWR);
   }
   for (auto& worker : workers) worker.thread.join();
   return 0;

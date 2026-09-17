@@ -15,6 +15,16 @@ and a desktop local-play launcher are available. See [installation](docs/native-
 and [project state](docs/PROJECT_STATE.md). It is not yet a complete port of
 the browser simulation.
 
+## Gameplay concept renders
+
+These presentation renders visualize native gameplay systems represented in
+the current development build. They are concept renders, not pixel-perfect
+screenshots of the SDL/OpenGL client.
+
+| Ore extraction | Station return and trading | Live multiplayer contacts |
+| --- | --- | --- |
+| ![A Helion commander extracting ore from an asteroid](docs/renders/mining-extraction.png) | ![A Helion ship returning to a station to trade and refit](docs/renders/station-return.png) | ![Helion commander and NPC ships sharing a live sector](docs/renders/multiplayer-contacts.png) |
+
 ## Repository layout
 
 | Path | Purpose |

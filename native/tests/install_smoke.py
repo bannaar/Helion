@@ -22,7 +22,15 @@ with tempfile.TemporaryDirectory(prefix='helion-install-') as directory:
     launcher = str(prefix / 'bin' / 'helion-play')
     check = subprocess.run([launcher, '--check'], env=env, capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stderr
-    assert 'WELCOME Helion/2' in check.stdout and 'STATE profiles=0' in check.stdout
+    if 'WELCOME Helion/2' not in check.stdout or 'STATE profiles=0' not in check.stdout:
+        raise AssertionError(
+            'launcher --check output mismatch\n'
+            f'return code: {check.returncode}\n'
+            f'stdout:\n{check.stdout}\n'
+            f'stderr:\n{check.stderr}\n'
+            f'certificate.log: {root / "save" / "certificate.log"}\n'
+            f'server.log: {root / "save" / "server.log"}'
+        )
     for commands, expected in (
         ('/create installed_pilot synthetic-password Installed Pilot\n/profile\n/quit\n', 'OK CREATED user=installed_pilot'),
         ('/login installed_pilot synthetic-password\n/profile\n/quit\n', 'OK LOGIN user=installed_pilot'),

@@ -56,10 +56,11 @@ bool saveFrame(const std::string& path,int width,int height) {
 int terminalClient(int fd, helion::tls::Connection& connection) {
   std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
   helion::protocol::LineDecoder decoder;
-  bool greeted=false, running=true;
+  bool greeted=false, running=true, stdinClosed=false, quitQueued=false;
   std::string outgoing, typed;
   while(running) {
-    pollfd ready[2]={{fd,static_cast<short>(POLLIN|(outgoing.empty()?0:POLLOUT)),0},{STDIN_FILENO,POLLIN,0}};
+    pollfd ready[2]={{fd,static_cast<short>(POLLIN|(outgoing.empty()?0:POLLOUT)),0},
+      {stdinClosed?-1:STDIN_FILENO,POLLIN,0}};
     if(poll(ready,2,1000)<0) { if(errno==EINTR) continue; return 1; }
     if(true) {
       char bytes[1024]; auto n=connection.read(bytes,sizeof(bytes));
@@ -76,16 +77,22 @@ int terminalClient(int fd, helion::tls::Connection& connection) {
       }
     }
     if(ready[0].revents&(POLLHUP|POLLERR|POLLNVAL)) break;
-    if(greeted && ready[1].revents&(POLLIN|POLLHUP)) {
+    if(greeted && !stdinClosed && ready[1].revents&(POLLIN|POLLHUP)) {
       // Read bytes rather than getline: buffered stdin must not stall piped commands.
       char bytes[512]; const auto n=read(STDIN_FILENO,bytes,sizeof(bytes));
-      if(n<=0) { if(outgoing.empty()) outgoing="QUIT\n"; }
+      if(n<=0) {
+        stdinClosed=true;
+        if(!quitQueued) { outgoing += "QUIT\n"; quitQueued=true; }
+      }
       else for(int i=0;i<n;++i) {
         if(bytes[i]=='\n') {
           const auto request=commandLine(typed); typed.clear();
           if(helion::protocol::parseRequest(request).command==helion::protocol::Command::invalid)
             std::cout<<"Unknown or malformed command\n";
-          else outgoing+=request+"\n";
+          else {
+            if(request=="QUIT") quitQueued=true;
+            outgoing+=request+"\n";
+          }
         } else if(typed.size()<helion::protocol::kMaxLine) typed+=bytes[i];
       }
     }

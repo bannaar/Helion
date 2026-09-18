@@ -29,6 +29,36 @@ Runtime hostile NPCs are ephemeral server entities. Their deterministic
 generation and reward-claim state are persisted so a restart cannot replay a
 destroyed target's reward.
 
+## Canonical organizations and reputation
+
+The canonical organization registry lives in `native/shared/organizations.*`.
+Stable lowercase identifiers are persistence/protocol keys and are separate
+from display text:
+
+| Identifier | Display name |
+| --- | --- |
+| `authority.kepler` | Kepler Authority |
+| `corp.orion` | Orion Extraction Group |
+| `criminal.vanta` | Vanta Syndicate |
+| `criminal.red_wake` | Red Wake |
+| `faction.commonwealth` | Helion Commonwealth |
+
+`Profile::reputation` is commander-owned, supports all organizations at once,
+and stores bounded values from -100 to 100. Labels are deterministic:
+`-100..-75 Hostile`, `-74..-25 Unfriendly`, `-24..24 Neutral`,
+`25..74 Friendly`, and `75..100 Allied`. Older records receive neutral
+defaults; the Batch 4 reputation summary is an appended persistence field.
+Mission and combat handlers apply standing changes server-side and roll them
+back with rewards when an atomic save fails.
+
+The First Ore contract is issued by Orion under Kepler Authority jurisdiction.
+The current hostile is a Red Wake raider. Vanta is present only as a
+registered organization and future-career hook. Deterministic GalNet events
+are persisted only when these real state transitions occur. The canonical
+setting source is [`docs/lore/world-bible-v0.2.txt`](lore/world-bible-v0.2.txt);
+it is a design source, not a claim that its later guild, alien, industry,
+station, or territorial systems are implemented.
+
 ## Extension path
 
 The intended long-term progression is:
@@ -53,4 +83,4 @@ Capital shipyards are guild/player-built infrastructure required for XL and
 capital hulls; regular shipyards must not construct those highest classes.
 Territory should require active infrastructure and upkeep, not free permanent
 claims. None of these guild, station, industry, research, capital or territory
-systems are implemented by Batch 3.
+systems are implemented by Batch 4.

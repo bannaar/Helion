@@ -64,6 +64,7 @@ reopen the console and Escape to return to flight. Use:
 /login username password
 /chat hello pilots
 /profile
+/galnet
 /state
 /refuel
 /outfit LIST
@@ -113,8 +114,16 @@ automatically; press **Tab** to cycle hostile contacts and **Space** to fire
 the selected target. The cockpit shows target range and hull, laser cooldown,
 incoming damage, combat rewards, and server rejection reasons. The pulse laser
 requires the fitted weapon module and is limited by server range, cooldown, and
-damage rules. If the ship is destroyed, cargo is lost and **R** requests
-safe-station recovery; repair and refit remain docked actions.
+damage rules. Contacts identify the hostile's canonical affiliation, currently
+Red Wake. If the ship is destroyed, cargo is lost and **R** requests
+safe-station recovery; repair and refit remain docked actions. The header shows
+Kepler Authority and Orion standing labels, while mission/combat feedback shows
+numeric reputation changes.
+
+The First Ore contract is displayed as an Orion Extraction Group contract in
+Kepler Authority jurisdiction. `/galnet` reads the server-owned deterministic
+event stream, including contract availability, Red Wake activity, defeated
+raiders, and the resulting Kepler security response.
 
 Flight is top-down with a north-up camera. Opening the console or losing
 window focus applies the brake. The server also stops stale controls after

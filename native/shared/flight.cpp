@@ -357,7 +357,11 @@ std::string trade(State& s, int& credits, bool buying, const std::string& commod
 std::string contactLine(const Contact& c) {
   std::ostringstream out;
   out<<std::fixed<<std::setprecision(3)<<"CONTACT "<<c.id<<' '<<c.kind<<' '<<c.x<<' '<<c.y<<' '<<c.yaw<<' '<<c.docked;
-  if (c.hostile) out << ' ' << c.hull << ' ' << c.maxHull;
+  if (c.hostile) {
+    out << ' ' << c.hull << ' ' << c.maxHull;
+    if (!c.affiliationId.empty() || !c.affiliationName.empty())
+      out << ' ' << c.affiliationId << ' ' << c.affiliationName;
+  }
   return out.str();
 }
 bool readContact(const std::string& line, Contact& c) {
@@ -365,6 +369,9 @@ bool readContact(const std::string& line, Contact& c) {
   if (!(in>>tag>>next.id>>next.kind>>next.x>>next.y>>next.yaw>>docked) || tag!="CONTACT") return false;
   next.hostile = next.kind == "hostile";
   if (next.hostile && (!(in >> next.hull >> next.maxHull) || next.hull < 0 || next.maxHull < 1 || next.hull > next.maxHull)) return false;
+  if (next.hostile && (in >> next.affiliationId)) {
+    if (!(in >> next.affiliationName) || next.affiliationId.size() > 64 || next.affiliationName.size() > 64) return false;
+  }
   if (in >> extra) return false;
   if (next.id.empty() || next.id.size()>32 || (next.kind!="pilot" && next.kind!="hauler" && next.kind!="hostile") ||
       !std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.yaw) ||

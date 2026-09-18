@@ -1,6 +1,7 @@
 #pragma once
 #include "shared/flight.h"
 #include <string>
+#include <map>
 #include <vector>
 
 namespace helion::client {
@@ -13,6 +14,7 @@ struct View {
   std::vector<std::string> log;
   std::vector<flight::Contact> contacts;
   std::string targetId;
+  std::map<std::string, int> reputation;
   bool showTelemetry = true;
 };
 // All visual assets are original, procedural fixed-function geometry.

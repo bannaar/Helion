@@ -18,6 +18,7 @@ int main() {
   player.y = 250;
   Hostile hostile;
   helion::combat::resetHostile(hostile, 7);
+  check(hostile.faction == "criminal.red_wake", "hostile uses canonical Red Wake affiliation");
   const double before = helion::combat::distance(hostile, player);
   for (int tick = 0; tick < 60; ++tick) helion::combat::step(hostile, player, 1.0 / 60);
   check(helion::combat::distance(hostile, player) < before, "hostile pursues inside detection range");

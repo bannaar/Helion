@@ -49,6 +49,8 @@ int main() {
   check(helion::protocol::parseRequest("CHAT hello pilots").command == Command::chat, "CHAT preserved");
   check(helion::protocol::parseRequest("PROFILE").command == Command::profile, "PROFILE preserved");
   check(helion::protocol::parseRequest("STATE").command == Command::state, "STATE preserved");
+  check(helion::protocol::parseRequest("GALNET").command == Command::galnet, "GALNET preserved");
+  check(helion::protocol::parseRequest("GALNET now").command == Command::invalid, "GALNET arguments rejected");
   check(helion::protocol::parseRequest("QUIT").command == Command::quit, "QUIT preserved");
   check(helion::protocol::parseRequest("REPAIR").command == Command::repair, "REPAIR preserved");
   check(helion::protocol::parseRequest("REFUEL").command == Command::refuel, "REFUEL preserved");

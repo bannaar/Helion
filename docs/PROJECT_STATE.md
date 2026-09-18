@@ -22,7 +22,8 @@ console is used for other quantities and sales. `F2` opens the account/profile
 view. `F3` toggles telemetry/radar as a game setting. Authentication, chat,
 profile queries, flight, contacts, mining, docking, and trading require login.
 
-Progression is now playable: `/mission` shows the First Ore contract,
+Progression is now playable: `/mission` shows the First Ore contract from the
+Orion Extraction Group under Kepler Authority jurisdiction,
 `/accept` starts it, and `/turnin` pays the reward after returning with ore.
 `/upgrade engine` and `/upgrade hull` spend credits at the station and advance
 levels; engine levels increase authoritative acceleration and hull levels
@@ -56,10 +57,13 @@ migration, save locking, TLS certificate/hostname/IP validation, plaintext
 rejection, graceful shutdown, installed launcher startup, saved login, file
 permissions, and desktop asset installation.
 
-The remaining major gameplay work is combat, a broader mission chain, and
-richer economy simulation. The current
-mining, trading, progression, outfitting, persistence, and contact loops form
-a playable native career slice rather than a static client shell.
+The native slice also includes a server-authoritative Red Wake encounter,
+pulse-laser combat, recovery, salvage rewards, multi-organization reputation,
+and deterministic GalNet events. The current mining, trading, progression,
+outfitting, combat, reputation, persistence, and contact loops form a
+playable native career slice rather than a static client shell. Guilds,
+stations, industry, capital construction, alien progression, and the later
+World Bible phases remain design work.
 
 The repository now has GitHub Actions for release builds, package creation,
 full TLS/installer tests, and an AddressSanitizer/UndefinedBehaviorSanitizer

@@ -1,4 +1,5 @@
 #include "client/render.h"
+#include "shared/organizations.h"
 #include <SDL2/SDL_opengl.h>
 #include <algorithm>
 #include <array>
@@ -199,6 +200,12 @@ void render(int width, int height, const View& v) {
   text(400,20,v.connected ? (v.authenticated ? "COMMAND LINK / ONLINE" : "COMMAND LINK / SIGN IN") : "COMMAND LINK / OFFLINE",
        v.connected ? teal : amber,1.5f);
   text(400,46,"SIDEWINDER / "+std::string(v.ship.docked ? "DOCKED" : "FREE FLIGHT"),white,1.5f);
+  const auto kepler = v.reputation.find("authority.kepler");
+  const auto orion = v.reputation.find("corp.orion");
+  const auto redWake = v.reputation.find("criminal.red_wake");
+  text(400,62,"KEPLER "+std::string(kepler == v.reputation.end() ? "NEUTRAL" : helion::organizations::standingLabel(kepler->second))+
+       " / ORION "+std::string(orion == v.reputation.end() ? "NEUTRAL" : helion::organizations::standingLabel(orion->second))+
+       " / RED WAKE "+std::string(redWake == v.reputation.end() ? "NEUTRAL" : helion::organizations::standingLabel(redWake->second)), muted, 1.1f);
   text(758,18,std::to_string(v.credits)+" CR",amber,2);
   text(758,46,std::to_string(v.experience)+" XP",muted,1.5f);
   rect(20,92,254,107,panel); text(34,106,"FLIGHT CONTRACT",teal,1.5f);
@@ -239,7 +246,10 @@ void render(int width, int height, const View& v) {
   const bool hasTarget = hostileTarget != v.contacts.end();
   const int targetRange = hasTarget ? static_cast<int>(std::hypot(v.ship.x-hostileTarget->x,v.ship.y-hostileTarget->y)) : 0;
   if (hasTarget) {
+    std::string affiliation = hostileTarget->affiliationName;
+    std::replace(affiliation.begin(), affiliation.end(), '_', ' ');
     text(392,bottom+16,"HOSTILE / "+hostileTarget->id,hostileColor,1.5f);
+    if (!affiliation.empty()) text(392,bottom+29,"AFFILIATION / "+affiliation,hostileColor,1.1f);
     text(392,bottom+38,"HULL "+std::to_string(hostileTarget->hull)+" / "+std::to_string(hostileTarget->maxHull)+
       "  RANGE "+std::to_string(targetRange)+" M",white,1.5f);
   } else {

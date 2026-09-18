@@ -14,6 +14,7 @@
 #include <iostream>
 #include <memory>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <netinet/in.h>
 #include <poll.h>
@@ -34,6 +35,7 @@
 #include "shared/flight.h"
 #include "shared/combat.h"
 #include "shared/loadout.h"
+#include "shared/organizations.h"
 #include "shared/tls.h"
 
 namespace {
@@ -72,6 +74,7 @@ struct Profile {
   int salvage = 0;
   int combatTargetGeneration = 1;
   bool combatTargetDefeated = false;
+  std::map<std::string, int> reputation;
   std::deque<std::string> combatEvents;
   helion::combat::Hostile hostile{};
 };
@@ -81,9 +84,15 @@ struct ChatMessage {
   std::string text;
 };
 
+struct GalNetEvent {
+  std::string id;
+  std::string headline;
+};
+
 std::mutex stateMutex;
 std::unordered_map<std::string, Profile> profiles;
 std::vector<ChatMessage> messages;
+std::vector<GalNetEvent> galnetEvents;
 std::vector<int> clients;
 bool flightStateDirty = false;
 std::mutex transportMutex;
@@ -110,6 +119,39 @@ std::string joinModules(const std::vector<std::string>& modules) {
     result += module;
   }
   return result;
+}
+
+void initializeReputation(Profile& profile) {
+  for (const auto& definition : helion::organizations::kRegistry)
+    profile.reputation.emplace(definition.id, 0);
+}
+
+int standing(const Profile& profile, std::string_view id) {
+  const auto found = profile.reputation.find(std::string(id));
+  return found == profile.reputation.end() ? 0 : found->second;
+}
+
+void changeStanding(Profile& profile, std::string_view id, int delta) {
+  if (!helion::organizations::find(id)) throw std::runtime_error("unknown organization");
+  initializeReputation(profile);
+  auto& value = profile.reputation[std::string(id)];
+  value = helion::organizations::clampStanding(value + delta);
+}
+
+std::string reputationLine(const Profile& profile, std::string_view id, int delta = 0) {
+  const auto* definition = helion::organizations::find(id);
+  const int value = standing(profile, id);
+  return "REPUTATION CHANGE id=" + std::string(id) + " display=" + std::string(definition ? definition->wireName : "Unknown") +
+    " delta=" + std::to_string(delta) + " value=" + std::to_string(value) +
+    " standing=" + helion::organizations::standingLabel(value);
+}
+
+bool addGalNetEvent(std::string_view id, std::string_view headline) {
+  for (const auto& event : galnetEvents) if (event.id == id) return false;
+  if (id.empty() || id.size() > 64 || headline.empty() || headline.size() > 512 ||
+      headline.find_first_of("\t\r\n") != std::string_view::npos) throw std::runtime_error("malformed GalNet event");
+  galnetEvents.push_back({std::string(id), std::string(headline)});
+  return true;
 }
 
 void refreshDerivedShipState(Profile& profile) {
@@ -177,9 +219,12 @@ void saveStateLocked() {
     for (const auto& fitted : profile.fittedModules) snapshot << '\t' << fitted;
     snapshot << '\t' << profile.salvage << '\t' << profile.combatTargetGeneration
              << '\t' << profile.combatTargetDefeated << '\t' << profile.flight.destroyed
-             << '\t' << profile.flight.weaponCooldown;
+             << '\t' << profile.flight.weaponCooldown << '\t'
+             << encode(helion::organizations::reputationSummary(profile.reputation));
     snapshot << '\n';
   }
+  for (const auto& event : galnetEvents)
+    snapshot << "G\t" << encode(event.id) << '\t' << encode(event.headline) << '\n';
   for (const auto& message : messages) {
     snapshot << "M\t" << encode(message.user) << '\t' << encode(message.text) << '\n';
   }
@@ -248,6 +293,7 @@ void loadState() {
         std::getline(input, creditsText, '\t');
         std::getline(input, experienceText, '\t');
         Profile profile;
+        initializeReputation(profile);
         profile.passwordHash = decode(second);
         profile.display = decode(third);
         profile.legacyCredential = kind == "P";
@@ -292,7 +338,7 @@ void loadState() {
         std::getline(input, value, '\t'); profile.flight.maxHull = parseNumber(value, 100);
         std::vector<std::string> extensions;
         while (std::getline(input, value, '\t')) extensions.push_back(value);
-        if (extensions.size() > 12) throw std::runtime_error("unexpected persistence fields");
+        if (extensions.size() > 13) throw std::runtime_error("unexpected persistence fields");
         if (!extensions.empty()) {
           if (extensions[0] != "0" && extensions[0] != "1")
             throw std::runtime_error("malformed mission objective");
@@ -339,6 +385,9 @@ void loadState() {
           profile.flight.destroyed = extensions[10] == "1";
         }
         if (extensions.size() >= 12) profile.flight.weaponCooldown = parseDouble(extensions[11], 0);
+        if (extensions.size() >= 13 &&
+            !helion::organizations::parseReputationSummary(decode(extensions[12]), profile.reputation))
+          throw std::runtime_error("malformed persisted reputation");
         if (profile.missionStage == 2) profile.missionOreMined = false;
         if (profile.flight.cargo < 0 || profile.flight.food < 0 || profile.flight.parts < 0 ||
             profile.flight.cargo + profile.flight.food + profile.flight.parts > helion::flight::kCargoCapacity ||
@@ -360,6 +409,10 @@ void loadState() {
           throw std::runtime_error("duplicate profile in persistence file");
       } else if (kind == "M" && !first.empty() && !second.empty()) {
         messages.push_back({decode(first), decode(second)});
+      } else if (kind == "G" && !first.empty() && !second.empty() && third.empty()) {
+        const std::string id = decode(first);
+        const std::string headline = decode(second);
+        if (!addGalNetEvent(id, headline)) throw std::runtime_error("duplicate GalNet event");
       } else if (!line.empty()) {
         throw std::runtime_error("malformed persistence record");
       }
@@ -438,15 +491,17 @@ std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
   const auto current = profiles.find(user);
   if (current != profiles.end() && !current->second.hostile.destroyed && !current->second.flight.destroyed) {
     const auto& hostile = current->second.hostile;
-    result.push_back({hostile.id, "hostile", hostile.x, hostile.y, 0, false, true, hostile.hull, hostile.maxHull});
+    const auto* affiliation = helion::organizations::find(hostile.faction);
+    result.push_back({hostile.id, "hostile", hostile.x, hostile.y, 0, false, true, hostile.hull, hostile.maxHull,
+                      hostile.faction, affiliation ? std::string(affiliation->wireName) : "Unknown"});
   }
   for (const auto& [name, profile] : profiles) {
     if (name == user) continue;
-    result.push_back({name, "pilot", profile.flight.x, profile.flight.y, profile.flight.yaw, profile.flight.docked});
+    result.push_back({name, "pilot", profile.flight.x, profile.flight.y, profile.flight.yaw, profile.flight.docked, false, 0, 0, "", ""});
   }
   const double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
   result.push_back({"HAULER-7", "hauler", 420.0 + std::cos(t * 0.08) * 180.0,
-                    160.0 + std::sin(t * 0.08) * 120.0, 0, false});
+                    160.0 + std::sin(t * 0.08) * 120.0, 0, false, false, 0, 0, "", ""});
   return result;
 }
 
@@ -492,7 +547,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR REFUEL OUTFIT FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR REFUEL OUTFIT FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -551,6 +606,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             tooManyFailures = ++authFailures >= kMaxAuthFailures;
           } else {
             Profile profile;
+            initializeReputation(profile);
             profile.passwordHash = encoded;
             profile.display = display;
             profiles.emplace(name, std::move(profile));
@@ -630,11 +686,23 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 " mission-ore-mined=" + std::to_string(profile.missionOreMined) +
                 " salvage=" + std::to_string(profile.salvage) +
                 " destroyed=" + std::to_string(profile.flight.destroyed) +
+                " organizations=" + helion::organizations::organizationSummary() +
+                " reputation=" + helion::organizations::reputationSummary(profile.reputation) +
                 " " + loadoutLine(profile);
             }
           }
           sendLine(fd, response);
         }
+      } else if (request.command == helion::protocol::Command::galnet) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          for (const auto& event : galnetEvents)
+            responses.push_back("GALNET id=" + event.id + " headline=" + event.headline);
+          responses.push_back("GALNET END");
+        }
+        for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::mission || request.command == helion::protocol::Command::accept || request.command == helion::protocol::Command::turnin) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
         std::string response;
@@ -642,35 +710,54 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
           if (request.command == helion::protocol::Command::mission) {
-            response = profile.missionStage == 0 ? "MISSION 1 title=First Ore objective=mine-1 reward=250" : profile.missionStage == 1 ? "MISSION 1 active objective=mine-1 reward=250" : "MISSION 1 complete";
+            response = profile.missionStage == 0 ? "MISSION 1 title=First Ore issuer=corp.orion issuer-name=Orion_Extraction_Group jurisdiction=authority.kepler jurisdiction-name=Kepler_Authority objective=mine-1 reward=250" :
+              profile.missionStage == 1 ? "MISSION 1 active title=First Ore issuer=corp.orion issuer-name=Orion_Extraction_Group jurisdiction=authority.kepler jurisdiction-name=Kepler_Authority objective=mine-1 reward=250" :
+              "MISSION 1 complete issuer=corp.orion issuer-name=Orion_Extraction_Group jurisdiction=authority.kepler jurisdiction-name=Kepler_Authority";
           } else if (request.command == helion::protocol::Command::accept) {
             if (profile.missionStage != 0) response = "ERR mission-unavailable";
             else {
               const auto before = profile;
               const bool dirtyBefore = flightStateDirty;
+              const auto galnetBefore = galnetEvents;
               profile.missionStage = 1;
               profile.missionOreMined = false;
-              try { persistStateLocked(); response = "OK MISSION ACCEPTED id=1"; }
+              try {
+                addGalNetEvent("orion-first-ore-available", "Orion Extraction Group opened the First Ore contract under Kepler Authority jurisdiction.");
+                persistStateLocked();
+                response = "OK MISSION ACCEPTED id=1 issuer=corp.orion jurisdiction=authority.kepler";
+              }
               catch (const std::exception& error) {
                 profile = before;
                 flightStateDirty = dirtyBefore;
+                galnetEvents = galnetBefore;
                 response = "ERR persistence-failed";
                 std::cerr << error.what() << '\n';
               }
             }
           } else if (profile.missionStage != 1) response = "ERR mission-not-active";
           else if (!profile.missionOreMined || !profile.flight.docked) response = "ERR objective-incomplete";
+          else if (profile.credits > std::numeric_limits<int>::max() - 250 ||
+                   profile.experience > std::numeric_limits<int>::max() - 25) response = "ERR profile-limit";
           else {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
+            const auto galnetBefore = galnetEvents;
             profile.missionStage = 2;
             profile.missionOreMined = false;
             profile.credits += 250;
             profile.experience += 25;
-            try { persistStateLocked(); response = "OK MISSION COMPLETE reward=250"; }
+            try {
+              changeStanding(profile, "corp.orion", 10);
+              changeStanding(profile, "authority.kepler", 5);
+              addGalNetEvent("orion-first-ore-completed", "Orion Extraction Group reports a successful First Ore delivery in Kepler.");
+              persistStateLocked();
+              response = "OK MISSION COMPLETE reward=250 issuer=corp.orion jurisdiction=authority.kepler " +
+                reputationLine(profile, "corp.orion", 10) + " " + reputationLine(profile, "authority.kepler", 5);
+            }
             catch (const std::exception& error) {
               profile = before;
               flightStateDirty = dirtyBefore;
+              galnetEvents = galnetBefore;
               response = "ERR persistence-failed";
               std::cerr << error.what() << '\n';
             }
@@ -686,6 +773,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           auto& profile = profiles.at(user);
           const auto before = profile;
           const bool dirtyBefore = flightStateDirty;
+          const auto galnetBefore = galnetEvents;
           if (request.command == helion::protocol::Command::recover) {
             const auto result = helion::flight::recover(profile.flight);
             if (result.rfind("OK", 0) == 0) {
@@ -737,7 +825,13 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                   responses.push_back("COMBAT DESTROYED target=" + profile.hostile.id);
                   responses.push_back("TRANSACTION COMBAT_REWARD target=" + profile.hostile.id +
                     " credits=" + std::to_string(kCredits) +
-                    " experience=" + std::to_string(kExperience) + " salvage=1");
+                    " experience=" + std::to_string(kExperience) + " salvage=1 affiliation=criminal.red_wake");
+                  changeStanding(profile, "authority.kepler", 5);
+                  changeStanding(profile, "criminal.red_wake", -10);
+                  addGalNetEvent("red-wake-raider-defeated", "A Red Wake raider was defeated in Kepler; local security credits the response.");
+                  addGalNetEvent("kepler-security-response", "Kepler Authority security forces report a response to Red Wake activity.");
+                  responses.push_back(reputationLine(profile, "authority.kepler", 5));
+                  responses.push_back(reputationLine(profile, "criminal.red_wake", -10));
                 }
               }
               if (responses.empty() || responses.back().rfind("ERR", 0) != 0) {
@@ -745,6 +839,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 catch (const std::exception& error) {
                   profile = before;
                   flightStateDirty = dirtyBefore;
+                  galnetEvents = galnetBefore;
                   responses.clear();
                   responses.push_back("ERR persistence-failed");
                   std::cerr << error.what() << '\n';
@@ -974,6 +1069,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           } else if (request.command != helion::protocol::Command::flight) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
+            const auto galnetBefore = galnetEvents;
             const bool docking = request.command == helion::protocol::Command::dock;
             helion::flight::DockTransaction transaction;
             std::string result;
@@ -987,13 +1083,17 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                                             docking ? &transaction : nullptr);
             }
             if (result.rfind("OK", 0) == 0) {
-              if (request.command == helion::protocol::Command::launch) resetCombatAfterLaunch(profile);
+              if (request.command == helion::protocol::Command::launch) {
+                resetCombatAfterLaunch(profile);
+                addGalNetEvent("red-wake-kepler-activity", "Kepler Authority warns of Red Wake activity in the mining sector.");
+              }
               if (request.command == helion::protocol::Command::mine && profile.missionStage == 1)
                 profile.missionOreMined = true;
               try { persistStateLocked(); }
               catch (const std::exception& error) {
                 profile = before;
                 flightStateDirty = dirtyBefore;
+                galnetEvents = galnetBefore;
                 responses.push_back("ERR persistence-failed");
                 std::cerr << error.what() << '\n';
               }

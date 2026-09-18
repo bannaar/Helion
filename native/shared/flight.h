@@ -26,6 +26,7 @@ struct Contact {
   double x=0, y=0, yaw=0;
   bool docked=false, hostile=false;
   int hull=0, maxHull=0;
+  std::string affiliationId, affiliationName;
 };
 std::string contactLine(const Contact& contact);
 bool readContact(const std::string& line, Contact& contact);

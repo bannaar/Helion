@@ -194,13 +194,15 @@ int main() {
   check(launch(damaged)=="ERR repair-required", "disabled ship requires repair");
   check(repair(damaged,repairCredits,2)=="OK REPAIRED hull=125 cost=375" &&
     damaged.hull==125 && repairCredits==625, "station repair restores upgraded hull");
-  Contact contact{"HAULER-7", "hauler", 12, -3, 1, false};
+  Contact contact{"HAULER-7", "hauler", 12, -3, 1, false, false, 0, 0, "", ""};
   Contact restoredContact;
   check(readContact(contactLine(contact), restoredContact) && restoredContact.id == "HAULER-7" &&
         restoredContact.kind == "hauler", "contact roundtrip");
-  Contact hostile{"RAIDER-7", "hostile", 0, 420, 0, false, true, 75, 100};
+  Contact hostile{"RAIDER-7", "hostile", 0, 420, 0, false, true, 75, 100, "criminal.red_wake", "Red_Wake"};
   check(readContact(contactLine(hostile), restoredContact) && restoredContact.hostile &&
-        restoredContact.hull == 75 && restoredContact.maxHull == 100, "hostile contact roundtrip");
+        restoredContact.hull == 75 && restoredContact.maxHull == 100 &&
+        restoredContact.affiliationId == "criminal.red_wake" && restoredContact.affiliationName == "Red_Wake",
+        "hostile affiliation contact roundtrip");
   launch(ship); ship.y=280; step(ship,1.0/60);
   check(std::hypot(ship.x,ship.y-280)>=42,"asteroid collision resolves even at center");
   ship.x=1400; step(ship,1.0/60);

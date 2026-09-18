@@ -13,7 +13,7 @@ inline constexpr int kNpcDamage = 8;
 
 struct Hostile {
   std::string id = "RAIDER-1";
-  std::string faction = "raiders";
+  std::string faction = "criminal.red_wake";
   int generation = 1;
   double x = 0, y = 420, vx = 0, vy = 0;
   int hull = 100, maxHull = 100;

@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "shared/protocol.h"
+#include "shared/organizations.h"
 #include "client/render.h"
 #include "shared/tls.h"
 
@@ -54,7 +55,7 @@ bool saveFrame(const std::string& path,int width,int height) {
   SDL_FreeSurface(surface); return saved;
 }
 int terminalClient(int fd, helion::tls::Connection& connection) {
-  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /refuel, /outfit LIST|BUY|FIT|REMOVE, /fire target-id, /recover, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
+  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /galnet, /upgrade engine|hull, /repair, /refuel, /outfit LIST|BUY|FIT|REMOVE, /fire target-id, /recover, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
   helion::protocol::LineDecoder decoder;
   bool greeted=false, running=true, stdinClosed=false, quitQueued=false;
   std::string outgoing, typed;
@@ -270,6 +271,19 @@ int main(int argc,char** argv) {
           }
           if(view.ship.docked) visual=view.ship;
         } else {
+          if (frame.line.rfind("PROFILE ", 0) == 0) {
+            const auto marker = frame.line.find(" reputation=");
+            if (marker != std::string::npos) {
+              const auto start = marker + 12;
+              const auto end = frame.line.find(' ', start);
+              std::map<std::string, int> restored;
+              if (helion::organizations::parseReputationSummary(frame.line.substr(start, end - start), restored))
+                view.reputation = std::move(restored);
+            }
+          } else if (frame.line.rfind("GALNET ", 0) == 0 && frame.line != "GALNET END") {
+            const auto headline = frame.line.find(" headline=");
+            if (headline != std::string::npos) view.log.push_back("GALNET / " + frame.line.substr(headline + 10));
+          }
           const bool fuelFrame = helion::flight::readFuelLine(frame.line, view.ship);
           const bool combatStatus = helion::flight::readCombatStatus(frame.line, view.ship);
           helion::flight::Contact contact;
@@ -289,9 +303,10 @@ int main(int argc,char** argv) {
             view.log.push_back("CONTACTS / "+std::to_string(view.contacts.size())+" IN SECTOR");
           }
           if(frame.line.rfind("OK LOGIN",0)==0 || frame.line.rfind("OK CREATED",0)==0) {
-            view.authenticated=true; view.console=false; queue("FLIGHT");
+            view.authenticated=true; view.console=false; queue("FLIGHT"); queue("PROFILE"); queue("GALNET");
           }
           if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
+          if(frame.line.rfind("COMBAT DESTROYED",0)==0) queue("PROFILE");
           helion::flight::DockTransaction sale;
           helion::flight::FuelTransaction refuel;
           if(!fuelFrame && !combatStatus && frame.line.rfind("STATE ",0)!=0) {

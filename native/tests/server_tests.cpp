@@ -242,11 +242,21 @@ int main(int argc, char** argv) {
   check(failedShotContacts.find("RAIDER-1 hostile") != std::string::npos &&
         failedShotContacts.find(" 100 100") != std::string::npos,
         "failed shot rolls back target hull state");
+  check(failedShotContacts.find("criminal.red_wake Red_Wake") != std::string::npos,
+        "hostile contact exposes Red Wake affiliation");
   const auto firstHit = command(first,"FIRE RAIDER-1","COMBAT HIT");
   check(firstHit.find("damage=25") != std::string::npos, "server calculates laser damage");
   command(first,"FIRE RAIDER-1","ERR weapon-cooldown");
   for (int shot = 1; shot < 4; ++shot) {
     usleep(1100000);
+    if (shot == 3) {
+      expectPersistenceFailure(first,"FIRE RAIDER-1");
+      const auto failedRewardProfile = command(first,"PROFILE","PROFILE");
+      check(failedRewardProfile.find("salvage=0") != std::string::npos &&
+            failedRewardProfile.find("authority.kepler=0:Neutral") != std::string::npos &&
+            failedRewardProfile.find("criminal.red_wake=0:Neutral") != std::string::npos,
+            "failed combat reward rolls back reputation and salvage");
+    }
     const auto hit = command(first,"FIRE RAIDER-1",shot == 3 ? "COMBAT DESTROYED" : "COMBAT HIT");
     check(hit.find("damage=25") != std::string::npos, "server applies fixed weapon damage");
   }
@@ -255,8 +265,15 @@ int main(int argc, char** argv) {
         "destroyed target cannot pay a second reward");
   const auto combatProfile = command(first,"PROFILE","PROFILE");
   check(combatProfile.find("salvage=1") != std::string::npos &&
-        combatProfile.find("experience=25") != std::string::npos,
+        combatProfile.find("experience=25") != std::string::npos &&
+        combatProfile.find("authority.kepler=5:Neutral") != std::string::npos &&
+        combatProfile.find("criminal.red_wake=-10:Neutral") != std::string::npos,
         "combat reward persists as credits XP and salvage");
+  const auto combatGalnet = command(first,"GALNET","GALNET END");
+  check(combatGalnet.find("id=red-wake-kepler-activity") != std::string::npos &&
+        combatGalnet.find("id=red-wake-raider-defeated") != std::string::npos &&
+        combatGalnet.find("id=kepler-security-response") != std::string::npos,
+        "combat transitions publish deterministic GalNet events");
   flyTo(first,0,35);
   command(first,"DOCK","TRANSACTION DOCK_SALE");
   const std::string create = "CREATE explorer synthetic-password Explorer One\n";
@@ -266,8 +283,16 @@ int main(int argc, char** argv) {
   const auto starter = flightState(first);
   check(starter.docked && starter.cargo == 0 && starter.hull == starter.maxHull,
         "new account starts docked and ready");
+  const auto neutralProfile = command(first,"PROFILE","PROFILE");
+  check(neutralProfile.find("authority.kepler=0:Neutral") != std::string::npos &&
+        neutralProfile.find("corp.orion=0:Neutral") != std::string::npos &&
+        neutralProfile.find("criminal.vanta=0:Neutral") != std::string::npos,
+        "new commander receives neutral multi-organization standings");
   command(first,"REPAIR","ERR hull-full");
-  command(first,"MISSION","MISSION 1 title=First Ore");
+  const auto missionOffer = command(first,"MISSION","MISSION 1 title=First Ore");
+  check(missionOffer.find("issuer=corp.orion issuer-name=Orion_Extraction_Group") != std::string::npos &&
+        missionOffer.find("jurisdiction=authority.kepler jurisdiction-name=Kepler_Authority") != std::string::npos,
+        "First Ore identifies Orion issuer and Kepler jurisdiction");
   expectPersistenceFailure(first,"ACCEPT");
   check(command(first,"MISSION","MISSION 1 title=First Ore").find("title=First Ore") != std::string::npos,
         "failed mission acceptance rolls back stage");
@@ -276,7 +301,12 @@ int main(int argc, char** argv) {
   check(failedUpgradeProfile.find("credits=1500") != std::string::npos &&
         failedUpgradeProfile.find("engine-level=1") != std::string::npos,
         "failed engine upgrade rolls back profile");
-  command(first,"ACCEPT","OK MISSION ACCEPTED");
+  const auto acceptedMission = command(first,"ACCEPT","OK MISSION ACCEPTED");
+  check(acceptedMission.find("issuer=corp.orion jurisdiction=authority.kepler") != std::string::npos,
+        "accepted First Ore carries canonical ownership metadata");
+  const auto missionGalnet = command(first,"GALNET","GALNET END");
+  check(missionGalnet.find("id=orion-first-ore-available") != std::string::npos,
+        "mission availability publishes one GalNet event");
   command(first,"TURNIN","ERR objective-incomplete");
   command(first,"BUY food 2","OK BOUGHT food quantity=2 total=40");
   expectPersistenceFailure(first,"BUY parts 1");
@@ -436,9 +466,18 @@ int main(int argc, char** argv) {
   const std::string restored = receiveUntil(restarted, "STATE profiles=3 messages=1");
   check(restored.find("ship=sidewinder credits=1386 experience=5") != std::string::npos &&
         restored.find("STATE profiles=3 messages=1") != std::string::npos, "profile and chat survive restart");
+  expectPersistenceFailure(restarted,"TURNIN");
+  const auto failedTurninProfile = command(restarted,"PROFILE","PROFILE");
+  check(failedTurninProfile.find("mission-stage=1") != std::string::npos &&
+        failedTurninProfile.find("corp.orion=0:Neutral") != std::string::npos,
+        "failed mission reward rolls back reputation and progression");
   command(restarted,"TURNIN","OK MISSION COMPLETE");
   check(command(restarted,"PROFILE","PROFILE").find("mission-stage=2 mission-ore-mined=0") != std::string::npos,
         "turnin clears objective after completion");
+  const auto completedMissionGalnet = command(restarted,"GALNET","GALNET END");
+  check(completedMissionGalnet.find("id=orion-first-ore-completed") != std::string::npos &&
+        completedMissionGalnet.find("id=orion-first-ore-available") != std::string::npos,
+        "mission completion publishes and retains GalNet history");
   command(restarted,"TURNIN","ERR mission-not-active");
   command(restarted,"LAUNCH","OK LAUNCHED");
   std::ifstream checkpointBeforeFile(data);

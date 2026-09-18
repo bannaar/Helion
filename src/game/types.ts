@@ -30,7 +30,18 @@ export type CommodityId =
   | "medicine"
   | "hydrogen";
 
-export type ShipId = "sidewinder" | "cobra" | "asp";
+export type ShipId =
+  | "sidewinder"
+  | "viper"
+  | "cobra"
+  | "adder"
+  | "asp"
+  | "hauler"
+  | "eagle"
+  | "courier"
+  | "marauder"
+  | "unionMiner"
+  | "drone";
 export type ModuleId =
   | "pulse_laser"
   | "beam_laser"
@@ -68,8 +79,11 @@ export type ModuleId =
   | "detailed_scanner"
   | "salvage_beam";
 
-export type ShipClass = "scout" | "multipurpose" | "explorer";
-export type ShipRole = "courier" | "combat" | "exploration";
+export type ShipClass = "scout" | "interceptor" | "multipurpose" | "explorer" | "industrial";
+export type ShipRole = "courier" | "combat" | "exploration" | "mining" | "salvage" | "transport";
+export type ShipSize = "small" | "medium" | "large";
+export type ShipFaction = "independent" | "federation" | "empire" | "union" | "pirate" | "drone";
+export type FactionId = "federation" | "empire" | "union" | "free-traders" | "pirates";
 export type HardpointSize = "small" | "medium";
 export type HardpointMount = "fixed" | "gimbal";
 
@@ -117,6 +131,7 @@ export type StarSystem = {
   starColor: number;
   planetColor: number;
   pirateThreat: number;
+  alienThreat: number;
 };
 
 export type CargoHold = Partial<Record<CommodityId, number>>;
@@ -156,4 +171,5 @@ export type CommanderSave = {
   explorationData: number;
   activeMission: Mission | null;
   completedMissions: number;
+  reputation: Record<FactionId, number>;
 };

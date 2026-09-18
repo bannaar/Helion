@@ -1,4 +1,4 @@
-import type { HardpointMount, HardpointSize, ModuleId, ShipClass, ShipId, ShipRole } from "./types";
+import type { HardpointMount, HardpointSize, ModuleId, ShipClass, ShipFaction, ShipId, ShipRole, ShipSize } from "./types";
 
 export type HardpointDef = {
   id: string;
@@ -10,6 +10,8 @@ export type ShipDef = {
   id: ShipId;
   name: string;
   class: ShipClass;
+  size: ShipSize;
+  faction: ShipFaction;
   roles: ShipRole[];
   hardpoints: HardpointDef[];
   utilitySlots: number;
@@ -23,6 +25,7 @@ export type ShipDef = {
   laser: number;
   price: number;
   turnRate: number;
+  description: string;
 };
 
 export type ModuleSlot = "hardpoint" | "utility" | "internal";
@@ -378,6 +381,8 @@ export const SHIPS: Record<ShipId, ShipDef> = {
     id: "sidewinder",
     name: "Sidewinder",
     class: "scout",
+    size: "small",
+    faction: "independent",
     roles: ["courier", "combat"],
     hardpoints: [
       { id: "S1", size: "small", mount: "fixed" },
@@ -394,11 +399,39 @@ export const SHIPS: Record<ShipId, ShipDef> = {
     laser: 9,
     price: 0,
     turnRate: 1.75,
+    description: "A forgiving starter scout. Cheap to replace and quick enough to learn every career.",
+  },
+  viper: {
+    id: "viper",
+    name: "Viper Mk II",
+    class: "interceptor",
+    size: "small",
+    faction: "federation",
+    roles: ["combat", "courier"],
+    hardpoints: [
+      { id: "S1", size: "small", mount: "fixed" },
+      { id: "S2", size: "small", mount: "fixed" },
+      { id: "M1", size: "medium", mount: "gimbal" },
+    ],
+    utilitySlots: 2,
+    internalSlots: 3,
+    cargo: 8,
+    maxSpeed: 122,
+    shields: 58,
+    hull: 62,
+    jump: 7.5,
+    tank: 9,
+    laser: 15,
+    price: 6800,
+    turnRate: 1.9,
+    description: "A knife-fighter built for bounty work, escorts, and fast interdiction runs.",
   },
   cobra: {
     id: "cobra",
     name: "Cobra Mk III",
     class: "multipurpose",
+    size: "medium",
+    faction: "empire",
     roles: ["courier", "combat"],
     hardpoints: [
       { id: "S1", size: "small", mount: "fixed" },
@@ -417,11 +450,39 @@ export const SHIPS: Record<ShipId, ShipDef> = {
     laser: 15,
     price: 8200,
     turnRate: 1.45,
+    description: "A versatile workhorse with enough hardpoints for combat and enough hold for early commerce.",
+  },
+  adder: {
+    id: "adder",
+    name: "Adder",
+    class: "multipurpose",
+    size: "medium",
+    faction: "union",
+    roles: ["mining", "salvage", "transport"],
+    hardpoints: [
+      { id: "S1", size: "small", mount: "fixed" },
+      { id: "S2", size: "small", mount: "fixed" },
+      { id: "M1", size: "medium", mount: "gimbal" },
+    ],
+    utilitySlots: 3,
+    internalSlots: 5,
+    cargo: 28,
+    maxSpeed: 82,
+    shields: 70,
+    hull: 96,
+    jump: 7.8,
+    tank: 16,
+    laser: 10,
+    price: 11200,
+    turnRate: 1.18,
+    description: "A practical industrial platform with the slots and endurance for mining and salvage.",
   },
   asp: {
     id: "asp",
     name: "Asp Explorer",
     class: "explorer",
+    size: "medium",
+    faction: "empire",
     roles: ["exploration", "courier", "combat"],
     hardpoints: [
       { id: "M1", size: "medium", mount: "fixed" },
@@ -438,21 +499,195 @@ export const SHIPS: Record<ShipId, ShipDef> = {
     laser: 13,
     price: 17600,
     turnRate: 1.2,
+    description: "A long-range survey ship with generous internals and the jump range to map the frontier.",
+  },
+  hauler: {
+    id: "hauler",
+    name: "Type-6 Hauler",
+    class: "industrial",
+    size: "large",
+    faction: "union",
+    roles: ["transport", "mining", "courier"],
+    hardpoints: [{ id: "S1", size: "small", mount: "fixed" }],
+    utilitySlots: 3,
+    internalSlots: 7,
+    cargo: 52,
+    maxSpeed: 70,
+    shields: 92,
+    hull: 128,
+    jump: 9.5,
+    tank: 24,
+    laser: 5,
+    price: 24800,
+    turnRate: 0.78,
+    description: "A deep-hold freighter for industrial contracts, bulk trade, and serious mining sorties.",
+  },
+  eagle: {
+    id: "eagle",
+    name: "Eagle Mk II",
+    class: "interceptor",
+    size: "small",
+    faction: "federation",
+    roles: ["combat", "courier"],
+    hardpoints: [
+      { id: "S1", size: "small", mount: "fixed" },
+      { id: "S2", size: "small", mount: "gimbal" },
+      { id: "S3", size: "small", mount: "gimbal" },
+    ],
+    utilitySlots: 2,
+    internalSlots: 3,
+    cargo: 6,
+    maxSpeed: 132,
+    shields: 54,
+    hull: 48,
+    jump: 7,
+    tank: 8,
+    laser: 17,
+    price: 9800,
+    turnRate: 2.05,
+    description: "Federation light fighter with extreme agility and a triple-gun attack profile.",
+  },
+  courier: {
+    id: "courier",
+    name: "Imperial Courier",
+    class: "interceptor",
+    size: "small",
+    faction: "empire",
+    roles: ["courier", "combat"],
+    hardpoints: [
+      { id: "S1", size: "small", mount: "gimbal" },
+      { id: "S2", size: "small", mount: "gimbal" },
+      { id: "S3", size: "small", mount: "gimbal" },
+    ],
+    utilitySlots: 3,
+    internalSlots: 4,
+    cargo: 10,
+    maxSpeed: 128,
+    shields: 86,
+    hull: 58,
+    jump: 8.8,
+    tank: 10,
+    laser: 16,
+    price: 18400,
+    turnRate: 1.95,
+    description: "Shield-heavy Imperial prestige craft for elite courier work and fast diplomatic runs.",
+  },
+  marauder: {
+    id: "marauder",
+    name: "Marauder",
+    class: "multipurpose",
+    size: "medium",
+    faction: "pirate",
+    roles: ["combat", "salvage", "mining"],
+    hardpoints: [
+      { id: "S1", size: "small", mount: "fixed" },
+      { id: "M1", size: "medium", mount: "fixed" },
+      { id: "M2", size: "medium", mount: "gimbal" },
+    ],
+    utilitySlots: 3,
+    internalSlots: 5,
+    cargo: 22,
+    maxSpeed: 105,
+    shields: 64,
+    hull: 112,
+    jump: 8,
+    tank: 15,
+    laser: 18,
+    price: 22600,
+    turnRate: 1.2,
+    description: "Black-market raider with overbuilt armor, hidden cargo space, and salvage hardware.",
+  },
+  unionMiner: {
+    id: "unionMiner",
+    name: "Union Prospector",
+    class: "industrial",
+    size: "large",
+    faction: "union",
+    roles: ["mining", "transport", "salvage"],
+    hardpoints: [
+      { id: "S1", size: "small", mount: "fixed" },
+      { id: "M1", size: "medium", mount: "gimbal" },
+    ],
+    utilitySlots: 5,
+    internalSlots: 8,
+    cargo: 68,
+    maxSpeed: 64,
+    shields: 118,
+    hull: 164,
+    jump: 8.2,
+    tank: 28,
+    laser: 9,
+    price: 42000,
+    turnRate: 0.6,
+    description: "Union-built deep-space prospector with massive refinery capacity and industrial endurance.",
+  },
+  drone: {
+    id: "drone",
+    name: "Sentinel Drone",
+    class: "scout",
+    size: "small",
+    faction: "drone",
+    roles: ["exploration", "combat", "salvage"],
+    hardpoints: [{ id: "S1", size: "small", mount: "fixed" }],
+    utilitySlots: 4,
+    internalSlots: 4,
+    cargo: 12,
+    maxSpeed: 116,
+    shields: 72,
+    hull: 72,
+    jump: 10,
+    tank: 12,
+    laser: 12,
+    price: 30000,
+    turnRate: 1.7,
+    description: "Autonomous survey platform that trades crew space for sensors, drones, and fault tolerance.",
   },
 };
 
-export const SHIP_ORDER: ShipId[] = ["sidewinder", "cobra", "asp"];
+export const SHIP_ORDER: ShipId[] = [
+  "sidewinder",
+  "viper",
+  "eagle",
+  "courier",
+  "cobra",
+  "adder",
+  "marauder",
+  "asp",
+  "hauler",
+  "unionMiner",
+  "drone",
+];
 
 export const SHIP_CLASS_LABELS: Record<ShipClass, string> = {
   scout: "Scout",
+  interceptor: "Interceptor",
   multipurpose: "Multipurpose",
   explorer: "Explorer",
+  industrial: "Industrial",
+};
+
+export const SHIP_SIZE_LABELS: Record<ShipSize, string> = {
+  small: "Small frame",
+  medium: "Medium frame",
+  large: "Large frame",
+};
+
+export const SHIP_FACTION_LABELS: Record<ShipFaction, string> = {
+  independent: "Independent",
+  federation: "Federation",
+  empire: "Empire",
+  union: "Union",
+  pirate: "Pirate",
+  drone: "Autonomous",
 };
 
 export const SHIP_ROLE_LABELS: Record<ShipRole, string> = {
   courier: "Courier",
   combat: "Combat",
   exploration: "Exploration",
+  mining: "Mining",
+  salvage: "Salvage",
+  transport: "Transport",
 };
 
 export function cargoCapacity(

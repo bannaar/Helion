@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { unlockAudio, setAudioScene, setMuted, isMuted } from "@/game/audio";
-import { initializeTTS, isTTSEnabled, setTTSEnabled, speakTTS, stopTTS } from "@/game/tts";
+import { unlockAudio, setAudioScene } from "@/game/audio";
+import { initializeTTS, speakTTS, stopTTS } from "@/game/tts";
 import {
   defaultCommanderProfile,
   loadCommanderProfile,
@@ -17,6 +17,8 @@ import { GalaxyChart } from "./GalaxyChart";
 import { Hud } from "./Hud";
 import { StationDock } from "./StationDock";
 import { TouchControls } from "./TouchControls";
+import { OptionsMenu } from "./OptionsMenu";
+import { GalNet } from "./GalNet";
 
 export function HelionApp() {
   const rootRef = useRef<HTMLElement>(null);
@@ -27,12 +29,11 @@ export function HelionApp() {
   const [profile, setProfile] = useState<CommanderProfile>(() => defaultCommanderProfile("JAMESON"));
   const [profileSync, setProfileSync] = useState<"idle" | "syncing" | "synced" | "offline">("idle");
   const [hasSave, setHasSave] = useState(false);
-  const [muted, setMutedUi] = useState(false);
-  const [ttsEnabled, setTtsEnabledUi] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const mode = useGameStore((s) => s.mode);
   const paused = useGameStore((s) => s.paused);
   const save = useGameStore((s) => s.save);
+  const news = useGameStore((s) => s.news);
 
   useEffect(() => {
     setAudioScene(mode === "space" ? "space" : mode === "station" ? "station" : "title");
@@ -40,7 +41,6 @@ export function HelionApp() {
 
   useEffect(() => {
     initializeTTS();
-    setTtsEnabledUi(isTTSEnabled());
     return () => stopTTS();
   }, []);
 
@@ -245,7 +245,7 @@ export function HelionApp() {
           <p className="font-mono text-xs tracking-[0.42em] text-accent">PERSISTENT UNIVERSE</p>
           <h1 className="mt-2 font-display text-6xl font-semibold tracking-[0.22em] sm:text-8xl">HELION</h1>
           <p className="mt-4 max-w-md text-sm leading-relaxed text-muted sm:text-base">
-            Wireframe space. Shared markets. Buy low in the agri lanes, sell high in the industrial core, and try not
+            Low-poly space. Shared markets. Buy low in the agri lanes, sell high in the industrial core, and try not
             to become a footnote on GalNet.
           </p>
           <label className="mt-8 block max-w-sm font-mono text-xs tracking-[0.2em] text-muted">
@@ -375,42 +375,8 @@ export function HelionApp() {
 
       <TouchControls input={engineRef.current?.input ?? null} engine={engineRef.current} />
 
-      {mode === "title" ? (
-        <button
-          className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-40 h-9 rounded-sm border border-border bg-surface/80 px-3 font-mono text-[10px] tracking-widest text-muted"
-          onClick={() => {
-            const next = !isMuted();
-            setMuted(next);
-            setMutedUi(next);
-          }}
-        >
-          {muted ? "SOUND OFF" : "SOUND ON"}
-        </button>
-      ) : null}
-      <button
-        type="button"
-        aria-label={ttsEnabled ? "Disable voice comms" : "Enable voice comms"}
-        className={`absolute right-3 top-[max(6.25rem,calc(env(safe-area-inset-top)+6.25rem))] z-40 h-9 rounded-sm border px-3 font-mono text-[10px] tracking-widest ${
-          ttsEnabled ? "border-accent/60 bg-accent/10 text-accent" : "border-border bg-surface/80 text-muted"
-        }`}
-        onClick={() => {
-          initializeTTS();
-          const next = !ttsEnabled;
-          setTTSEnabled(next);
-          setTtsEnabledUi(next);
-          if (next) speakTTS("Voice comms online.");
-        }}
-      >
-        {ttsEnabled ? "VOICE ON" : "VOICE OFF"}
-      </button>
-      <button
-        type="button"
-        aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-        className="absolute right-3 top-[max(3.5rem,calc(env(safe-area-inset-top)+3.5rem))] z-40 h-9 rounded-sm border border-border bg-surface/80 px-3 font-mono text-[10px] tracking-widest text-muted"
-        onClick={() => void toggleFullscreen()}
-      >
-        {fullscreen ? "EXIT FULLSCREEN" : "FULLSCREEN"}
-      </button>
+      <OptionsMenu fullscreen={fullscreen} onToggleFullscreen={() => void toggleFullscreen()} />
+      <GalNet news={news} commander={save.name} />
     </main>
   );
 }

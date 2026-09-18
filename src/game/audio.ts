@@ -56,11 +56,34 @@ function musicNote(freq: number, duration: number, offset = 0) {
   osc.stop(start + duration + 0.03);
 }
 
+function musicPulse(freq: number, duration: number, offset = 0) {
+  const c = ac();
+  if (!c || !music || c.state !== "running") return;
+  const osc = c.createOscillator();
+  const filter = c.createBiquadFilter();
+  const gain = c.createGain();
+  const start = c.currentTime + offset;
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(freq, start);
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(900, start);
+  filter.frequency.exponentialRampToValueAtTime(180, start + duration);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(0.045, start + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(music);
+  osc.start(start);
+  osc.stop(start + duration + 0.03);
+}
+
 function scheduleSynthwaveBar() {
   if (scene !== "space" || !ctx) return;
   const bass = [55, 55, 65.41, 73.42, 55, 55, 82.41, 73.42];
   bass.forEach((note, index) => musicNote(note, 0.24, index * 0.28));
   [220, 277.18, 329.63].forEach((note, index) => musicNote(note, 1.8, index * 0.56));
+  [110, 123.47, 146.83, 130.81].forEach((note, index) => musicPulse(note, 0.18, index * 0.56 + 0.14));
 }
 
 export function setAudioScene(next: "title" | "space" | "station"): void {
@@ -83,6 +106,8 @@ export function setAudioScene(next: "title" | "space" | "station"): void {
         musicNote(110, 1.8);
         musicNote(164.81, 1.8, 0.5);
         musicNote(220, 1.8, 1);
+        musicPulse(82.41, 1.2, 0.25);
+        musicPulse(98, 1.2, 1.35);
       }
     }, 2600);
   }

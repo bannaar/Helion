@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { economyLabel, getSystem, governmentLabel } from "@/game/galaxy";
+import { economyLabel, factionPrice, FACTION_LABELS, getSystem, governmentLabel, systemFaction } from "@/game/galaxy";
 import {
   cargoCapacity,
   cargoUsed,
@@ -11,6 +11,8 @@ import {
   SHIP_CLASS_LABELS,
   SHIP_ORDER,
   SHIP_ROLE_LABELS,
+  SHIP_SIZE_LABELS,
+  SHIP_FACTION_LABELS,
 } from "@/game/ships";
 import { useGameStore } from "@/game/store";
 import { executeTradeFn, getBoardFn, getMarketFn } from "@/game/universe.functions";
@@ -36,6 +38,8 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
   const cap = cargoCapacity(save.shipId, save.cargoUpgrade, save.loadout);
   const contracts = missionContracts(save.systemId);
   const activeMission = save.activeMission;
+  const stationFaction = sys ? systemFaction(sys) : "free-traders";
+  const stationStanding = save.reputation[stationFaction] ?? 0;
 
   useEffect(() => {
     let live = true;
@@ -56,7 +60,7 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
     };
   }, [save.systemId]);
 
-  async function trade(row: MarketRow, side: "buy" | "sell") {
+  async function trade(row: MarketRow, side: "buy" | "sell", requestedQty = 1) {
     setBusy(true);
     setErr("");
     try {
@@ -66,24 +70,29 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
       } else if ((save.cargo[row.commodity] ?? 0) < 1) {
         throw new Error("None in hold");
       }
+      const qty = side === "buy"
+        ? Math.min(requestedQty, cap - used, Math.floor(save.credits / row.price))
+        : Math.min(requestedQty, save.cargo[row.commodity] ?? 0);
+      if (qty < 1) throw new Error(side === "buy" ? "Not enough credits or cargo space" : "None in hold");
       const res = await executeTradeFn({
-        data: { systemId: save.systemId, commodity: row.commodity, side, qty: 1 },
+        data: { systemId: save.systemId, commodity: row.commodity, side, qty },
       });
       const st = useGameStore.getState();
       const cargo = { ...st.save.cargo };
       if (side === "buy") {
-        cargo[row.commodity] = (cargo[row.commodity] ?? 0) + 1;
-        st.patchSave({ credits: st.save.credits - res.unitPrice, cargo });
+        cargo[row.commodity] = (cargo[row.commodity] ?? 0) + qty;
+        st.patchSave({ credits: st.save.credits - res.unitPrice * qty, cargo });
       } else {
-        const n = (cargo[row.commodity] ?? 0) - 1;
+        const n = (cargo[row.commodity] ?? 0) - qty;
         if (n <= 0) delete cargo[row.commodity];
         else cargo[row.commodity] = n;
-        st.patchSave({ credits: st.save.credits + res.unitPrice, cargo });
+        st.patchSave({ credits: st.save.credits + res.unitPrice * qty, cargo });
       }
       const next = (st.market ?? []).map((m) =>
         m.commodity === row.commodity ? { ...m, price: res.price, stock: res.stock } : m,
       );
       st.setMarket(next, res.tick);
+      st.setFlash(`${side === "buy" ? "BOUGHT" : "SOLD"} ${qty}t ${row.name.toUpperCase()}`);
       sfxPlay.ui();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Trade refused");
@@ -128,7 +137,7 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
     const next = SHIPS[id];
     if (id === save.shipId) return;
     const tradeIn = Math.round(def.price * 0.55);
-    const cost = Math.max(0, next.price - tradeIn);
+    const cost = Math.max(0, factionPrice(next.price, stationStanding) - tradeIn);
     if (save.credits < cost) {
       setErr("Insufficient credits");
       return;
@@ -181,8 +190,9 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
       sfxPlay.warn();
       return;
     }
-    if (save.credits < module.price) {
-      setErr(`Need ${module.price.toLocaleString()} CR`);
+    const fittedPrice = factionPrice(module.price, stationStanding);
+    if (save.credits < fittedPrice) {
+      setErr(`Need ${fittedPrice.toLocaleString()} CR`);
       sfxPlay.warn();
       return;
     }
@@ -193,7 +203,7 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
       return;
     }
     useGameStore.getState().patchSave({
-      credits: save.credits - module.price,
+      credits: save.credits - fittedPrice,
       loadout: nextLoadout,
       hull: Math.min(save.hull, nextStats.hull),
       shields: Math.min(save.shields, nextStats.shields),
@@ -242,7 +252,7 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
           <p className="font-mono text-xs tracking-[0.3em] text-muted">CORIOLIS · TICK {tick}</p>
           <h2 className="font-display text-3xl font-semibold tracking-[0.08em]">{sys?.name ?? "Station"}</h2>
           <p className="mt-1 font-mono text-xs text-muted">
-            {sys ? `${economyLabel(sys.economy)} · ${governmentLabel(sys.government)} · Tech ${sys.tech}` : ""}
+            {sys ? `${economyLabel(sys.economy)} · ${governmentLabel(sys.government)} · ${FACTION_LABELS[systemFaction(sys)]} · Tech ${sys.tech}` : ""}
           </p>
         </div>
         <div className="text-right font-mono text-xs">
@@ -296,12 +306,10 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
                       <td className="px-3 py-2 tabular-nums">{save.cargo[row.commodity as CommodityId] ?? 0}</td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="quiet" disabled={busy} onClick={() => void trade(row, "buy")}>
-                            Buy
-                          </Button>
-                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void trade(row, "sell")}>
-                            Sell
-                          </Button>
+                          <Button size="sm" variant="quiet" disabled={busy} onClick={() => void trade(row, "buy", 1)}>Buy</Button>
+                          <Button size="sm" variant="quiet" disabled={busy} onClick={() => void trade(row, "buy", 5)}>+5</Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void trade(row, "sell", 1)}>Sell</Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void trade(row, "sell", 5)}>−5</Button>
                         </div>
                       </td>
                     </tr>
@@ -315,6 +323,27 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
 
         {tab === "yard" ? (
           <div className="grid gap-3 sm:grid-cols-2">
+            <section className="rounded-xl border border-border bg-surface p-4 sm:col-span-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] tracking-[0.2em] text-accent">FACTION CONTACTS</p>
+                  <h3 className="mt-1 font-display text-lg">Standing & access</h3>
+                </div>
+                <p className="font-mono text-xs text-muted">Complete contracts to build trust</p>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-5">
+                {Object.entries(save.reputation).map(([id, value]) => (
+                  <div key={id} className="rounded-md border border-border bg-surface-2 p-2">
+                    <p className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
+                      {FACTION_LABELS[id as keyof typeof FACTION_LABELS]}
+                    </p>
+                    <p className={`mt-1 font-mono text-lg tabular-nums ${value < 0 ? "text-danger" : "text-accent"}`}>
+                      {value > 0 ? "+" : ""}{value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
             <section className="rounded-xl border border-border bg-surface p-4">
               <h3 className="font-display text-lg">Services</h3>
               <p className="mt-2 font-mono text-xs text-muted">
@@ -339,6 +368,10 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
                   <h3 className="mt-1 font-display text-lg">Fit modules</h3>
                   <p className="mt-1 font-mono text-xs text-muted">
                     Modules are installed into the current hull and persist between launches.
+                  </p>
+                  <p className="mt-1 font-mono text-[10px] text-accent">
+                    {FACTION_LABELS[stationFaction]} standing {stationStanding > 0 ? "+" : ""}{stationStanding} ·
+                    {" "}{stationStanding >= 0 ? "preferred rates active" : "local surcharge applied"}
                   </p>
                 </div>
                 <p className="font-mono text-xs text-muted">
@@ -366,7 +399,7 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
                         <option value="">Empty</option>
                         {slotOptions(slot.id).map((module) => (
                           <option key={module.id} value={module.id}>
-                            {module.name} · {module.price.toLocaleString()} CR
+                            {module.name} · {factionPrice(module.price, stationStanding).toLocaleString()} CR
                           </option>
                         ))}
                       </select>
@@ -380,18 +413,22 @@ export function StationDock({ engine }: { engine: EngineHandle | null }) {
               const s = SHIPS[id];
               const owned = id === save.shipId;
               const tradeIn = Math.round(def.price * 0.55);
-              const cost = Math.max(0, s.price - tradeIn);
+              const cost = Math.max(0, factionPrice(s.price, stationStanding) - tradeIn);
               return (
                 <section key={id} className="rounded-xl border border-border bg-surface p-4">
                   <h3 className="font-display text-lg">{s.name}</h3>
                   <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
-                    {SHIP_CLASS_LABELS[s.class]} · {s.roles.map((role) => SHIP_ROLE_LABELS[role]).join(" / ")}
+                    {SHIP_FACTION_LABELS[s.faction]} · {SHIP_SIZE_LABELS[s.size]} · {SHIP_CLASS_LABELS[s.class]}
+                  </p>
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                    Roles: {s.roles.map((role) => SHIP_ROLE_LABELS[role]).join(" / ")}
                   </p>
                   <p className="mt-1 font-mono text-xs text-muted">
                     Hold {s.cargo}t · Jump {s.jump} ly · Speed {s.maxSpeed}
                   </p>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">{s.description}</p>
                   <p className="mt-2 font-mono text-[11px] text-muted">
-                    Hardpoints {s.hardpoints.length} · Utility {s.utilitySlots} · Internal {s.internalSlots}
+                    Hull {s.hull} · Shields {s.shields} · Hardpoints {s.hardpoints.length} · Utility {s.utilitySlots} · Internal {s.internalSlots}
                   </p>
                   <p className="mt-3 font-mono text-sm text-accent">
                     {owned ? "Current hull" : cost === 0 ? "Transfer" : `${cost.toLocaleString()} CR`}

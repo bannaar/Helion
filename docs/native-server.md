@@ -222,10 +222,9 @@ Before public deployment, add:
 4. Versioned migrations for non-credential profile records.
 5. Cross-sector simulation and richer world persistence. The current mining
    sector uses a 60 Hz authoritative flight tick, persists in-flight position
-   and unsold cargo, and validates extraction and docking rewards. Live player
-   positions and deterministic NPC traffic are available through contact
-   snapshots. Shared asteroid depletion and player-to-player collision remain
-   future work.
+   and unsold cargo, and validates extraction and docking rewards. Multiplayer
+   contact records and deterministic NPC traffic are available to clients, but
+   full shared ship replication remains future work.
 
 ## 8. Logs and shutdown
 
@@ -244,17 +243,20 @@ sudo systemctl stop helion-server
 ## 9. Mining gameplay
 
 The native client now flies a Sidewinder in Kepler Reach. Authenticated
-`LAUNCH`, `INPUT`, `FLIGHT`, `MINE`, and `DOCK` commands implement the mining
-loop. The server advances positions at 60 Hz, resolves asteroid hull
-collisions, bounds the sector to 1200 m, expires controls after 0.5 seconds,
-and validates proximity, speed, extractor cooldown, and cargo capacity.
+`LAUNCH`, `INPUT`, `FLIGHT`, `MINE`, `DOCK`, and `REPAIR` commands implement the
+mining and hull-care loop. The server advances positions at 60 Hz, resolves
+asteroid collisions into authoritative hull damage, bounds the sector to 1200
+m, expires controls after 0.5 seconds, and validates proximity, speed,
+extractor cooldown, and cargo capacity.
 
 Docking sells ore at 60 credits and 5 XP per unit. Rewards are acknowledged
 only after the profile snapshot is saved; a failed write restores cargo,
-flight state, credits, and XP so the player can retry. The profile format now
-persists position, velocity, yaw, dock state, mined ore, market cargo, station,
-missions, and upgrades. A server restart resumes the commander's saved flight.
-Asteroid depletion remains per-commander, while chat and contact positions are
-shared.
+flight state, credits, and XP so the player can retry. Hull upgrades increase
+maximum integrity. A disabled ship is recovered at its station with cargo
+lost; `/repair` restores integrity for a credit cost before launch. Legacy
+profile records remain readable, while new mission, upgrade, flight, and hull
+fields are appended. Flight positions, hull damage, and unsold cargo persist
+across restart. Flight sectors are currently per-commander instances, while
+chat remains shared.
 
 See `native/README.md` for controls, command arguments, and snapshot fields.

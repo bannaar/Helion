@@ -7,13 +7,14 @@
 #include <sstream>
 
 namespace helion::flight {
+int hullCapacity(int hullLevel) { return 100 + (std::clamp(hullLevel, 1, 5) - 1) * 25; }
 int cargoUsed(const State& s) { return s.cargo+s.food+s.parts; }
 int nearestStation(const State& s) {
   return std::hypot(s.x-650,s.y)<std::hypot(s.x,s.y) ? 1 : 0;
 }
 double speed(const State& s) { return std::hypot(s.vx, s.vy); }
 
-void step(State& s, double dt) {
+void step(State& s, double dt, int engineLevel) {
   if (!std::isfinite(dt) || dt <= 0) return;
   dt = std::min(dt, 0.05);
   s.cooldown = std::max(0.0, s.cooldown - dt);
@@ -22,7 +23,8 @@ void step(State& s, double dt) {
   // Missing input (disconnect, console, lost focus) engages flight assist.
   const Input input = s.inputAge <= 0.5 ? s.input : Input{0, 0, 1};
   s.yaw = std::remainder(s.yaw + input.turn * 2.2 * dt, 2 * kPi);
-  const double acceleration = input.brake ? 0 : input.thrust * 130.0;
+  const double engineMultiplier = 1.0 + 0.12 * (std::clamp(engineLevel, 1, 5) - 1);
+  const double acceleration = input.brake ? 0 : input.thrust * 130.0 * engineMultiplier;
   s.vx -= std::sin(s.yaw) * acceleration * dt;
   s.vy += std::cos(s.yaw) * acceleration * dt;
   const double drag = std::exp(-(input.brake ? 4.5 : 0.65) * dt);
@@ -40,7 +42,16 @@ void step(State& s, double dt) {
       s.x = rock.x + nx * radius;
       s.y = rock.y + ny * radius;
       const double inward = s.vx * nx + s.vy * ny;
-      if (inward < 0) { s.vx -= 1.3 * inward * nx; s.vy -= 1.3 * inward * ny; }
+      if (inward < 0) {
+        const int damage = std::max(1, static_cast<int>(std::ceil((-inward - 18.0) * 0.18)));
+        s.hull = std::max(0, s.hull - damage);
+        s.vx -= 1.3 * inward * nx; s.vy -= 1.3 * inward * ny;
+        if (s.hull == 0) {
+          const int station = std::clamp(s.station, 0, static_cast<int>(kStations.size()) - 1);
+          s.x = kStations[station].x; s.y = kStations[station].y;
+          s.vx = 0; s.vy = 0; s.docked = true; s.cargo = 0;
+        }
+      }
     }
   }
   if (std::hypot(s.x, s.y) > 1200) {
@@ -61,9 +72,10 @@ int nearestRock(const State& s) {
 
 std::string launch(State& s) {
   if (!s.docked) return "ERR already-in-flight";
-  const int food=s.food, parts=s.parts, station=s.station;
+  if (s.hull <= 0) return "ERR repair-required";
+  const int food=s.food, parts=s.parts, station=s.station, hull=s.hull, maxHull=s.maxHull;
   s = State{};
-  s.food=food; s.parts=parts; s.station=station;
+  s.food=food; s.parts=parts; s.station=station; s.hull=hull; s.maxHull=maxHull;
   s.docked = false;
   s.x=kStations[station].x; s.y=kStations[station].y+100;
   return "OK LAUNCHED";
@@ -91,11 +103,23 @@ std::string dock(State& s, int& credits, int& experience) {
       experience > std::numeric_limits<int>::max() - s.cargo * 5) return "ERR profile-limit";
   credits += earned;
   experience += s.cargo * 5;
-  const int food=s.food, parts=s.parts;
+  const int food=s.food, parts=s.parts, hull=s.hull, maxHull=s.maxHull;
   s = State{};
-  s.food=food; s.parts=parts; s.station=station;
+  s.food=food; s.parts=parts; s.station=station; s.hull=hull; s.maxHull=maxHull;
   s.x=kStations[station].x; s.y=kStations[station].y;
   return "OK DOCKED earned=" + std::to_string(earned);
+}
+
+std::string repair(State& s, int& credits, int hullLevel) {
+  if (!s.docked) return "ERR dock-required";
+  s.maxHull = hullCapacity(hullLevel);
+  if (s.hull >= s.maxHull) return "ERR hull-full";
+  const int missing = s.maxHull - s.hull;
+  const int cost = missing * 3;
+  if (credits < cost) return "ERR insufficient-credits";
+  credits -= cost;
+  s.hull = s.maxHull;
+  return "OK REPAIRED hull=" + std::to_string(s.hull) + " cost=" + std::to_string(cost);
 }
 
 std::string trade(State& s, int& credits, bool buying, const std::string& commodity, int quantity) {
@@ -137,7 +161,7 @@ std::string snapshot(const State& s, int credits, int experience) {
   out << std::fixed << std::setprecision(3) << "FLIGHT " << s.x << ' ' << s.y << ' '
       << s.vx << ' ' << s.vy << ' ' << s.yaw << ' ' << s.docked << ' ' << s.cargo
       << ' ' << credits << ' ' << experience << ' ' << s.cooldown
-      << ' ' << s.food << ' ' << s.parts << ' ' << s.station;
+      << ' ' << s.food << ' ' << s.parts << ' ' << s.station << ' ' << s.hull << ' ' << s.maxHull;
   return out.str();
 }
 
@@ -147,7 +171,12 @@ bool readSnapshot(const std::string& line, State& s, int& credits, int& experien
   State next;
   int docked, nextCredits, nextExperience;
   if (!(in >> kind >> next.x >> next.y >> next.vx >> next.vy >> next.yaw >> docked >> next.cargo
-        >> nextCredits >> nextExperience >> next.cooldown >> next.food >> next.parts >> next.station) || kind != "FLIGHT" || (in >> extra)) return false;
+        >> nextCredits >> nextExperience >> next.cooldown >> next.food >> next.parts >> next.station) || kind != "FLIGHT") return false;
+  if (in >> next.hull >> next.maxHull) {
+    if (in >> extra) return false;
+  } else {
+    in.clear();
+  }
   if (!std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.vx) ||
       !std::isfinite(next.vy) || !std::isfinite(next.yaw) || !std::isfinite(next.cooldown) ||
       std::abs(next.x) > 1201 || std::abs(next.y) > 1201 || std::abs(next.vx) > 250 ||
@@ -155,6 +184,7 @@ bool readSnapshot(const std::string& line, State& s, int& credits, int& experien
       docked < 0 || docked > 1 || next.cargo < 0 || next.cargo > kCargoCapacity || next.food<0 || next.parts<0 ||
       next.food>8 || next.parts>8 || cargoUsed(next)>kCargoCapacity || next.station<0 || next.station>1 ||
       next.cooldown < 0 || next.cooldown > 1.251) return false;
+  if (next.hull < 0 || next.maxHull < 1 || next.maxHull > 200 || next.hull > next.maxHull) return false;
   next.docked = docked != 0;
   s = next; credits = nextCredits; experience = nextExperience;
   return true;

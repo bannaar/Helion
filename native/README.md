@@ -50,8 +50,9 @@ For the retained command-line mode, use
 
 The client commands are `/create username password display`, `/login username
 password`, `/chat message`, `/profile`, `/state`, `/contacts`, `/buy food 1`,
-`/sell parts 1`, `/launch`, `/flight`, `/input thrust turn brake`, `/mine`,
-`/dock`, and `/quit`.
+`/sell parts 1`, `/mission`, `/accept`, `/turnin`, `/upgrade engine|hull`,
+`/repair`, `/launch`, `/flight`, `/input thrust turn brake`, `/mine`, `/dock`,
+and `/quit`.
 The optional server data-file stores commander profiles and GalNet
 messages durably and is replaced atomically after each write.
 
@@ -72,15 +73,20 @@ directory private to the server user.
 4. Return to the amber base marker on the radar. Within **85 m** at less
    than **35 m/s**, press **F** to dock and sell your cargo for **60 credits
    and 5 XP per unit**. A full trip pays **480 credits and 40 XP**.
-5. **Enter** opens the command/chat console; **Escape** closes it. Opening
+5. **Enter** opens the command/chat console; **Escape** closes it. Press **R**
+   while docked to repair a damaged hull. Opening
    the console or losing focus brakes the ship. Credentials are masked in
    the graphical input and command log.
 
 The server advances flight at a fixed 60 Hz and validates every mining and
 docking action. Clients send only bounded control inputs, never positions or
 rewards. Inputs expire after half a second. Credits, XP, upgrades, flight
-position, and unsold cargo are persisted after authoritative updates, so a
-restart resumes the commander's saved in-flight state. Each commander
+position, hull damage, and unsold cargo are persisted after authoritative
+updates, so a restart resumes the commander's saved in-flight state. Asteroid
+impacts damage the hull based on collision speed; a disabled ship is recovered
+at its station with cargo lost and must be repaired before launch. Hull
+upgrades increase maximum integrity and repairs cost credits per missing point.
+Each commander
 currently flies a separate instance of the same sector; shared asteroid
 depletion and full player ship replication are not yet implemented. Contact
 records and deterministic NPC traffic are exposed through multiplayer
@@ -113,8 +119,8 @@ The server sends `WELCOME Helion/2` and `INFO` lines on connect. Protocol versio
 Requests are one
 newline-terminated line: `CREATE username password display`, `LOGIN username
 password`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
-`MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `LAUNCH`, `INPUT`, `FLIGHT`, `MINE`,
-`DOCK`, or `QUIT`. Responses are newline-terminated
+`MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `REPAIR`, `LAUNCH`, `INPUT`, `FLIGHT`,
+`MINE`, `DOCK`, or `QUIT`. Responses are newline-terminated
 `OK`, `ERR`, `PROFILE`, `STATE`, and `CHAT` records. The server stores salted
 scrypt password hashes, migrates existing plaintext profile records on startup,
 and creates owner-only data files. New passwords must be 12–128 bytes. The connection requires TLS 1.2 or newer. Clients verify the certificate
@@ -129,12 +135,12 @@ Oversized lines are discarded through the next LF and receive one
 chat payload is 512 bytes.
 
 `INPUT thrust turn brake` accepts exactly `0|1`, `-1|0|1`, and `0|1`.
-Positive turn is left. `LAUNCH`, `FLIGHT`, `MINE`, and `DOCK` take no arguments;
-all five gameplay commands require authentication. Each gameplay command
+Positive turn is left. `LAUNCH`, `FLIGHT`, `MINE`, `DOCK`, and `REPAIR` take no
+arguments; all gameplay commands require authentication. Each gameplay command
 returns a flight snapshot, except authentication/persistence failures:
 
 ```text
-FLIGHT x y vx vy yaw docked cargo credits experience cooldown
+FLIGHT x y vx vy yaw docked cargo credits experience cooldown food parts station hull maxHull
 ```
 
 Coordinates are metres on an XY plane, +Y north, yaw in radians with zero

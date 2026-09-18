@@ -216,15 +216,20 @@ void render(int width, int height, const View& v) {
   if (v.showTelemetry) text(24,bottom+38,std::to_string(static_cast<int>(flight::speed(v.ship)))+" M/S",white,2);
   text(185,bottom+16,"CARGO / "+std::to_string(v.ship.cargo)+" OF 8",muted,1.5f);
   for(int i=0;i<8;++i) rect(185+i*19,bottom+38,14,14,i<v.ship.cargo ? teal : line);
+  text(24,bottom+58,"HULL",muted,1.5f);
+  const int hullBars=std::clamp(v.ship.hull*8/std::max(v.ship.maxHull,1),0,8);
+  for(int i=0;i<8;++i) rect(24+i*15,bottom+78,11,10,i<hullBars ? (hullBars<=2 ? amber : teal) : line);
+  text(24,bottom+96,std::to_string(v.ship.hull)+" / "+std::to_string(v.ship.maxHull),hullBars<=2 ? amber : white,1.5f);
   const double range=std::hypot(v.ship.x-target.x,v.ship.y-target.y);
   text(392,bottom+16,"ORE TARGET / "+std::to_string(static_cast<int>(range))+" M",muted,1.5f);
-  std::string prompt=v.ship.docked ? "[L] LAUNCH" : v.ship.cargo==8 ? "HOLD FULL / RETURN TO BASE" :
+  std::string prompt=v.ship.docked ? (v.ship.hull<v.ship.maxHull ? "[R] REPAIR HULL" : "[L] LAUNCH") :
+    v.ship.cargo==8 ? "HOLD FULL / RETURN TO BASE" :
     range>flight::kMineRange ? "APPROACH TO 85 M" : flight::speed(v.ship)>flight::kWorkSpeed ? "[S] BRAKE TO MINE" :
     v.ship.cooldown>0 ? "EXTRACTOR RECHARGING" : "[E] EXTRACT ORE";
   if (!v.ship.docked && std::hypot(v.ship.x,v.ship.y)<=flight::kDockRange)
     prompt=flight::speed(v.ship)>flight::kWorkSpeed ? "[S] BRAKE TO DOCK" : "[F] DOCK AND SELL ORE";
   text(392,bottom+39,prompt,teal,1.5f);
-  text(24,bottom+77,"W THRUST   A/D TURN   S BRAKE   E MINE   F DOCK   L LAUNCH   B/S TRADE   ENTER COMMS",muted,1.5f);
+  text(185,bottom+77,"W THRUST   A/D TURN   S BRAKE   E MINE   F DOCK   L LAUNCH   R REPAIR   B TRADE   ENTER COMMS",muted,1.5f);
   if (!v.log.empty() && !v.console) {
     rect(20,bottom-37,740,26,panel); text(30,bottom-30,v.log.back().substr(0,78),amber,1.5f);
   }

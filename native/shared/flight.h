@@ -32,8 +32,9 @@ struct State {
   Input input;
   bool docked = true;
   int cargo = 0, food = 0, parts = 0, station = 0;
+  int hull = 100, maxHull = 100;
 };
-void step(State& state, double dt);
+void step(State& state, double dt, int engineLevel = 1);
 double speed(const State& state);
 int nearestRock(const State& state);
 int nearestStation(const State& state);
@@ -42,6 +43,8 @@ std::string trade(State& state, int& credits, bool buying, const std::string& co
 std::string launch(State& state);
 std::string mine(State& state);
 std::string dock(State& state, int& credits, int& experience);
+int hullCapacity(int hullLevel);
+std::string repair(State& state, int& credits, int hullLevel = 1);
 std::string snapshot(const State& state, int credits, int experience);
 bool readSnapshot(const std::string& line, State& state, int& credits, int& experience);
 } // namespace helion::flight

@@ -71,10 +71,20 @@ Request parseRequest(std::string_view line) {
       return request;
     }
     request.command = Command::chat;
-  } else if (command == "MISSION" || command == "ACCEPT" || command == "TURNIN" || command == "UPGRADE") {
-    if (input >> request.first) { request.error = "malformed-message"; return request; }
-    request.command = command == "MISSION" ? Command::mission : command == "ACCEPT" ? Command::accept :
-      command == "TURNIN" ? Command::turnin : Command::upgrade;
+  } else if (command == "MISSION" || command == "ACCEPT" || command == "TURNIN" || command == "UPGRADE" || command == "REPAIR") {
+    std::string extra;
+    if (command == "UPGRADE") {
+      if (!(input >> request.first) || (input >> extra) ||
+          (request.first != "engine" && request.first != "hull")) {
+        request.error = "usage=UPGRADE engine|hull";
+        return request;
+      }
+      request.command = Command::upgrade;
+    } else {
+      if (input >> extra) { request.error = "malformed-message"; return request; }
+      request.command = command == "MISSION" ? Command::mission : command == "ACCEPT" ? Command::accept :
+        command == "TURNIN" ? Command::turnin : Command::repair;
+    }
   } else if (command == "BUY" || command == "SELL") {
     std::string extra;
     if (!(input>>request.first>>request.second) || (input>>extra) ||

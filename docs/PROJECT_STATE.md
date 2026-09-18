@@ -25,10 +25,13 @@ profile queries, flight, contacts, mining, docking, and trading require login.
 Progression is now playable: `/mission` shows the First Ore contract,
 `/accept` starts it, and `/turnin` pays the reward after returning with ore.
 `/upgrade engine` and `/upgrade hull` spend credits at the station and advance
-levels; engine levels increase authoritative acceleration and hull levels are
-stored for the next damage model. Flight position, velocity, dock state,
-mined ore, and market cargo are written into the owner-only save after control
-and economy changes, so a server restart resumes the commander in flight.
+levels; engine levels increase authoritative acceleration and hull levels
+increase maximum integrity. Asteroid impacts damage hulls based on impact
+speed, disable ships at zero integrity, recover them at their station, and
+require the docked `/repair` command before launch. Flight position, velocity,
+dock state, hull damage, mined ore, and market cargo are written into the
+owner-only save after control and economy changes, so a server restart resumes
+the commander in flight.
 Other clients receive live positions through `/contacts`, and the client
 renders commander ships alongside NPC traffic.
 
@@ -53,8 +56,8 @@ migration, save locking, TLS certificate/hostname/IP validation, plaintext
 rejection, graceful shutdown, installed launcher startup, saved login, file
 permissions, and desktop asset installation.
 
-The remaining major gameplay work is combat, a broader mission chain,
-damage-driven hull upgrades, and richer economy simulation. The current
+The remaining major gameplay work is combat, a broader mission chain, and
+richer economy simulation. The current
 mining, trading, progression, outfitting, persistence, and contact loops form
 a playable native career slice rather than a static client shell.
 

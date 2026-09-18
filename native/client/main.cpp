@@ -54,13 +54,13 @@ bool saveFrame(const std::string& path,int width,int height) {
   SDL_FreeSurface(surface); return saved;
 }
 int terminalClient(int fd, helion::tls::Connection& connection) {
-  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
+  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
   helion::protocol::LineDecoder decoder;
   bool greeted=false, running=true, stdinClosed=false, quitQueued=false;
   std::string outgoing, typed;
   while(running) {
     pollfd ready[2]={{fd,static_cast<short>(POLLIN|(outgoing.empty()?0:POLLOUT)),0},
-      {stdinClosed?-1:STDIN_FILENO,POLLIN,0}};
+      {STDIN_FILENO,static_cast<short>(stdinClosed?0:POLLIN),0}};
     if(poll(ready,2,1000)<0) { if(errno==EINTR) continue; return 1; }
     if(true) {
       char bytes[1024]; auto n=connection.read(bytes,sizeof(bytes));
@@ -211,6 +211,7 @@ int main(int argc,char** argv) {
         if(key==SDLK_l) queue("LAUNCH");
         if(key==SDLK_e) queue("MINE");
         if(key==SDLK_f) queue("DOCK");
+        if(key==SDLK_r && view.ship.docked) { view.console=true; view.typed="REPAIR"; }
         if(key==SDLK_b) { view.console=true; view.typed="BUY food 1"; }
         if(key==SDLK_F2) { view.console=true; view.typed="PROFILE"; }
         if(key==SDLK_F3) { view.showTelemetry=!view.showTelemetry; }

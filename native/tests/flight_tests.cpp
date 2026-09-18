@@ -29,6 +29,35 @@ int main() {
   run(right,30,{1,0,0});
   for(int i=0;i<180;++i) step(right,1.0/60);
   check(speed(right)<0.1,"stale input engages brake");
+  State levelOne, levelFive;
+  launch(levelOne); launch(levelFive);
+  levelOne.input = {1, 0, 0}; levelOne.inputAge = 0;
+  levelFive.input = {1, 0, 0}; levelFive.inputAge = 0;
+  step(levelOne, 1.0 / 60, 1);
+  step(levelFive, 1.0 / 60, 5);
+  check(speed(levelOne) > 0 && speed(levelFive) > speed(levelOne) &&
+    speed(levelFive) < speed(levelOne) * 1.6, "engine upgrade bounds thrust acceleration");
+  State braking = levelFive;
+  braking.vy = 120;
+  braking.input = {0, 0, 1}; braking.inputAge = 0;
+  const double beforeBrake = speed(braking);
+  step(braking, 1.0 / 60, 5);
+  check(speed(braking) < beforeBrake, "engine upgrade preserves braking");
+  State staleAssist = levelFive;
+  staleAssist.vy = 120;
+  staleAssist.input = {1, 0, 0}; staleAssist.inputAge = 0.6;
+  const double beforeAssist = speed(staleAssist);
+  step(staleAssist, 1.0 / 60, 5);
+  check(speed(staleAssist) < beforeAssist, "engine upgrade preserves stale input assist");
+  State explicitLevelOne = levelOne;
+  State defaultLevelOne = levelOne;
+  explicitLevelOne = State{}; defaultLevelOne = State{};
+  launch(explicitLevelOne); launch(defaultLevelOne);
+  explicitLevelOne.input = {1, 0, 0}; defaultLevelOne.input = {1, 0, 0};
+  explicitLevelOne.inputAge = 0; defaultLevelOne.inputAge = 0;
+  step(explicitLevelOne, 1.0 / 60, 1);
+  step(defaultLevelOne, 1.0 / 60);
+  check(std::abs(speed(explicitLevelOne) - speed(defaultLevelOne)) < 1e-9, "level one remains default physics");
   State ship;
   check(mine(ship)=="ERR launch-required","cannot mine docked");
   launch(ship);
@@ -62,6 +91,15 @@ int main() {
     restored.docked && restoredCredits==1806 && restoredXp==40,"snapshot roundtrip");
   check(!readSnapshot("FLIGHT nan 0 0 0 0 1 0 0 0 0",restored,restoredCredits,restoredXp),"reject nonfinite state");
   check(!readSnapshot("FLIGHT 0 0 0 0 0 1 999 0 0 0",restored,restoredCredits,restoredXp),"reject invalid cargo");
+  State damaged;
+  launch(damaged); damaged.x=0; damaged.y=320; damaged.vy=-200; damaged.cargo=2;
+  step(damaged,1.0/60);
+  check(damaged.hull < damaged.maxHull && damaged.hull > 0 && !damaged.docked && damaged.cargo==2,
+    "asteroid impact damages hull without destroying ship");
+  damaged.hull=0; damaged.docked=true; damaged.cargo=2; int repairCredits=1000;
+  check(launch(damaged)=="ERR repair-required", "disabled ship requires repair");
+  check(repair(damaged,repairCredits,2)=="OK REPAIRED hull=125 cost=375" &&
+    damaged.hull==125 && repairCredits==625, "station repair restores upgraded hull");
   Contact contact{"HAULER-7", "hauler", 12, -3, 1, false};
   Contact restoredContact;
   check(readContact(contactLine(contact), restoredContact) && restoredContact.id == "HAULER-7" &&

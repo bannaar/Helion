@@ -37,6 +37,7 @@ constexpr int kReadTimeoutSeconds = 30;
 constexpr int kWriteTimeoutSeconds = 5;
 constexpr int kMaxAuthFailures = 5;
 constexpr int kMaxAuthRequests = 10;
+constexpr double kFlightCheckpointSeconds = 1.0;
 std::string dataPath = "helion-server.db";
 std::string dummyPasswordHash;
 volatile std::sig_atomic_t stopping = 0;
@@ -55,6 +56,7 @@ struct Profile {
   int missionStage = 0;
   int hullLevel = 1;
   int engineLevel = 1;
+  bool missionOreMined = false;
 };
 
 struct ChatMessage {
@@ -63,12 +65,17 @@ struct ChatMessage {
 };
 
 std::mutex stateMutex;
-std::mutex writeMutex;
 std::unordered_map<std::string, Profile> profiles;
 std::vector<ChatMessage> messages;
 std::vector<int> clients;
+bool flightStateDirty = false;
 std::mutex transportMutex;
-std::unordered_map<int, std::shared_ptr<helion::tls::Connection>> transports;
+struct Transport {
+  explicit Transport(std::shared_ptr<helion::tls::Connection> value) : connection(std::move(value)) {}
+  std::shared_ptr<helion::tls::Connection> connection;
+  std::mutex writeMutex;
+};
+std::unordered_map<int, std::shared_ptr<Transport>> transports;
 
 std::string encode(const std::string& value) {
   std::string out;
@@ -105,7 +112,8 @@ void saveStateLocked() {
          << profile.engineLevel << '\t' << profile.flight.x << '\t' << profile.flight.y << '\t'
          << profile.flight.vx << '\t' << profile.flight.vy << '\t' << profile.flight.yaw << '\t'
          << profile.flight.docked << '\t' << profile.flight.cargo << '\t' << profile.flight.food << '\t'
-         << profile.flight.parts << '\t' << profile.flight.station << '\n';
+         << profile.flight.parts << '\t' << profile.flight.station << '\t' << profile.flight.hull << '\t'
+         << profile.flight.maxHull << '\t' << profile.missionOreMined << '\n';
   }
   for (const auto& message : messages) {
     snapshot << "M\t" << encode(message.user) << '\t' << encode(message.text) << '\n';
@@ -133,6 +141,11 @@ void saveStateLocked() {
     unlink(temp.c_str());
     throw;
   }
+}
+
+void persistStateLocked() {
+  saveStateLocked();
+  flightStateDirty = false;
 }
 
 void loadState() {
@@ -198,6 +211,18 @@ void loadState() {
         std::getline(input, value, '\t'); profile.flight.food = parseNumber(value, 0);
         std::getline(input, value, '\t'); profile.flight.parts = parseNumber(value, 0);
         std::getline(input, value, '\t'); profile.flight.station = parseNumber(value, 0);
+        std::getline(input, value, '\t'); profile.flight.hull = std::clamp(parseNumber(value, 100), 0, 200);
+        std::getline(input, value, '\t'); profile.flight.maxHull = std::clamp(parseNumber(value, helion::flight::hullCapacity(profile.hullLevel)), 1, 200);
+        profile.flight.maxHull = helion::flight::hullCapacity(profile.hullLevel);
+        profile.flight.hull = std::min(profile.flight.hull, profile.flight.maxHull);
+        std::string objective;
+        if (std::getline(input, objective, '\t')) {
+          if (objective != "0" && objective != "1") throw std::runtime_error("malformed mission objective");
+          profile.missionOreMined = objective == "1";
+          std::string trailing;
+          if (std::getline(input, trailing)) throw std::runtime_error("unexpected persistence fields");
+        }
+        if (profile.missionStage == 2) profile.missionOreMined = false;
         profile.flight.inputAge = 1;
         if (!profiles.emplace(decode(first), std::move(profile)).second)
           throw std::runtime_error("duplicate profile in persistence file");
@@ -238,15 +263,15 @@ void migrateLegacyProfiles() {
 
 bool sendLine(int fd, const std::string& line) {
   if (!helion::protocol::validWireLine(line)) return false;
-  std::shared_ptr<helion::tls::Connection> connection;
+  std::shared_ptr<Transport> transport;
   {
     std::lock_guard<std::mutex> lock(transportMutex);
     const auto found = transports.find(fd);
     if (found == transports.end()) return false;
-    connection = found->second;
+    transport = found->second;
   }
-  std::lock_guard<std::mutex> lock(writeMutex);
-  return connection->sendAll(line + "\n");
+  std::lock_guard<std::mutex> lock(transport->writeMutex);
+  return transport->connection->sendAll(line + "\n");
 }
 
 std::string stateLine() {
@@ -257,8 +282,12 @@ std::string stateLine() {
 }
 
 void broadcast(const std::string& line) {
-  std::lock_guard<std::mutex> lock(stateMutex);
-  for (const int fd : clients) sendLine(fd, line);
+  std::vector<int> recipients;
+  {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    recipients = clients;
+  }
+  for (const int fd : recipients) sendLine(fd, line);
 }
 
 std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
@@ -289,7 +318,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -338,21 +367,30 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         std::string encoded;
         try { encoded = helion::security::hashPassword(password); }
         catch (const std::exception&) { sendLine(fd, "ERR password-hashing-unavailable"); continue; }
-        std::lock_guard<std::mutex> lock(stateMutex);
-        if (profiles.count(name) != 0) {
-          sendLine(fd, "ERR profile-exists");
-          if (++authFailures >= kMaxAuthFailures) { running = false; break; }
-        } else {
-          profiles.emplace(name, Profile{encoded, display});
-          try { saveStateLocked(); } catch (const std::exception& error) {
-            profiles.erase(name);
-            sendLine(fd, "ERR persistence-failed");
-            std::cerr << error.what() << '\n';
-            continue;
+        std::string response;
+        bool tooManyFailures = false;
+        bool created = false;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          if (profiles.count(name) != 0) {
+            response = "ERR profile-exists";
+            tooManyFailures = ++authFailures >= kMaxAuthFailures;
+          } else {
+            profiles.emplace(name, Profile{encoded, display});
+            try {
+              persistStateLocked();
+              response = "OK CREATED user=" + name + " display=" + display;
+              created = true;
+            } catch (const std::exception& error) {
+              profiles.erase(name);
+              response = "ERR persistence-failed";
+              std::cerr << error.what() << '\n';
+            }
           }
-          user = name;
-          sendLine(fd, "OK CREATED user=" + name + " display=" + display);
         }
+        if (created) user = name;
+        sendLine(fd, response);
+        if (tooManyFailures) { running = false; break; }
       } else if (request.command == helion::protocol::Command::login) {
         const auto& name = request.first;
         const auto& password = request.second;
@@ -377,109 +415,207 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         const auto& text = request.payload;
         if (user.empty()) sendLine(fd, "ERR login-required");
         else {
+          bool saved = false;
           {
             std::lock_guard<std::mutex> lock(stateMutex);
             messages.push_back({user, text});
-            try { saveStateLocked(); } catch (const std::exception& error) {
+            try { persistStateLocked(); saved = true; }
+            catch (const std::exception& error) {
               messages.pop_back();
-              sendLine(fd, "ERR persistence-failed");
               std::cerr << error.what() << '\n';
-              continue;
             }
           }
+          if (!saved) { sendLine(fd, "ERR persistence-failed"); continue; }
           broadcast("CHAT user=" + user + " text=" + text);
         }
       } else if (request.command == helion::protocol::Command::profile) {
         if (user.empty()) {
           sendLine(fd, "ERR login-required");
         } else {
-          std::lock_guard<std::mutex> lock(stateMutex);
-          const auto it = profiles.find(user);
-          if (it == profiles.end()) sendLine(fd, "ERR profile-missing");
-          else {
-            const Profile& profile = it->second;
-            sendLine(fd, "PROFILE user=" + user + " display=" + profile.display +
-              " faction=" + profile.faction + " ship=" + profile.ship +
-              " credits=" + std::to_string(profile.credits) +
-              " experience=" + std::to_string(profile.experience));
+          std::string response;
+          {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            const auto it = profiles.find(user);
+            if (it == profiles.end()) response = "ERR profile-missing";
+            else {
+              const Profile& profile = it->second;
+              response = "PROFILE user=" + user + " display=" + profile.display +
+                " faction=" + profile.faction + " ship=" + profile.ship +
+                " credits=" + std::to_string(profile.credits) +
+                " experience=" + std::to_string(profile.experience) +
+                " hull=" + std::to_string(profile.flight.hull) +
+                " max-hull=" + std::to_string(profile.flight.maxHull) +
+                " engine-level=" + std::to_string(profile.engineLevel) +
+                " hull-level=" + std::to_string(profile.hullLevel) +
+                " mission-stage=" + std::to_string(profile.missionStage) +
+                " mission-ore-mined=" + std::to_string(profile.missionOreMined);
+            }
           }
+          sendLine(fd, response);
         }
       } else if (request.command == helion::protocol::Command::mission || request.command == helion::protocol::Command::accept || request.command == helion::protocol::Command::turnin) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::lock_guard<std::mutex> lock(stateMutex);
-        auto& profile = profiles.at(user);
-        if (request.command == helion::protocol::Command::mission) {
-          sendLine(fd, profile.missionStage == 0 ? "MISSION 1 title=First Ore objective=mine-1 reward=250" : profile.missionStage == 1 ? "MISSION 1 active objective=mine-1 reward=250" : "MISSION 1 complete");
-        } else if (request.command == helion::protocol::Command::accept) {
-          if (profile.missionStage != 0) sendLine(fd, "ERR mission-unavailable");
-          else { profile.missionStage = 1; saveStateLocked(); sendLine(fd, "OK MISSION ACCEPTED id=1"); }
-        } else if (profile.missionStage != 1) sendLine(fd, "ERR mission-not-active");
-        else if (!profile.flight.docked || profile.flight.cargo < 1) sendLine(fd, "ERR objective-incomplete");
-        else { profile.missionStage = 2; profile.credits += 250; profile.experience += 25; saveStateLocked(); sendLine(fd, "OK MISSION COMPLETE reward=250"); }
-      } else if (request.command == helion::protocol::Command::upgrade) {
-        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::lock_guard<std::mutex> lock(stateMutex);
-        auto& profile = profiles.at(user);
-        if (!profile.flight.docked) { sendLine(fd, "ERR dock-required"); continue; }
-        if (request.first != "hull" && request.first != "engine") { sendLine(fd, "ERR unknown-upgrade"); continue; }
-        int& level = request.first == "hull" ? profile.hullLevel : profile.engineLevel;
-        const int cost = level * 500;
-        if (level >= 5) sendLine(fd, "ERR upgrade-max");
-        else if (profile.credits < cost) sendLine(fd, "ERR insufficient-credits");
-        else { profile.credits -= cost; ++level; saveStateLocked(); sendLine(fd, "OK UPGRADE " + request.first + " level=" + std::to_string(level) + " cost=" + std::to_string(cost)); }
-      } else if (request.command == helion::protocol::Command::contacts) {
-        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::lock_guard<std::mutex> lock(stateMutex);
-        for (const auto& contact : contactsFor(user)) sendLine(fd, helion::flight::contactLine(contact));
-        sendLine(fd, "CONTACTS END");
-      } else if (request.command == helion::protocol::Command::buy || request.command == helion::protocol::Command::sell) {
-        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::lock_guard<std::mutex> lock(stateMutex);
-        auto& profile = profiles.at(user);
-        int quantity = 0;
-        try { quantity = std::stoi(request.second); } catch (...) { sendLine(fd, "ERR invalid-quantity"); continue; }
-        const auto before = profile;
-        const auto result = helion::flight::trade(profile.flight, profile.credits,
-          request.command == helion::protocol::Command::buy, request.first, quantity);
-        if (result.rfind("OK", 0) == 0) {
-          try { saveStateLocked(); } catch (const std::exception& error) {
-            profile = before; sendLine(fd, "ERR persistence-failed"); std::cerr << error.what() << '\n'; continue;
+        std::string response;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          if (request.command == helion::protocol::Command::mission) {
+            response = profile.missionStage == 0 ? "MISSION 1 title=First Ore objective=mine-1 reward=250" : profile.missionStage == 1 ? "MISSION 1 active objective=mine-1 reward=250" : "MISSION 1 complete";
+          } else if (request.command == helion::protocol::Command::accept) {
+            if (profile.missionStage != 0) response = "ERR mission-unavailable";
+            else {
+              const auto before = profile;
+              const bool dirtyBefore = flightStateDirty;
+              profile.missionStage = 1;
+              profile.missionOreMined = false;
+              try { persistStateLocked(); response = "OK MISSION ACCEPTED id=1"; }
+              catch (const std::exception& error) {
+                profile = before;
+                flightStateDirty = dirtyBefore;
+                response = "ERR persistence-failed";
+                std::cerr << error.what() << '\n';
+              }
+            }
+          } else if (profile.missionStage != 1) response = "ERR mission-not-active";
+          else if (!profile.missionOreMined || !profile.flight.docked) response = "ERR objective-incomplete";
+          else {
+            const auto before = profile;
+            const bool dirtyBefore = flightStateDirty;
+            profile.missionStage = 2;
+            profile.missionOreMined = false;
+            profile.credits += 250;
+            profile.experience += 25;
+            try { persistStateLocked(); response = "OK MISSION COMPLETE reward=250"; }
+            catch (const std::exception& error) {
+              profile = before;
+              flightStateDirty = dirtyBefore;
+              response = "ERR persistence-failed";
+              std::cerr << error.what() << '\n';
+            }
           }
         }
-        sendLine(fd, result);
-        sendLine(fd, helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+        sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::upgrade || request.command == helion::protocol::Command::repair) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          if (!profile.flight.docked) responses.push_back("ERR dock-required");
+          else if (request.command == helion::protocol::Command::repair) {
+            const auto before = profile;
+            const bool dirtyBefore = flightStateDirty;
+            const auto result = helion::flight::repair(profile.flight, profile.credits, profile.hullLevel);
+            if (result.rfind("OK", 0) == 0) {
+              try { persistStateLocked(); }
+              catch (const std::exception& error) {
+                profile = before;
+                flightStateDirty = dirtyBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
+            }
+            if (responses.empty()) responses.push_back(result);
+            responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+          } else {
+            int& level = request.first == "hull" ? profile.hullLevel : profile.engineLevel;
+            const int cost = level * 500;
+            if (level >= 5) responses.push_back("ERR upgrade-max");
+            else if (profile.credits < cost) responses.push_back("ERR insufficient-credits");
+            else {
+              const auto before = profile;
+              const bool dirtyBefore = flightStateDirty;
+              profile.credits -= cost;
+              ++level;
+              profile.flight.maxHull = helion::flight::hullCapacity(profile.hullLevel);
+              try {
+                persistStateLocked();
+                responses.push_back("OK UPGRADE " + request.first + " level=" + std::to_string(level) + " cost=" + std::to_string(cost));
+              } catch (const std::exception& error) {
+                profile = before;
+                flightStateDirty = dirtyBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
+            }
+            responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+          }
+        }
+        for (const auto& response : responses) sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::contacts) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          for (const auto& contact : contactsFor(user)) responses.push_back(helion::flight::contactLine(contact));
+          responses.push_back("CONTACTS END");
+        }
+        for (const auto& response : responses) sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::buy || request.command == helion::protocol::Command::sell) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          int quantity = 0;
+          try { quantity = std::stoi(request.second); }
+          catch (...) { responses.push_back("ERR invalid-quantity"); }
+          if (responses.empty()) {
+            const auto before = profile;
+            const bool dirtyBefore = flightStateDirty;
+            const auto result = helion::flight::trade(profile.flight, profile.credits,
+              request.command == helion::protocol::Command::buy, request.first, quantity);
+            if (result.rfind("OK", 0) == 0) {
+              try { persistStateLocked(); }
+              catch (const std::exception& error) {
+                profile = before;
+                flightStateDirty = dirtyBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
+            }
+            if (responses.empty()) responses.push_back(result);
+            responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+          }
+        }
+        for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::launch ||
                  request.command == helion::protocol::Command::input ||
                  request.command == helion::protocol::Command::flight ||
                  request.command == helion::protocol::Command::mine ||
                  request.command == helion::protocol::Command::dock) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::lock_guard<std::mutex> lock(stateMutex);
-        auto& profile = profiles.at(user);
-        auto& flight = profile.flight;
-        if (request.command == helion::protocol::Command::input) {
-          flight.input = {request.thrust, request.turn, request.brake};
-          flight.inputAge = 0;
-          try { saveStateLocked(); } catch (const std::exception& error) { std::cerr << error.what() << '\n'; }
-        } else if (request.command == helion::protocol::Command::launch) {
-          sendLine(fd, helion::flight::launch(flight));
-        } else if (request.command == helion::protocol::Command::mine) {
-          sendLine(fd, helion::flight::mine(flight));
-        } else if (request.command == helion::protocol::Command::dock) {
-          const auto before = profile;
-          const auto result = helion::flight::dock(flight, profile.credits, profile.experience);
-          if (result.rfind("OK", 0) == 0) {
-            try { saveStateLocked(); }
-            catch (const std::exception& error) {
-              profile = before;
-              sendLine(fd, "ERR persistence-failed");
-              std::cerr << error.what() << '\n';
-              continue;
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          auto& flight = profile.flight;
+          if (request.command == helion::protocol::Command::input) {
+            flight.input = {request.thrust, request.turn, request.brake};
+            flight.inputAge = 0;
+            flightStateDirty = true;
+          } else if (request.command != helion::protocol::Command::flight) {
+            const auto before = profile;
+            const bool dirtyBefore = flightStateDirty;
+            std::string result = request.command == helion::protocol::Command::launch ? helion::flight::launch(flight) :
+              request.command == helion::protocol::Command::mine ? helion::flight::mine(flight) :
+              helion::flight::dock(flight, profile.credits, profile.experience);
+            if (result.rfind("OK", 0) == 0) {
+              if (request.command == helion::protocol::Command::mine && profile.missionStage == 1)
+                profile.missionOreMined = true;
+              try { persistStateLocked(); }
+              catch (const std::exception& error) {
+                profile = before;
+                flightStateDirty = dirtyBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
             }
+            if (responses.empty()) responses.push_back(result);
           }
-          sendLine(fd, result);
+          responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
         }
-        sendLine(fd, helion::flight::snapshot(flight, profile.credits, profile.experience));
+        for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::state) {
         sendLine(fd, stateLine());
       } else if (request.command == helion::protocol::Command::quit) {
@@ -569,6 +705,7 @@ int main(int argc, char** argv) {
     }
   };
   auto lastTick = std::chrono::steady_clock::now();
+  auto nextCheckpoint = lastTick + std::chrono::duration<double>(kFlightCheckpointSeconds);
   double accumulator = 0;
   while (!stopping) {
     const auto now = std::chrono::steady_clock::now();
@@ -578,13 +715,24 @@ int main(int argc, char** argv) {
       std::lock_guard<std::mutex> lock(stateMutex);
       while (accumulator >= 1.0 / 60) {
         for (auto& entry : profiles) {
-          helion::flight::step(entry.second.flight, 1.0 / 60);
-          const double engine = 1.0 + 0.12 * (entry.second.engineLevel - 1);
-          entry.second.flight.vx *= engine;
-          entry.second.flight.vy *= engine;
+          const auto before = entry.second.flight;
+          helion::flight::step(entry.second.flight, 1.0 / 60, entry.second.engineLevel);
+          if (!entry.second.flight.docked || before.docked != entry.second.flight.docked ||
+              before.hull != entry.second.flight.hull || before.cargo != entry.second.flight.cargo) {
+            flightStateDirty = true;
+          }
         }
         accumulator -= 1.0 / 60;
       }
+    }
+    const auto checkpointNow = std::chrono::steady_clock::now();
+    if (checkpointNow >= nextCheckpoint) {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      if (flightStateDirty) {
+        try { persistStateLocked(); }
+        catch (const std::exception& error) { std::cerr << "flight checkpoint failed: " << error.what() << '\n'; }
+      }
+      nextCheckpoint = checkpointNow + std::chrono::duration<double>(kFlightCheckpointSeconds);
     }
     reap();
     pollfd ready{server, POLLIN, 0};
@@ -614,16 +762,18 @@ int main(int argc, char** argv) {
     }
     try {
       auto connection = std::make_shared<helion::tls::Connection>(tlsContext.get(), client);
+      auto transport = std::make_shared<Transport>(connection);
       {
         std::lock_guard<std::mutex> lock(transportMutex);
-        transports.emplace(client, connection);
+        transports.emplace(client, transport);
       }
       auto done = std::make_shared<std::atomic<bool>>(false);
-      workers.push_back({std::thread([client, connection, done, &limit]() {
+      workers.push_back({std::thread([client, transport, done, &limit]() {
         try {
-          connection->handshake(true);
-          clientLoop(client, *connection);
-          connection->closeNotify();
+          transport->connection->handshake(true);
+          clientLoop(client, *transport->connection);
+          std::lock_guard<std::mutex> lock(transport->writeMutex);
+          transport->connection->closeNotify();
         } catch (const std::exception& error) {
           std::cerr << "client connection rejected: " << error.what() << '\n';
         }
@@ -649,5 +799,12 @@ int main(int argc, char** argv) {
     for (const auto& entry : transports) shutdown(entry.first, SHUT_RDWR);
   }
   for (auto& worker : workers) worker.thread.join();
+  {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    if (flightStateDirty) {
+      try { persistStateLocked(); }
+      catch (const std::exception& error) { std::cerr << "shutdown flight checkpoint failed: " << error.what() << '\n'; }
+    }
+  }
   return 0;
 }

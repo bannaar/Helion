@@ -50,6 +50,13 @@ int main() {
   check(helion::protocol::parseRequest("PROFILE").command == Command::profile, "PROFILE preserved");
   check(helion::protocol::parseRequest("STATE").command == Command::state, "STATE preserved");
   check(helion::protocol::parseRequest("QUIT").command == Command::quit, "QUIT preserved");
+  check(helion::protocol::parseRequest("REPAIR").command == Command::repair, "REPAIR preserved");
+  const auto engineUpgrade = helion::protocol::parseRequest("UPGRADE engine");
+  const auto hullUpgrade = helion::protocol::parseRequest("UPGRADE hull");
+  check(engineUpgrade.command == Command::upgrade && engineUpgrade.first == "engine", "engine upgrade accepted");
+  check(hullUpgrade.command == Command::upgrade && hullUpgrade.first == "hull", "hull upgrade accepted");
+  for (const auto* invalidUpgrade : {"UPGRADE", "UPGRADE engine extra", "UPGRADE warp", "UPGRADE hull extra"})
+    check(helion::protocol::parseRequest(invalidUpgrade).command == Command::invalid, "invalid upgrade rejected");
   check(helion::protocol::parseRequest("LOGIN pilot").error == "usage=LOGIN username password", "malformed LOGIN rejected");
   check(helion::protocol::parseRequest("STATE extra").error == "malformed-message", "unexpected arguments rejected");
   check(helion::protocol::parseRequest("").error == "malformed-message", "empty request rejected");

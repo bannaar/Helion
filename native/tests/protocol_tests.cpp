@@ -52,6 +52,9 @@ int main() {
   check(helion::protocol::parseRequest("QUIT").command == Command::quit, "QUIT preserved");
   check(helion::protocol::parseRequest("REPAIR").command == Command::repair, "REPAIR preserved");
   check(helion::protocol::parseRequest("REFUEL").command == Command::refuel, "REFUEL preserved");
+  const auto fire = helion::protocol::parseRequest("FIRE RAIDER-1");
+  check(fire.command == Command::fire && fire.first == "RAIDER-1", "FIRE target accepted");
+  check(helion::protocol::parseRequest("RECOVER").command == Command::recover, "RECOVER preserved");
   check(helion::protocol::parseRequest("OUTFIT LIST").command == Command::outfit, "OUTFIT LIST accepted");
   check(helion::protocol::parseRequest("OUTFIT BUY mining-mk2").command == Command::outfit, "OUTFIT BUY accepted");
   const auto engineUpgrade = helion::protocol::parseRequest("UPGRADE engine");
@@ -62,6 +65,8 @@ int main() {
     check(helion::protocol::parseRequest(invalidUpgrade).command == Command::invalid, "invalid upgrade rejected");
   for (const auto* invalidOutfit : {"OUTFIT", "OUTFIT LIST extra", "OUTFIT BUY", "OUTFIT REMOVE invalid extra"})
     check(helion::protocol::parseRequest(invalidOutfit).command == Command::invalid, "invalid outfit rejected");
+  for (const auto* invalidCombat : {"FIRE", "FIRE bad target", "FIRE ", "RECOVER extra"})
+    check(helion::protocol::parseRequest(invalidCombat).command == Command::invalid, "invalid combat request rejected");
   check(helion::protocol::parseRequest("LOGIN pilot").error == "usage=LOGIN username password", "malformed LOGIN rejected");
   check(helion::protocol::parseRequest("STATE extra").error == "malformed-message", "unexpected arguments rejected");
   check(helion::protocol::parseRequest("").error == "malformed-message", "empty request rejected");

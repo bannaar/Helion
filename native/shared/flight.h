@@ -21,7 +21,12 @@ struct Station { const char* name; double x, y; int foodBuy, foodSell, partsBuy,
 inline constexpr std::array<Station,2> kStations{{
   {"KEPLER",0,0,20,16,65,52,60,2}, {"CINDER",650,0,40,32,40,32,75,3}
 }};
-struct Contact { std::string id, kind; double x=0, y=0, yaw=0; bool docked=false; };
+struct Contact {
+  std::string id, kind;
+  double x=0, y=0, yaw=0;
+  bool docked=false, hostile=false;
+  int hull=0, maxHull=0;
+};
 std::string contactLine(const Contact& contact);
 bool readContact(const std::string& line, Contact& contact);
 struct Input { int thrust = 0, turn = 0, brake = 0; };
@@ -36,6 +41,8 @@ struct State {
   int cargo = 0, food = 0, parts = 0, station = 0;
   int hull = 100, maxHull = 100;
   double fuel = kStartingFuel, maxFuel = kStartingFuel;
+  bool destroyed = false;
+  double weaponCooldown = 0;
 };
 struct DockTransaction {
   int station = 0;
@@ -59,6 +66,7 @@ int nearestStation(const State& state);
 int cargoUsed(const State& state);
 std::string trade(State& state, int& credits, bool buying, const std::string& commodity, int quantity);
 std::string launch(State& state);
+std::string recover(State& state);
 std::string mine(State& state, bool miningEnabled = true, double cooldownMultiplier = 1.0);
 std::string dock(State& state, int& credits, int& experience, DockTransaction* transaction = nullptr);
 std::string dockTransactionLine(const DockTransaction& transaction);
@@ -68,6 +76,8 @@ std::string fuelTransactionLine(const FuelTransaction& transaction);
 bool readFuelTransaction(const std::string& line, FuelTransaction& transaction);
 std::string fuelLine(const State& state);
 bool readFuelLine(const std::string& line, State& state);
+std::string combatStatusLine(const State& state);
+bool readCombatStatus(const std::string& line, State& state);
 int fuelCapacity(int engineLevel);
 int hullCapacity(int hullLevel);
 std::string repair(State& state, int& credits, int hullLevel = 1);

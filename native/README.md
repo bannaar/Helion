@@ -90,15 +90,18 @@ modules. `OUTFIT LIST` inspects the loadout; `OUTFIT BUY module-id`, `OUTFIT
 FIT module-id`, and `OUTFIT REMOVE slot` are docked, server-priced operations.
 `mining-mk2` shortens the extractor cooldown, `engine-efficient` reduces fuel
 consumption, and `hull-plating` adds 25 maximum hull. `pulse-laser` is an
-owned/fittable combat preview module with no combat behavior yet.
+owned/fittable weapon with a 240 m range, 25 damage, and a one-second server
+cooldown.
 
 The server advances flight at a fixed 60 Hz and validates every mining and
 docking action. Clients send only bounded control inputs, never positions or
 rewards. Inputs expire after half a second. Credits, XP, upgrades, flight
 position, hull damage, and unsold cargo are persisted after authoritative
 updates, so a restart resumes the commander's saved in-flight state. Asteroid
-impacts damage the hull based on collision speed; a disabled ship is recovered
-at its station with cargo lost and must be repaired before launch. Hull
+impacts damage the hull based on collision speed. Hostile `RAIDER-N` NPCs
+pursue nearby launched ships and fire within 185 m. A disabled ship is
+recovered at its station with cargo lost, half hull, and a full safe fuel tank;
+repair remains available before the next launch. Hull
 upgrades increase maximum integrity and repairs cost credits per missing point.
 Each commander
 currently flies a separate instance of the same sector; shared asteroid
@@ -134,8 +137,9 @@ Requests are one
 newline-terminated line: `CREATE username password display`, `LOGIN username
 password`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
 `MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `REPAIR`, `REFUEL`, `OUTFIT`, `LAUNCH`,
-`INPUT`, `FLIGHT`, `MINE`, `DOCK`, or `QUIT`. Responses are newline-terminated
-`OK`, `ERR`, `PROFILE`, `STATE`, `FUEL`, `LOADOUT`, `TRANSACTION`, and `CHAT` records. The server stores salted
+`INPUT`, `FLIGHT`, `MINE`, `DOCK`, `FIRE target-id`, `RECOVER`, or `QUIT`.
+Responses are newline-terminated `OK`, `ERR`, `PROFILE`, `STATE`, `FUEL`,
+`LOADOUT`, `COMBAT`, `TRANSACTION`, and `CHAT` records. The server stores salted
 scrypt password hashes, migrates existing plaintext profile records on startup,
 and creates owner-only data files. New passwords must be 12–128 bytes. The connection requires TLS 1.2 or newer. Clients verify the certificate
 chain, expiration, and DNS/IP Subject Alternative Name using OS trust roots
@@ -149,7 +153,8 @@ Oversized lines are discarded through the next LF and receive one
 chat payload is 512 bytes.
 
 `INPUT thrust turn brake` accepts exactly `0|1`, `-1|0|1`, and `0|1`.
-Positive turn is left. `LAUNCH`, `FLIGHT`, `MINE`, `DOCK`, and `REPAIR` take no
+Positive turn is left. `LAUNCH`, `FLIGHT`, `MINE`, `DOCK`, `RECOVER`, and
+`REPAIR` take no
 arguments; all gameplay commands require authentication. Flight commands return
 a flight snapshot and an additive fuel frame, except authentication/persistence
 failures. A
@@ -179,7 +184,12 @@ commands and profile record formats remain supported; new mission, upgrade,
 and flight fields are appended so legacy saves remain readable. `INFO
 commands=` advertises the added gameplay commands. Profile records from before
 the fuel/loadout extension load with full starter fuel and the basic starter
-modules; newer fuel and loadout fields are appended to the existing record.
-commands=` advertises the added gameplay commands. Profile records from before
-the fuel/loadout extension load with full starter fuel and the basic starter
-modules; newer fuel and loadout fields are appended to the existing record.
+modules; newer fuel, loadout, salvage, combat-generation, and destruction
+fields are appended to the existing record. The active weapon cooldown is
+also checkpointed so reconnecting cannot bypass a shot delay. Combat target entities are
+runtime-only; the generation/defeat marker prevents replaying a reward after a
+restart. A successful `FIRE` emits server-calculated `COMBAT HIT`, `COMBAT
+DESTROYED`, and `TRANSACTION COMBAT_REWARD` records. `COMBAT STATUS` reports
+destruction and weapon cooldown. Hostile `CONTACT` records include current and
+maximum hull. A destroyed player must use `RECOVER`; ordinary flight, mining,
+docking, and firing are rejected until then.

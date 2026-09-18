@@ -17,16 +17,19 @@ struct ModuleDefinition {
   double miningCooldownMultiplier;
   double fuelConsumptionMultiplier;
   int hullBonus;
+  double weaponRange;
+  int weaponDamage;
+  double weaponCooldown;
 };
 
 inline constexpr std::array<ModuleDefinition, 7> kCatalogue{{
-  {"mining-basic", "Basic Extractor", Slot::mining, 0, 1.0, 1.0, 0},
-  {"mining-mk2", "Prospector Extractor", Slot::mining, 800, 0.65, 1.0, 0},
-  {"engine-basic", "Standard Drive", Slot::engine, 0, 1.0, 1.0, 0},
-  {"engine-efficient", "Efficient Drive", Slot::engine, 700, 1.0, 0.65, 0},
-  {"hull-standard", "Standard Plating", Slot::defense, 0, 1.0, 1.0, 0},
-  {"hull-plating", "Reinforced Plating", Slot::defense, 900, 1.0, 1.0, 25},
-  {"pulse-laser", "Pulse Laser (Combat Preview)", Slot::weapon, 650, 1.0, 1.0, 0}
+  {"mining-basic", "Basic Extractor", Slot::mining, 0, 1.0, 1.0, 0, 0, 0, 0},
+  {"mining-mk2", "Prospector Extractor", Slot::mining, 800, 0.65, 1.0, 0, 0, 0, 0},
+  {"engine-basic", "Standard Drive", Slot::engine, 0, 1.0, 1.0, 0, 0, 0, 0},
+  {"engine-efficient", "Efficient Drive", Slot::engine, 700, 1.0, 0.65, 0, 0, 0, 0},
+  {"hull-standard", "Standard Plating", Slot::defense, 0, 1.0, 1.0, 0, 0, 0, 0},
+  {"hull-plating", "Reinforced Plating", Slot::defense, 900, 1.0, 1.0, 25, 0, 0, 0},
+  {"pulse-laser", "Pulse Laser (Combat Preview)", Slot::weapon, 650, 1.0, 1.0, 0, 240, 25, 1.0}
 }};
 
 inline const ModuleDefinition* find(std::string_view id) {

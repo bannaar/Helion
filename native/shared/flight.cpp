@@ -18,8 +18,9 @@ void step(State& s, double dt, int engineLevel, double fuelConsumptionMultiplier
   if (!std::isfinite(dt) || dt <= 0) return;
   dt = std::min(dt, 0.05);
   s.cooldown = std::max(0.0, s.cooldown - dt);
+  s.weaponCooldown = std::max(0.0, s.weaponCooldown - dt);
   s.inputAge += dt;
-  if (s.docked) return;
+  if (s.docked || s.destroyed) return;
   // Missing input (disconnect, console, lost focus) engages flight assist.
   Input input = s.inputAge <= 0.5 ? s.input : Input{0, 0, 1};
   const double fuelMultiplier = std::clamp(fuelConsumptionMultiplier, 0.25, 2.0);
@@ -58,9 +59,7 @@ void step(State& s, double dt, int engineLevel, double fuelConsumptionMultiplier
         s.hull = std::max(0, s.hull - damage);
         s.vx -= 1.3 * inward * nx; s.vy -= 1.3 * inward * ny;
         if (s.hull == 0) {
-          const int station = std::clamp(s.station, 0, static_cast<int>(kStations.size()) - 1);
-          s.x = kStations[station].x; s.y = kStations[station].y;
-          s.vx = 0; s.vy = 0; s.docked = true; s.cargo = 0;
+          s.vx = 0; s.vy = 0; s.destroyed = true; s.cargo = 0;
         }
       }
     }
@@ -83,6 +82,7 @@ int nearestRock(const State& s) {
 
 std::string launch(State& s) {
   if (!s.docked) return "ERR already-in-flight";
+  if (s.destroyed) return "ERR recovery-required";
   if (s.hull <= 0) return "ERR repair-required";
   if (!std::isfinite(s.fuel) || !std::isfinite(s.maxFuel) || s.fuel < 0 || s.maxFuel < 1 || s.fuel > s.maxFuel)
     return "ERR invalid-fuel-state";
@@ -92,13 +92,36 @@ std::string launch(State& s) {
   s = State{};
   s.food=food; s.parts=parts; s.station=station; s.hull=hull; s.maxHull=maxHull;
   s.fuel=fuel; s.maxFuel=maxFuel;
+  s.destroyed = false;
+  s.weaponCooldown = 0;
   s.docked = false;
   s.x=kStations[station].x; s.y=kStations[station].y+100;
   return "OK LAUNCHED";
 }
 
+std::string recover(State& s) {
+  if (!s.destroyed) return "ERR recovery-not-required";
+  const int station = std::clamp(s.station, 0, static_cast<int>(kStations.size()) - 1);
+  s.x = kStations[station].x;
+  s.y = kStations[station].y;
+  s.vx = 0;
+  s.vy = 0;
+  s.docked = true;
+  s.destroyed = false;
+  s.hull = std::max(1, s.maxHull / 2);
+  s.fuel = s.maxFuel;
+  s.cargo = 0;
+  s.cooldown = 0;
+  s.weaponCooldown = 0;
+  s.input = {};
+  s.inputAge = 1;
+  return "OK RECOVERED station=" + std::to_string(station) +
+    " hull=" + std::to_string(s.hull) + " fuel=" + std::to_string(s.fuel) + " cargo-lost=1";
+}
+
 std::string mine(State& s, bool miningEnabled, double cooldownMultiplier) {
   if (s.docked) return "ERR launch-required";
+  if (s.destroyed) return "ERR recovery-required";
   if (!miningEnabled) return "ERR mining-module-required";
   if (!std::isfinite(cooldownMultiplier) || cooldownMultiplier <= 0) return "ERR invalid-mining-module";
   if (cargoUsed(s) >= kCargoCapacity) return "ERR cargo-full";
@@ -112,6 +135,7 @@ std::string mine(State& s, bool miningEnabled, double cooldownMultiplier) {
 }
 
 std::string dock(State& s, int& credits, int& experience, DockTransaction* transaction) {
+  if (s.destroyed) return "ERR recovery-required";
   if (s.docked) return "ERR already-docked";
   const int station=nearestStation(s);
   if (std::hypot(s.x-kStations[station].x, s.y-kStations[station].y) > kDockRange) return "ERR station-out-of-range";
@@ -221,6 +245,45 @@ bool readFuelLine(const std::string& line, State& s) {
   return true;
 }
 
+std::string combatStatusLine(const State& s) {
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(2)
+      << "COMBAT STATUS destroyed=" << (s.destroyed ? 1 : 0)
+      << " weapon-cooldown=" << s.weaponCooldown;
+  return out.str();
+}
+
+bool readCombatStatus(const std::string& line, State& s) {
+  std::istringstream in(line);
+  std::string tag, kind, destroyed, cooldown, extra;
+  int destroyedValue = 0;
+  double cooldownValue = 0;
+  if (!(in >> tag >> kind >> destroyed >> cooldown) || (in >> extra) ||
+      tag != "COMBAT" || kind != "STATUS") return false;
+  const auto parseInt = [](const std::string& field, const char* name, int& value) {
+    const std::string prefix = std::string(name) + "=";
+    if (field.rfind(prefix, 0) != 0) return false;
+    std::size_t used = 0;
+    try { value = std::stoi(field.substr(prefix.size()), &used); }
+    catch (...) { return false; }
+    return used == field.size() - prefix.size();
+  };
+  const auto parseDouble = [](const std::string& field, const char* name, double& value) {
+    const std::string prefix = std::string(name) + "=";
+    if (field.rfind(prefix, 0) != 0) return false;
+    std::size_t used = 0;
+    try { value = std::stod(field.substr(prefix.size()), &used); }
+    catch (...) { return false; }
+    return used == field.size() - prefix.size() && std::isfinite(value);
+  };
+  if (!parseInt(destroyed, "destroyed", destroyedValue) ||
+      !parseDouble(cooldown, "weapon-cooldown", cooldownValue) ||
+      (destroyedValue != 0 && destroyedValue != 1) || cooldownValue < 0 || cooldownValue > 10) return false;
+  s.destroyed = destroyedValue != 0;
+  s.weaponCooldown = cooldownValue;
+  return true;
+}
+
 std::string dockTransactionLine(const DockTransaction& transaction) {
   std::ostringstream out;
   out << "TRANSACTION DOCK_SALE station=" << transaction.station
@@ -294,12 +357,16 @@ std::string trade(State& s, int& credits, bool buying, const std::string& commod
 std::string contactLine(const Contact& c) {
   std::ostringstream out;
   out<<std::fixed<<std::setprecision(3)<<"CONTACT "<<c.id<<' '<<c.kind<<' '<<c.x<<' '<<c.y<<' '<<c.yaw<<' '<<c.docked;
+  if (c.hostile) out << ' ' << c.hull << ' ' << c.maxHull;
   return out.str();
 }
 bool readContact(const std::string& line, Contact& c) {
   std::istringstream in(line); std::string tag,extra; Contact next; int docked;
-  if (!(in>>tag>>next.id>>next.kind>>next.x>>next.y>>next.yaw>>docked) || tag!="CONTACT" || (in>>extra)) return false;
-  if (next.id.empty() || next.id.size()>32 || (next.kind!="pilot" && next.kind!="hauler") ||
+  if (!(in>>tag>>next.id>>next.kind>>next.x>>next.y>>next.yaw>>docked) || tag!="CONTACT") return false;
+  next.hostile = next.kind == "hostile";
+  if (next.hostile && (!(in >> next.hull >> next.maxHull) || next.hull < 0 || next.maxHull < 1 || next.hull > next.maxHull)) return false;
+  if (in >> extra) return false;
+  if (next.id.empty() || next.id.size()>32 || (next.kind!="pilot" && next.kind!="hauler" && next.kind!="hostile") ||
       !std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.yaw) ||
       std::abs(next.x)>1201 || std::abs(next.y)>1201 || std::abs(next.yaw)>kPi+0.001 || docked<0 || docked>1) return false;
   next.docked=docked!=0; c=next; return true;

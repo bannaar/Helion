@@ -10,7 +10,7 @@ namespace {
 struct Color { float r, g, b; };
 constexpr Color ink{0.025f, 0.042f, 0.064f}, panel{0.047f, 0.075f, 0.105f},
   line{0.14f, 0.23f, 0.28f}, white{0.83f, 0.89f, 0.9f}, muted{0.42f, 0.57f, 0.61f},
-  teal{0.25f, 0.88f, 0.76f}, amber{1.0f, 0.67f, 0.29f};
+  teal{0.25f, 0.88f, 0.76f}, amber{1.0f, 0.67f, 0.29f}, hostileColor{1.0f, 0.32f, 0.32f};
 void color(Color c) { glColor3f(c.r, c.g, c.b); }
 void rect(float x, float y, float w, float h, Color c) {
   color(c); glBegin(GL_QUADS);
@@ -176,7 +176,11 @@ void render(int width, int height, const View& v) {
   }
   shipAsset(v);
   for (const auto& contact : v.contacts) {
-    if (contact.id == "HAULER-7") {
+    if (contact.hostile) {
+      ring(contact.x, contact.y, contact.id == v.targetId ? 23 : 18, hostileColor, 6);
+      triangle(contact.x, contact.y + 14, contact.x - 9, contact.y - 8,
+               contact.x + 9, contact.y - 8, hostileColor);
+    } else if (contact.id == "HAULER-7") {
       ring(contact.x, contact.y, 18, amber, 6);
       triangle(contact.x, contact.y + 14, contact.x - 9, contact.y - 8,
                contact.x + 9, contact.y - 8, amber);
@@ -210,6 +214,11 @@ void render(int width, int height, const View& v) {
   if (v.showTelemetry) ring(864,180,49,line);
   if (v.showTelemetry) rect(861,177,6,6,amber);
   if (v.showTelemetry) for(const auto& r:flight::kRocks) rect(863+static_cast<float>(r.x)*0.1f,179-static_cast<float>(r.y)*0.1f,3,3,muted);
+  if (v.showTelemetry) for(const auto& contact: v.contacts) {
+    const Color contactColor = contact.hostile ? hostileColor : amber;
+    rect(863+static_cast<float>(contact.x)*0.1f,179-static_cast<float>(contact.y)*0.1f,
+      contact.id == v.targetId ? 5 : 3, contact.id == v.targetId ? 5 : 3, contactColor);
+  }
   const float radarX=864+static_cast<float>(v.ship.x)*0.1f,radarY=180-static_cast<float>(v.ship.y)*0.1f;
   if (v.showTelemetry) rect(std::clamp(radarX,800.f,928.f)-2,std::clamp(radarY,126.f,230.f)-2,4,4,teal);
   if (v.showTelemetry) text(800,228,"BASE "+std::to_string(static_cast<int>(std::hypot(v.ship.x,v.ship.y)))+" M",amber,1.5f);
@@ -225,15 +234,27 @@ void render(int width, int height, const View& v) {
   text(24,bottom+96,std::to_string(v.ship.hull)+" / "+std::to_string(v.ship.maxHull),hullBars<=2 ? amber : white,1.5f);
   const double range=std::hypot(v.ship.x-target.x,v.ship.y-target.y);
   text(392,bottom+16,"ORE TARGET / "+std::to_string(static_cast<int>(range))+" M",muted,1.5f);
-  std::string prompt=v.ship.docked ? (v.ship.hull<v.ship.maxHull ? "[R] REPAIR HULL" :
+  const auto hostileTarget = std::find_if(v.contacts.begin(), v.contacts.end(),
+    [&v](const auto& contact) { return contact.hostile && contact.id == v.targetId; });
+  const bool hasTarget = hostileTarget != v.contacts.end();
+  const int targetRange = hasTarget ? static_cast<int>(std::hypot(v.ship.x-hostileTarget->x,v.ship.y-hostileTarget->y)) : 0;
+  if (hasTarget) {
+    text(392,bottom+16,"HOSTILE / "+hostileTarget->id,hostileColor,1.5f);
+    text(392,bottom+38,"HULL "+std::to_string(hostileTarget->hull)+" / "+std::to_string(hostileTarget->maxHull)+
+      "  RANGE "+std::to_string(targetRange)+" M",white,1.5f);
+  } else {
+    text(392,bottom+16,"HOSTILE / NO CONTACT",muted,1.5f);
+  }
+  std::string prompt=v.ship.destroyed ? "SHIP DISABLED / [R] RECOVER AT SAFE STATION" : v.ship.docked ? (v.ship.hull<v.ship.maxHull ? "[R] REPAIR HULL" :
     v.ship.fuel<v.ship.maxFuel ? "[T] REFUEL / [L] LAUNCH" : "[L] LAUNCH") :
+    hasTarget ? (v.ship.weaponCooldown>0 ? "LASER RECHARGING" : "[SPACE] FIRE AT TARGET") :
     v.ship.cargo==8 ? "HOLD FULL / RETURN TO BASE" :
     range>flight::kMineRange ? "APPROACH TO 85 M" : flight::speed(v.ship)>flight::kWorkSpeed ? "[S] BRAKE TO MINE" :
     v.ship.cooldown>0 ? "EXTRACTOR RECHARGING" : "[E] EXTRACT ORE";
   if (!v.ship.docked && std::hypot(v.ship.x,v.ship.y)<=flight::kDockRange)
     prompt=flight::speed(v.ship)>flight::kWorkSpeed ? "[S] BRAKE TO DOCK" : "[F] DOCK AND SELL ORE";
   text(392,bottom+39,prompt,teal,1.5f);
-  text(185,bottom+77,"W THRUST   A/D TURN   S BRAKE   E MINE   F DOCK   L LAUNCH   T REFUEL   U OUTFIT",muted,1.5f);
+  text(185,bottom+77,"W THRUST   A/D TURN   S BRAKE   E MINE   SPACE FIRE   F DOCK   L LAUNCH",muted,1.5f);
   if (!v.log.empty() && !v.console) {
     rect(20,bottom-37,740,26,panel); text(30,bottom-30,v.log.back().substr(0,78),amber,1.5f);
   }

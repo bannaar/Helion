@@ -12,6 +12,7 @@ struct View {
   std::string typed;
   std::vector<std::string> log;
   std::vector<flight::Contact> contacts;
+  std::string targetId;
   bool showTelemetry = true;
 };
 // All visual assets are original, procedural fixed-function geometry.

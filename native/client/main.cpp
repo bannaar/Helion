@@ -54,7 +54,7 @@ bool saveFrame(const std::string& path,int width,int height) {
   SDL_FreeSurface(surface); return saved;
 }
 int terminalClient(int fd, helion::tls::Connection& connection) {
-  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /refuel, /outfit LIST|BUY|FIT|REMOVE, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
+  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /refuel, /outfit LIST|BUY|FIT|REMOVE, /fire target-id, /recover, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
   helion::protocol::LineDecoder decoder;
   bool greeted=false, running=true, stdinClosed=false, quitQueued=false;
   std::string outgoing, typed;
@@ -211,16 +211,28 @@ int main(int argc,char** argv) {
         if(key==SDLK_l) queue("LAUNCH");
         if(key==SDLK_e) queue("MINE");
         if(key==SDLK_f) queue("DOCK");
-        if(key==SDLK_r && view.ship.docked) { view.console=true; view.typed="REPAIR"; }
+        if(key==SDLK_r && view.ship.destroyed) queue("RECOVER");
+        else if(key==SDLK_r && view.ship.docked) { view.console=true; view.typed="REPAIR"; }
         if(key==SDLK_t && view.ship.docked) queue("REFUEL");
         if(key==SDLK_u && view.ship.docked) { view.console=true; view.typed="OUTFIT LIST"; }
+        if(key==SDLK_SPACE && !view.ship.docked && !view.ship.destroyed && !view.targetId.empty())
+          queue("FIRE "+view.targetId);
+        if(key==SDLK_TAB && !view.contacts.empty()) {
+          std::size_t start = 0;
+          for (std::size_t i = 0; i < view.contacts.size(); ++i)
+            if (view.contacts[i].id == view.targetId) { start = (i + 1) % view.contacts.size(); break; }
+          for (std::size_t i = 0; i < view.contacts.size(); ++i) {
+            const auto& contact = view.contacts[(start + i) % view.contacts.size()];
+            if (contact.hostile) { view.targetId = contact.id; break; }
+          }
+        }
         if(key==SDLK_b) { view.console=true; view.typed="BUY food 1"; }
         if(key==SDLK_F2) { view.console=true; view.typed="PROFILE"; }
         if(key==SDLK_F3) { view.showTelemetry=!view.showTelemetry; }
       }
     }
     const Uint8* keys=SDL_GetKeyboardState(nullptr);
-    const bool controls=focused && !view.console && view.authenticated && view.connected;
+    const bool controls=focused && !view.console && view.authenticated && view.connected && !view.ship.destroyed;
     const auto input=helion::flight::controls(keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP],
       keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT], keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT],
       keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN],controls);
@@ -259,13 +271,21 @@ int main(int argc,char** argv) {
           if(view.ship.docked) visual=view.ship;
         } else {
           const bool fuelFrame = helion::flight::readFuelLine(frame.line, view.ship);
+          const bool combatStatus = helion::flight::readCombatStatus(frame.line, view.ship);
           helion::flight::Contact contact;
-          if (fuelFrame) {
+          if (fuelFrame || combatStatus) {
             // Fuel is an additive frame so older clients can still parse FLIGHT snapshots.
           } else if (helion::flight::readContact(frame.line, contact)) {
             view.contacts.push_back(std::move(contact));
           } else if (frame.line == "CONTACTS END") {
             // Contact frames are replaced atomically once the stream terminates.
+            const auto selected = std::find_if(view.contacts.begin(), view.contacts.end(),
+              [&view](const auto& item) { return item.hostile && item.id == view.targetId; });
+            if (selected == view.contacts.end()) {
+              const auto firstHostile = std::find_if(view.contacts.begin(), view.contacts.end(),
+                [](const auto& item) { return item.hostile; });
+              view.targetId = firstHostile == view.contacts.end() ? std::string{} : firstHostile->id;
+            }
             view.log.push_back("CONTACTS / "+std::to_string(view.contacts.size())+" IN SECTOR");
           }
           if(frame.line.rfind("OK LOGIN",0)==0 || frame.line.rfind("OK CREATED",0)==0) {
@@ -274,7 +294,7 @@ int main(int argc,char** argv) {
           if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
           helion::flight::DockTransaction sale;
           helion::flight::FuelTransaction refuel;
-          if(!fuelFrame && frame.line.rfind("STATE ",0)!=0) {
+          if(!fuelFrame && !combatStatus && frame.line.rfind("STATE ",0)!=0) {
             if (helion::flight::readDockTransaction(frame.line, sale)) {
               view.log.push_back(std::move(frame.line));
               view.log.push_back("SALE / "+std::to_string(sale.cargoSold)+" ORE / +"+

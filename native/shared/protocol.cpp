@@ -115,6 +115,18 @@ Request parseRequest(std::string_view line) {
     request.turn = turn == "-1" ? -1 : turn == "1" ? 1 : 0;
     request.brake = brake == "1";
     request.command = Command::input;
+  } else if (command == "FIRE") {
+    std::string extra;
+    if (!(input >> request.first) || request.first.empty() || request.first.size() > 32 ||
+        request.first.find_first_of("\t\r ") != std::string::npos || (input >> extra)) {
+      request.error = "usage=FIRE target-id";
+      return request;
+    }
+    request.command = Command::fire;
+  } else if (command == "RECOVER") {
+    std::string extra;
+    if (input >> extra) { request.error = "malformed-message"; return request; }
+    request.command = Command::recover;
   } else if (command == "LAUNCH" || command == "FLIGHT" || command == "MINE" || command == "DOCK" || command == "CONTACTS") {
     std::string extra;
     if (input >> extra) { request.error = "malformed-message"; return request; }

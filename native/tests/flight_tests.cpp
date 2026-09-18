@@ -154,12 +154,43 @@ int main() {
   check(readFuelLine("FUEL 42.50 100.00",restoredFuel) && restoredFuel.fuel == 42.5 && restoredFuel.maxFuel == 100,
         "fuel protocol roundtrip");
   check(!readFuelLine("FUEL -1 100",restoredFuel),"reject invalid fuel protocol");
+  State statusState;
+  statusState.destroyed = true; statusState.weaponCooldown = 0.75;
+  State restoredStatus;
+  check(readCombatStatus(combatStatusLine(statusState), restoredStatus) && restoredStatus.destroyed &&
+        std::abs(restoredStatus.weaponCooldown - 0.75) < 0.001, "combat status protocol roundtrip");
+  check(!readCombatStatus("COMBAT STATUS destroyed=2 weapon-cooldown=0", restoredStatus), "reject invalid combat status");
+  State destroyedShip;
+  launch(destroyedShip);
+  destroyedShip.destroyed = true;
+  destroyedShip.docked = false;
+  destroyedShip.hull = 0;
+  destroyedShip.cargo = 3;
+  destroyedShip.fuel = 4;
+  const double destroyedX = destroyedShip.x;
+  step(destroyedShip, 1.0 / 60);
+  check(destroyedShip.x == destroyedX && mine(destroyedShip) == "ERR recovery-required",
+        "destroyed ship stops ordinary flight and mining");
+  check(recover(destroyedShip).rfind("OK RECOVERED station=0 hull=50 fuel=100", 0) == 0 &&
+        destroyedShip.docked && !destroyedShip.destroyed && destroyedShip.cargo == 0 &&
+        destroyedShip.hull == 50 && destroyedShip.fuel == destroyedShip.maxFuel,
+        "recovery restores a playable safe state without cargo");
+  check(recover(destroyedShip) == "ERR recovery-not-required", "recovery cannot be replayed");
   State damaged;
   launch(damaged); damaged.x=0; damaged.y=320; damaged.vy=-200; damaged.cargo=2;
   step(damaged,1.0/60);
   check(damaged.hull < damaged.maxHull && damaged.hull > 0 && !damaged.docked && damaged.cargo==2,
     "asteroid impact damages hull without destroying ship");
+  State impactDestruction;
+  launch(impactDestruction); impactDestruction.x=0; impactDestruction.y=320;
+  impactDestruction.vy=-200; impactDestruction.hull=1; impactDestruction.cargo=2;
+  step(impactDestruction,1.0/60);
+  check(impactDestruction.destroyed && impactDestruction.hull==0 && !impactDestruction.docked &&
+        impactDestruction.cargo==0, "impact destruction is bounded and loses cargo");
   damaged.hull=0; damaged.docked=true; damaged.cargo=2; int repairCredits=1000;
+  damaged.destroyed = true;
+  check(launch(damaged)=="ERR recovery-required", "destroyed ship requires recovery");
+  damaged.destroyed = false;
   check(launch(damaged)=="ERR repair-required", "disabled ship requires repair");
   check(repair(damaged,repairCredits,2)=="OK REPAIRED hull=125 cost=375" &&
     damaged.hull==125 && repairCredits==625, "station repair restores upgraded hull");
@@ -167,6 +198,9 @@ int main() {
   Contact restoredContact;
   check(readContact(contactLine(contact), restoredContact) && restoredContact.id == "HAULER-7" &&
         restoredContact.kind == "hauler", "contact roundtrip");
+  Contact hostile{"RAIDER-7", "hostile", 0, 420, 0, false, true, 75, 100};
+  check(readContact(contactLine(hostile), restoredContact) && restoredContact.hostile &&
+        restoredContact.hull == 75 && restoredContact.maxHull == 100, "hostile contact roundtrip");
   launch(ship); ship.y=280; step(ship,1.0/60);
   check(std::hypot(ship.x,ship.y-280)>=42,"asteroid collision resolves even at center");
   ship.x=1400; step(ship,1.0/60);

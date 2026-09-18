@@ -67,6 +67,8 @@ reopen the console and Escape to return to flight. Use:
 /state
 /refuel
 /outfit LIST
+/fire target-id
+/recover
 /launch
 /flight
 /mine
@@ -105,6 +107,14 @@ commands `/outfit BUY module-id`, `/outfit FIT module-id`, and
 and standard hull; the outfitting preview includes a faster mining extractor,
 fuel-efficient engine, reinforced hull plating, and a combat-preview pulse
 laser.
+
+Hostile contacts appear in red on the sector view and are selected
+automatically; press **Tab** to cycle hostile contacts and **Space** to fire
+the selected target. The cockpit shows target range and hull, laser cooldown,
+incoming damage, combat rewards, and server rejection reasons. The pulse laser
+requires the fitted weapon module and is limited by server range, cooldown, and
+damage rules. If the ship is destroyed, cargo is lost and **R** requests
+safe-station recovery; repair and refit remain docked actions.
 
 Flight is top-down with a north-up camera. Opening the console or losing
 window focus applies the brake. The server also stops stale controls after

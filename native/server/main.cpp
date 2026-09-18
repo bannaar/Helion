@@ -9,9 +9,11 @@
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+#include <deque>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
+#include <limits>
 #include <mutex>
 #include <netinet/in.h>
 #include <poll.h>
@@ -30,6 +32,7 @@
 #include "server/connection_limit.h"
 #include "server/data_lock.h"
 #include "shared/flight.h"
+#include "shared/combat.h"
 #include "shared/loadout.h"
 #include "shared/tls.h"
 
@@ -64,6 +67,13 @@ struct Profile {
   std::array<std::string, helion::loadout::kSlotCount> fittedModules{{
     "mining-basic", "engine-basic", "hull-standard", ""
   }};
+  // These combat fields are the persistent reward claim and recovery state;
+  // the NPC itself is rebuilt at runtime from this small seed.
+  int salvage = 0;
+  int combatTargetGeneration = 1;
+  bool combatTargetDefeated = false;
+  std::deque<std::string> combatEvents;
+  helion::combat::Hostile hostile{};
 };
 
 struct ChatMessage {
@@ -107,6 +117,11 @@ void refreshDerivedShipState(Profile& profile) {
   const auto* defense = fittedModule(profile, helion::loadout::Slot::defense);
   profile.flight.maxHull = helion::flight::hullCapacity(profile.hullLevel) + (defense ? defense->hullBonus : 0);
   profile.flight.hull = std::min(profile.flight.hull, profile.flight.maxHull);
+}
+
+void resetCombatTarget(Profile& profile) {
+  helion::combat::resetHostile(profile.hostile, profile.combatTargetGeneration);
+  profile.hostile.destroyed = profile.combatTargetDefeated;
 }
 
 std::string loadoutLine(const Profile& profile) {
@@ -160,6 +175,9 @@ void saveStateLocked() {
          << profile.flight.maxHull << '\t' << profile.missionOreMined << '\t' << profile.flight.fuel << '\t'
          << joinModules(profile.ownedModules);
     for (const auto& fitted : profile.fittedModules) snapshot << '\t' << fitted;
+    snapshot << '\t' << profile.salvage << '\t' << profile.combatTargetGeneration
+             << '\t' << profile.combatTargetDefeated << '\t' << profile.flight.destroyed
+             << '\t' << profile.flight.weaponCooldown;
     snapshot << '\n';
   }
   for (const auto& message : messages) {
@@ -229,7 +247,9 @@ void loadState() {
         std::getline(input, ship, '\t');
         std::getline(input, creditsText, '\t');
         std::getline(input, experienceText, '\t');
-        Profile profile{decode(second), decode(third)};
+        Profile profile;
+        profile.passwordHash = decode(second);
+        profile.display = decode(third);
         profile.legacyCredential = kind == "P";
         if (!profile.legacyCredential && !helion::security::isEncodedHash(profile.passwordHash))
           throw std::runtime_error("malformed password hash record");
@@ -272,7 +292,7 @@ void loadState() {
         std::getline(input, value, '\t'); profile.flight.maxHull = parseNumber(value, 100);
         std::vector<std::string> extensions;
         while (std::getline(input, value, '\t')) extensions.push_back(value);
-        if (extensions.size() > 7) throw std::runtime_error("unexpected persistence fields");
+        if (extensions.size() > 12) throw std::runtime_error("unexpected persistence fields");
         if (!extensions.empty()) {
           if (extensions[0] != "0" && extensions[0] != "1")
             throw std::runtime_error("malformed mission objective");
@@ -308,15 +328,34 @@ void loadState() {
             throw std::runtime_error("malformed persisted module fitting");
           profile.fittedModules[slot] = id;
         }
+        if (extensions.size() >= 8) profile.salvage = parseNumber(extensions[7], 0);
+        if (extensions.size() >= 9) profile.combatTargetGeneration = parseNumber(extensions[8], 1);
+        if (extensions.size() >= 10) {
+          if (extensions[9] != "0" && extensions[9] != "1") throw std::runtime_error("malformed combat target state");
+          profile.combatTargetDefeated = extensions[9] == "1";
+        }
+        if (extensions.size() >= 11) {
+          if (extensions[10] != "0" && extensions[10] != "1") throw std::runtime_error("malformed destruction state");
+          profile.flight.destroyed = extensions[10] == "1";
+        }
+        if (extensions.size() >= 12) profile.flight.weaponCooldown = parseDouble(extensions[11], 0);
         if (profile.missionStage == 2) profile.missionOreMined = false;
         if (profile.flight.cargo < 0 || profile.flight.food < 0 || profile.flight.parts < 0 ||
             profile.flight.cargo + profile.flight.food + profile.flight.parts > helion::flight::kCargoCapacity ||
             profile.flight.station < 0 || profile.flight.station >= static_cast<int>(helion::flight::kStations.size()) ||
-            profile.flight.fuel < 0) throw std::runtime_error("malformed persisted ship state");
+            profile.flight.fuel < 0 || profile.salvage < 0 || profile.salvage > 1000000000 ||
+            profile.combatTargetGeneration < 1 || profile.combatTargetGeneration > 1000000000 ||
+            profile.flight.weaponCooldown < 0 || profile.flight.weaponCooldown > 10) throw std::runtime_error("malformed persisted ship state");
         refreshDerivedShipState(profile);
         if (profile.flight.fuel > profile.flight.maxFuel)
           throw std::runtime_error("malformed persisted fuel state");
+        if (profile.flight.destroyed) {
+          profile.flight.hull = 0;
+          profile.flight.cargo = 0;
+          profile.flight.docked = false;
+        }
         profile.flight.inputAge = 1;
+        resetCombatTarget(profile);
         if (!profiles.emplace(decode(first), std::move(profile)).second)
           throw std::runtime_error("duplicate profile in persistence file");
       } else if (kind == "M" && !first.empty() && !second.empty()) {
@@ -374,9 +413,15 @@ std::string stateLine() {
   return out.str();
 }
 
-void appendFlightState(std::vector<std::string>& responses, const Profile& profile) {
+void appendFlightState(std::vector<std::string>& responses, Profile& profile) {
   responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
   responses.push_back(helion::flight::fuelLine(profile.flight));
+  if (profile.flight.destroyed || !profile.combatEvents.empty())
+    responses.push_back(helion::flight::combatStatusLine(profile.flight));
+  while (!profile.combatEvents.empty()) {
+    responses.push_back(std::move(profile.combatEvents.front()));
+    profile.combatEvents.pop_front();
+  }
 }
 
 void broadcast(const std::string& line) {
@@ -390,6 +435,11 @@ void broadcast(const std::string& line) {
 
 std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
   std::vector<helion::flight::Contact> result;
+  const auto current = profiles.find(user);
+  if (current != profiles.end() && !current->second.hostile.destroyed && !current->second.flight.destroyed) {
+    const auto& hostile = current->second.hostile;
+    result.push_back({hostile.id, "hostile", hostile.x, hostile.y, 0, false, true, hostile.hull, hostile.maxHull});
+  }
   for (const auto& [name, profile] : profiles) {
     if (name == user) continue;
     result.push_back({name, "pilot", profile.flight.x, profile.flight.y, profile.flight.yaw, profile.flight.docked});
@@ -398,6 +448,32 @@ std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
   result.push_back({"HAULER-7", "hauler", 420.0 + std::cos(t * 0.08) * 180.0,
                     160.0 + std::sin(t * 0.08) * 120.0, 0, false});
   return result;
+}
+
+void applyNpcDamage(Profile& profile) {
+  const auto& hostile = profile.hostile;
+  const int before = profile.flight.hull;
+  profile.flight.hull = std::max(0, profile.flight.hull - helion::combat::kNpcDamage);
+  profile.combatEvents.push_back("COMBAT DAMAGE source=" + hostile.id +
+    " damage=" + std::to_string(before - profile.flight.hull) +
+    " hull=" + std::to_string(profile.flight.hull));
+  if (profile.flight.hull != 0) return;
+  profile.flight.destroyed = true;
+  profile.flight.docked = false;
+  profile.flight.vx = 0;
+  profile.flight.vy = 0;
+  profile.flight.input = {};
+  profile.flight.inputAge = 1;
+  profile.flight.cargo = 0;
+  profile.combatEvents.push_back("COMBAT DESTROYED player=1 cargo-lost=1 recovery=RECOVER");
+}
+
+void resetCombatAfterLaunch(Profile& profile) {
+  if (!profile.combatTargetDefeated) return;
+  if (profile.combatTargetGeneration == std::numeric_limits<int>::max()) return;
+  ++profile.combatTargetGeneration;
+  profile.combatTargetDefeated = false;
+  resetCombatTarget(profile);
 }
 
 void removeClient(int fd) {
@@ -416,7 +492,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR REFUEL OUTFIT LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR REFUEL OUTFIT FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -474,7 +550,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             response = "ERR profile-exists";
             tooManyFailures = ++authFailures >= kMaxAuthFailures;
           } else {
-            profiles.emplace(name, Profile{encoded, display});
+            Profile profile;
+            profile.passwordHash = encoded;
+            profile.display = display;
+            profiles.emplace(name, std::move(profile));
             try {
               persistStateLocked();
               response = "OK CREATED user=" + name + " display=" + display;
@@ -549,6 +628,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 " hull-level=" + std::to_string(profile.hullLevel) +
                 " mission-stage=" + std::to_string(profile.missionStage) +
                 " mission-ore-mined=" + std::to_string(profile.missionOreMined) +
+                " salvage=" + std::to_string(profile.salvage) +
+                " destroyed=" + std::to_string(profile.flight.destroyed) +
                 " " + loadoutLine(profile);
             }
           }
@@ -596,6 +677,85 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           }
         }
         sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::fire ||
+                 request.command == helion::protocol::Command::recover) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          const auto before = profile;
+          const bool dirtyBefore = flightStateDirty;
+          if (request.command == helion::protocol::Command::recover) {
+            const auto result = helion::flight::recover(profile.flight);
+            if (result.rfind("OK", 0) == 0) {
+              try {
+                persistStateLocked();
+                responses.push_back(result);
+              } catch (const std::exception& error) {
+                profile = before;
+                flightStateDirty = dirtyBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
+            } else responses.push_back(result);
+          } else if (profile.flight.docked) {
+            responses.push_back("ERR launch-required");
+          } else if (profile.flight.destroyed) {
+            responses.push_back("ERR recovery-required");
+          } else {
+            const auto* weapon = fittedModule(profile, helion::loadout::Slot::weapon);
+            if (!weapon || weapon->weaponDamage <= 0 || weapon->weaponRange <= 0 || weapon->weaponCooldown <= 0)
+              responses.push_back("ERR weapon-required");
+            else if (request.first != profile.hostile.id) responses.push_back("ERR invalid-target");
+            else if (profile.hostile.destroyed) responses.push_back("ERR target-destroyed");
+            else if (helion::combat::distance(profile.hostile, profile.flight) > weapon->weaponRange)
+              responses.push_back("ERR target-out-of-range");
+            else if (profile.flight.weaponCooldown > 0) responses.push_back("ERR weapon-cooldown");
+            else {
+              profile.flight.weaponCooldown = weapon->weaponCooldown;
+              profile.hostile.hull = std::max(0, profile.hostile.hull - weapon->weaponDamage);
+              responses.push_back("COMBAT HIT target=" + profile.hostile.id +
+                " damage=" + std::to_string(weapon->weaponDamage) +
+                " hull=" + std::to_string(profile.hostile.hull));
+              if (profile.hostile.hull == 0) {
+                profile.hostile.destroyed = true;
+                profile.combatTargetDefeated = true;
+                constexpr int kCredits = 100;
+                constexpr int kExperience = 25;
+                if (profile.credits > std::numeric_limits<int>::max() - kCredits ||
+                    profile.experience > std::numeric_limits<int>::max() - kExperience ||
+                    profile.salvage == std::numeric_limits<int>::max()) {
+                  profile = before;
+                  flightStateDirty = dirtyBefore;
+                  responses.clear();
+                  responses.push_back("ERR profile-limit");
+                } else {
+                  profile.credits += kCredits;
+                  profile.experience += kExperience;
+                  ++profile.salvage;
+                  responses.push_back("COMBAT DESTROYED target=" + profile.hostile.id);
+                  responses.push_back("TRANSACTION COMBAT_REWARD target=" + profile.hostile.id +
+                    " credits=" + std::to_string(kCredits) +
+                    " experience=" + std::to_string(kExperience) + " salvage=1");
+                }
+              }
+              if (responses.empty() || responses.back().rfind("ERR", 0) != 0) {
+                try { persistStateLocked(); }
+                catch (const std::exception& error) {
+                  profile = before;
+                  flightStateDirty = dirtyBefore;
+                  responses.clear();
+                  responses.push_back("ERR persistence-failed");
+                  std::cerr << error.what() << '\n';
+                }
+              }
+            }
+          }
+          responses.push_back(helion::flight::combatStatusLine(profile.flight));
+          appendFlightState(responses, profile);
+        }
+        for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::refuel ||
                  request.command == helion::protocol::Command::outfit) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
@@ -805,7 +965,9 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
           auto& flight = profile.flight;
-          if (request.command == helion::protocol::Command::input) {
+          if (profile.flight.destroyed && request.command != helion::protocol::Command::flight) {
+            responses.push_back("ERR recovery-required");
+          } else if (request.command == helion::protocol::Command::input) {
             flight.input = {request.thrust, request.turn, request.brake};
             flight.inputAge = 0;
             flightStateDirty = true;
@@ -825,6 +987,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                                             docking ? &transaction : nullptr);
             }
             if (result.rfind("OK", 0) == 0) {
+              if (request.command == helion::protocol::Command::launch) resetCombatAfterLaunch(profile);
               if (request.command == helion::protocol::Command::mine && profile.missionStage == 1)
                 profile.missionOreMined = true;
               try { persistStateLocked(); }
@@ -947,9 +1110,16 @@ int main(int argc, char** argv) {
           const auto* engine = fittedModule(entry.second, helion::loadout::Slot::engine);
           const double fuelMultiplier = engine ? engine->fuelConsumptionMultiplier : 1.0;
           helion::flight::step(entry.second.flight, 1.0 / 60, entry.second.engineLevel, fuelMultiplier);
+          if (!before.destroyed && !before.docked && entry.second.flight.destroyed && entry.second.flight.hull == 0)
+            entry.second.combatEvents.push_back("COMBAT DESTROYED player=1 cargo-lost=1 recovery=RECOVER");
+          helion::combat::step(entry.second.hostile, entry.second.flight, 1.0 / 60);
+          if (helion::combat::canNpcFire(entry.second.hostile, entry.second.flight)) {
+            entry.second.hostile.fireCooldown = helion::combat::kNpcFireCooldown;
+            applyNpcDamage(entry.second);
+          }
           if (!entry.second.flight.docked || before.docked != entry.second.flight.docked ||
               before.hull != entry.second.flight.hull || before.cargo != entry.second.flight.cargo ||
-              before.fuel != entry.second.flight.fuel) {
+              before.fuel != entry.second.flight.fuel || before.destroyed != entry.second.flight.destroyed) {
             flightStateDirty = true;
           }
         }

@@ -224,8 +224,41 @@ int main(int argc, char** argv) {
   expectPersistenceFailure(first,"OUTFIT BUY pulse-laser");
   check(command(first,"OUTFIT LIST","LOADOUT").find("pulse-laser") == std::string::npos,
         "failed module purchase rolls back ownership");
+  check(command(first,"OUTFIT BUY pulse-laser","TRANSACTION MODULE_PURCHASE").find("credits=650") != std::string::npos,
+        "combat module purchase is server-priced");
+  command(first,"OUTFIT FIT pulse-laser","OK MODULE FIT");
   check(command(first,"OUTFIT LIST","LOADOUT").find("fitted-engine=engine-efficient") != std::string::npos,
         "module fit is visible");
+  command(first,"LAUNCH","OK LAUNCHED");
+  check(command(first,"FIRE RAIDER-1","ERR target-out-of-range").find("ERR target-out-of-range") != std::string::npos,
+        "server enforces weapon range");
+  flyTo(first,0,220);
+  usleep(2500000);
+  const auto combatDamaged = flightState(first);
+  check(combatDamaged.hull < combatDamaged.maxHull && !combatDamaged.destroyed,
+        "hostile NPC applies authoritative hull damage");
+  expectPersistenceFailure(first,"FIRE RAIDER-1");
+  const auto failedShotContacts = command(first,"CONTACTS","CONTACT RAIDER-1 hostile");
+  check(failedShotContacts.find("RAIDER-1 hostile") != std::string::npos &&
+        failedShotContacts.find(" 100 100") != std::string::npos,
+        "failed shot rolls back target hull state");
+  const auto firstHit = command(first,"FIRE RAIDER-1","COMBAT HIT");
+  check(firstHit.find("damage=25") != std::string::npos, "server calculates laser damage");
+  command(first,"FIRE RAIDER-1","ERR weapon-cooldown");
+  for (int shot = 1; shot < 4; ++shot) {
+    usleep(1100000);
+    const auto hit = command(first,"FIRE RAIDER-1",shot == 3 ? "COMBAT DESTROYED" : "COMBAT HIT");
+    check(hit.find("damage=25") != std::string::npos, "server applies fixed weapon damage");
+  }
+  const auto combatReward = command(first,"FIRE RAIDER-1","ERR target-destroyed");
+  check(combatReward.find("ERR target-destroyed") != std::string::npos,
+        "destroyed target cannot pay a second reward");
+  const auto combatProfile = command(first,"PROFILE","PROFILE");
+  check(combatProfile.find("salvage=1") != std::string::npos &&
+        combatProfile.find("experience=25") != std::string::npos,
+        "combat reward persists as credits XP and salvage");
+  flyTo(first,0,35);
+  command(first,"DOCK","TRANSACTION DOCK_SALE");
   const std::string create = "CREATE explorer synthetic-password Explorer One\n";
   check(tlsSend(first, create.data(), create.size(), 0) == static_cast<ssize_t>(create.size()), "create durable profile");
   check(receiveUntil(first, "OK CREATED").find("OK CREATED user=explorer") != std::string::npos,
@@ -314,9 +347,16 @@ int main(int argc, char** argv) {
         "reconnected commander authenticates");
   const auto restoredPilot = command(replacement,"PROFILE","PROFILE");
   check(restoredPilot.find("credits=1500") == std::string::npos &&
-        restoredPilot.find(" fuel=100") != std::string::npos &&
-        restoredPilot.find("fitted-engine=engine-efficient") != std::string::npos,
-        "fuel and loadout survive reconnect");
+        restoredPilot.find("max-fuel=100") != std::string::npos &&
+        restoredPilot.find(" fuel=") != std::string::npos &&
+        restoredPilot.find("fitted-engine=engine-efficient") != std::string::npos &&
+        restoredPilot.find("fitted-weapon=pulse-laser") != std::string::npos &&
+        restoredPilot.find("salvage=1") != std::string::npos,
+        "fuel loadout and combat reward survive reconnect");
+  command(replacement,"RECOVER","ERR recovery-not-required");
+  command(replacement,"LAUNCH","OK LAUNCHED");
+  check(command(replacement,"CONTACTS","CONTACTS END").find("CONTACT RAIDER-2 hostile") != std::string::npos,
+        "next launch creates a new deterministic combat encounter");
   closeConnection(replacement);
 
   kill(child, SIGTERM);

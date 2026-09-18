@@ -4,7 +4,7 @@ import type { CommanderSave } from "./types";
 
 const KEY = "helion.commander.v1";
 const BACKUP = "helion.commander.bak";
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export function defaultSave(name = "JAMESON"): CommanderSave {
   const ship = SHIPS.sidewinder;
@@ -28,6 +28,7 @@ export function defaultSave(name = "JAMESON"): CommanderSave {
     explorationData: 0,
     activeMission: null,
     completedMissions: 0,
+    reputation: { federation: 0, empire: 0, union: 0, "free-traders": 0, pirates: -10 },
   };
 }
 
@@ -48,6 +49,7 @@ function migrate(raw: CommanderSave): CommanderSave {
     exploredSystems: raw.exploredSystems ?? base.exploredSystems,
     salvageRecovered: raw.salvageRecovered ?? base.salvageRecovered,
     explorationData: raw.explorationData ?? base.explorationData,
+    reputation: { ...base.reputation, ...(raw.reputation ?? {}) },
     version: SAVE_VERSION,
   };
 }

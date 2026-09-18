@@ -1,14 +1,19 @@
 import * as THREE from "three";
 import { setEngineLevel, sfxPlay } from "./audio";
-import { getSystem, jumpFuelCost, systemDistance } from "./galaxy";
+import { getSystem, jumpFuelCost, systemDistance, systemFaction } from "./galaxy";
 import { Input } from "./input";
 import {
   makeAsp,
+  makeAdder,
   makeAsteroid,
   makeCanister,
   makeCobra,
+  makeDrone,
+  makeHauler,
+  makeThargoid,
   makePlanet,
   makeSidewinder,
+  makeViper,
   makeStar,
   makeStarfield,
   makeStation,
@@ -44,6 +49,7 @@ type Npc = {
   hull: number;
   fireCd: number;
   police: boolean;
+  kind: "pirate" | "police" | "trader" | "thargoid";
 };
 
 type Shot = {
@@ -73,6 +79,12 @@ type AsteroidField = {
 function shipMesh(id: ShipId, color: number): THREE.Group {
   if (id === "sidewinder") return makeSidewinder(color);
   if (id === "asp") return makeAsp(color);
+  if (id === "viper") return makeViper(color);
+  if (id === "adder") return makeAdder(color);
+  if (id === "hauler") return makeHauler(color);
+  if (id === "drone") return makeDrone(color);
+  if (id === "eagle" || id === "courier") return makeViper(color);
+  if (id === "marauder" || id === "unionMiner") return makeHauler(color);
   return makeCobra(color);
 }
 
@@ -143,6 +155,10 @@ export class HelionEngine {
     this.renderer.setClearColor(0x07090c, 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     this.scene.fog = new THREE.FogExp2(0x07090c, 0.00055);
+    this.scene.add(new THREE.AmbientLight(0x8fa8c4, 1.8));
+    const keyLight = new THREE.DirectionalLight(0xd7e8ff, 2.4);
+    keyLight.position.set(300, 500, 220);
+    this.scene.add(keyLight);
     this.starfield = makeStarfield(640);
     this.scene.add(this.starfield);
     this.scene.add(this.titleRoot);
@@ -264,8 +280,10 @@ export class HelionEngine {
 
     const threat = sys.pirateThreat + (useGameStore.getState().save.wanted ? 2 : 0);
     const count = Math.min(5, threat + (sys.government === "anarchy" ? 1 : 0));
-    for (let i = 0; i < count; i += 1) this.spawnNpc(false);
-    if (useGameStore.getState().save.wanted && sys.government !== "anarchy") this.spawnNpc(true);
+    for (let i = 0; i < count; i += 1) this.spawnNpc("pirate");
+    for (let i = 0; i < 2; i += 1) this.spawnNpc("trader");
+    if (useGameStore.getState().save.wanted && sys.government !== "anarchy") this.spawnNpc("police");
+    if (sys.alienThreat > 0 && Math.random() < Math.min(0.65, sys.alienThreat * 0.16)) this.spawnNpc("thargoid");
 
     for (let i = 0; i < 6; i += 1) {
       const a = makeAsteroid(AST_COLOR, 4 + Math.random() * 7);
@@ -549,8 +567,16 @@ export class HelionEngine {
     }
   }
 
-  private spawnNpc(police: boolean) {
-    const mesh = police ? makeCobra(POLICE_COLOR) : makeSidewinder(PIRATE_COLOR);
+  private spawnNpc(kind: Npc["kind"]) {
+    const police = kind === "police";
+    const mesh =
+      kind === "police"
+        ? makeCobra(POLICE_COLOR)
+        : kind === "trader"
+          ? makeHauler(0x8aa4d0)
+          : kind === "thargoid"
+            ? makeThargoid(0x8ee6a7)
+            : makeSidewinder(PIRATE_COLOR);
     const ang = Math.random() * Math.PI * 2;
     const r = 260 + Math.random() * 340;
     const pos = new THREE.Vector3(
@@ -561,15 +587,16 @@ export class HelionEngine {
     mesh.position.copy(pos);
     this.spaceRoot.add(mesh);
     this.npcs.push({
-      id: `${police ? "pol" : "pir"}-${Math.random().toString(36).slice(2, 7)}`,
+      id: `${kind}-${Math.random().toString(36).slice(2, 7)}`,
       mesh,
       pos,
       yaw: Math.random() * Math.PI * 2,
       pitch: 0,
-      speed: 38 + Math.random() * 24,
-      hull: police ? 38 : 22,
+      speed: kind === "thargoid" ? 58 + Math.random() * 18 : 38 + Math.random() * 24,
+      hull: kind === "thargoid" ? 95 : police ? 38 : kind === "trader" ? 30 : 22,
       fireCd: 1 + Math.random(),
       police,
+      kind,
     });
   }
 
@@ -601,7 +628,7 @@ export class HelionEngine {
       n.yaw += Math.max(-1.6, Math.min(1.6, dy)) * dt * 1.4;
       const desiredPitch = Math.atan2(_tmp.y, Math.hypot(_tmp.x, _tmp.z));
       n.pitch += (desiredPitch - n.pitch) * dt * 1.2;
-      const hold = n.police ? 70 : 90;
+      const hold = n.kind === "trader" ? 150 : n.police ? 70 : n.kind === "thargoid" ? 105 : 90;
       if (dist < hold) n.speed = Math.max(18, n.speed - 20 * dt);
       else n.speed = Math.min(70, n.speed + 10 * dt);
       const fx = -Math.sin(n.yaw) * Math.cos(n.pitch);
@@ -617,10 +644,11 @@ export class HelionEngine {
       const ecm = hasModule(useGameStore.getState().save.loadout, "ecm_suite");
       const eccm = hasModule(useGameStore.getState().save.loadout, "eccm_suite");
       const electronicDisruption = ecm && !eccm && Math.random() < 0.12;
-      const facing = Math.abs(dy) < 0.22 && dist < 380 - stealth * 18 && dist > 28 && !electronicDisruption;
+      const hostile = n.kind === "pirate" || n.kind === "police" || n.kind === "thargoid";
+      const facing = hostile && Math.abs(dy) < 0.22 && dist < 380 - stealth * 18 && dist > 28 && !electronicDisruption;
       if (facing && n.fireCd <= 0) {
-        n.fireCd = eccm ? 0.42 : 0.55;
-        this.spawnShot(false, n.pos, _tmp.copy(this.pos).sub(n.pos).normalize(), eccm ? 9 : 8, false);
+        n.fireCd = n.kind === "thargoid" ? 0.3 : eccm ? 0.42 : 0.55;
+        this.spawnShot(false, n.pos, _tmp.copy(this.pos).sub(n.pos).normalize(), n.kind === "thargoid" ? 13 : eccm ? 9 : 8, false);
       }
     }
   }
@@ -680,7 +708,19 @@ export class HelionEngine {
       good: goods[Math.floor(Math.random() * goods.length)]!,
     });
     const st = useGameStore.getState();
-    st.patchSave({ kills: st.save.kills + 1 });
+    const reputation = { ...st.save.reputation };
+    if (n.kind === "police") {
+      reputation.federation = (reputation.federation ?? 0) - 6;
+      reputation.empire = (reputation.empire ?? 0) - 3;
+    } else if (n.kind === "pirate") {
+      reputation.pirates = (reputation.pirates ?? 0) - 2;
+      reputation[systemFaction(getSystem(st.save.systemId)!)] =
+        (reputation[systemFaction(getSystem(st.save.systemId)!)] ?? 0) + 1;
+    } else if (n.kind === "thargoid") {
+      reputation.federation = (reputation.federation ?? 0) + 2;
+      reputation.empire = (reputation.empire ?? 0) + 2;
+    }
+    st.patchSave({ kills: st.save.kills + 1, reputation });
     st.setFlash(n.police ? "POLICE CRAFT DESTROYED" : "TARGET DESTROYED");
     sfxPlay.kill();
   }
@@ -913,6 +953,13 @@ export class HelionEngine {
     const completedMission = missionRequirementMet ? destinationMission : null;
     const missionComplete = completedMission !== null;
     const explorationPayout = st.save.explorationData;
+    const missionFaction = systemFaction(getSystem(st.save.systemId)!);
+    const reputation = { ...st.save.reputation };
+    if (completedMission) {
+      const delta = completedMission.type === "courier" ? 2 : completedMission.type === "exploration" ? 3 : 4;
+      reputation[missionFaction] = (reputation[missionFaction] ?? 0) + delta;
+      reputation["free-traders"] = (reputation["free-traders"] ?? 0) + 1;
+    }
     const deliveredCargo = missionComplete && (completedMission.type === "courier" || completedMission.type === "mining")
       ? {
           ...st.save.cargo,
@@ -933,6 +980,7 @@ export class HelionEngine {
         ? {
             activeMission: null,
             completedMissions: st.save.completedMissions + 1,
+            reputation,
           }
         : {}),
       ...(explorationPayout > 0

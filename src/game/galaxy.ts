@@ -2,6 +2,7 @@ import { mulberry32, pick, randInt, randRange, xmur3 } from "./rng";
 import type {
   CommodityId,
   Economy,
+  FactionId,
   Government,
   MarketRow,
   StarSystem,
@@ -208,6 +209,7 @@ function makeSystem(s: SeededSystem, rng: () => number): StarSystem {
     starColor: pick(rng, STAR_COLORS),
     planetColor: pick(rng, PLANET_COLORS),
     pirateThreat: pirateThreat(s.government),
+    alienThreat: Math.max(0, Math.floor(Math.hypot(s.x - 50, s.y - 25) / 10)),
   };
 }
 
@@ -325,6 +327,26 @@ export function governmentLabel(g: Government): string {
     confederacy: "Confederacy",
   };
   return map[g];
+}
+
+export function systemFaction(system: StarSystem): FactionId {
+  if (system.government === "corporate" || system.government === "dictatorship") return "empire";
+  if (system.government === "confederacy" || system.government === "democracy") return "federation";
+  if (system.economy === "extraction" || system.economy === "refinery") return "union";
+  return "free-traders";
+}
+
+export const FACTION_LABELS: Record<FactionId, string> = {
+  federation: "Federation",
+  empire: "Empire",
+  union: "Mining Union",
+  "free-traders": "Free Traders",
+  pirates: "Pirate Clans",
+};
+
+export function factionPrice(base: number, standing: number): number {
+  const clamped = Math.max(-100, Math.min(100, standing));
+  return Math.max(1, Math.round(base * (1 - clamped * 0.0015)));
 }
 
 export const COMBAT_RANKS = [

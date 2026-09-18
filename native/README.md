@@ -51,8 +51,8 @@ For the retained command-line mode, use
 The client commands are `/create username password display`, `/login username
 password`, `/chat message`, `/profile`, `/state`, `/contacts`, `/buy food 1`,
 `/sell parts 1`, `/mission`, `/accept`, `/turnin`, `/upgrade engine|hull`,
-`/repair`, `/launch`, `/flight`, `/input thrust turn brake`, `/mine`, `/dock`,
-and `/quit`.
+`/repair`, `/refuel`, `/outfit LIST|BUY|FIT|REMOVE`, `/launch`, `/flight`,
+`/input thrust turn brake`, `/mine`, `/dock`, and `/quit`.
 The optional server data-file stores commander profiles and GalNet
 messages durably and is replaced atomically after each write.
 
@@ -77,6 +77,20 @@ directory private to the server user.
    while docked to repair a damaged hull. Opening
    the console or losing focus brakes the ship. Credentials are masked in
    the graphical input and command log.
+
+Flight consumes fuel only while thrusting. The starter Sidewinder carries
+100 fuel, and engine upgrades increase capacity by 20 per level. Return to a
+station and press **T** or enter `REFUEL` to fill the tank; the station charges
+2 credits per fuel unit at Kepler and 3 at Cinder. Fuel is server-owned and
+saved with the ship.
+
+The initial outfitting catalogue has mining, engine, defense, and weapon slots.
+Every commander starts with basic mining, standard engine, and standard hull
+modules. `OUTFIT LIST` inspects the loadout; `OUTFIT BUY module-id`, `OUTFIT
+FIT module-id`, and `OUTFIT REMOVE slot` are docked, server-priced operations.
+`mining-mk2` shortens the extractor cooldown, `engine-efficient` reduces fuel
+consumption, and `hull-plating` adds 25 maximum hull. `pulse-laser` is an
+owned/fittable combat preview module with no combat behavior yet.
 
 The server advances flight at a fixed 60 Hz and validates every mining and
 docking action. Clients send only bounded control inputs, never positions or
@@ -119,9 +133,9 @@ The server sends `WELCOME Helion/2` and `INFO` lines on connect. Protocol versio
 Requests are one
 newline-terminated line: `CREATE username password display`, `LOGIN username
 password`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
-`MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `REPAIR`, `LAUNCH`, `INPUT`, `FLIGHT`,
-`MINE`, `DOCK`, or `QUIT`. Responses are newline-terminated
-`OK`, `ERR`, `PROFILE`, `STATE`, `TRANSACTION`, and `CHAT` records. The server stores salted
+`MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `REPAIR`, `REFUEL`, `OUTFIT`, `LAUNCH`,
+`INPUT`, `FLIGHT`, `MINE`, `DOCK`, or `QUIT`. Responses are newline-terminated
+`OK`, `ERR`, `PROFILE`, `STATE`, `FUEL`, `LOADOUT`, `TRANSACTION`, and `CHAT` records. The server stores salted
 scrypt password hashes, migrates existing plaintext profile records on startup,
 and creates owner-only data files. New passwords must be 12–128 bytes. The connection requires TLS 1.2 or newer. Clients verify the certificate
 chain, expiration, and DNS/IP Subject Alternative Name using OS trust roots
@@ -136,8 +150,9 @@ chat payload is 512 bytes.
 
 `INPUT thrust turn brake` accepts exactly `0|1`, `-1|0|1`, and `0|1`.
 Positive turn is left. `LAUNCH`, `FLIGHT`, `MINE`, `DOCK`, and `REPAIR` take no
-arguments; all gameplay commands require authentication. Each gameplay command
-returns a flight snapshot, except authentication/persistence failures. A
+arguments; all gameplay commands require authentication. Flight commands return
+a flight snapshot and an additive fuel frame, except authentication/persistence
+failures. A
 successful `DOCK` also emits a server-calculated transaction record between
 the legacy result and the snapshot:
 
@@ -145,6 +160,10 @@ the legacy result and the snapshot:
 FLIGHT x y vx vy yaw docked cargo credits experience cooldown food parts station hull maxHull
 
 TRANSACTION DOCK_SALE station=0 quantity=1 unit-price=60 credits=60 experience=5
+
+FUEL 86.40 100.00
+TRANSACTION REFUEL station=0 amount=13.60 unit-price=2 credits=28 fuel=100.00 max-fuel=100.00
+LOADOUT owned=mining-basic,engine-basic,hull-standard fitted-mining=mining-basic fitted-engine=engine-basic fitted-defense=hull-standard fitted-weapon=none
 ```
 
 The `OK DOCKED earned=...` line remains for protocol compatibility. The
@@ -158,4 +177,9 @@ Coordinates are metres on an XY plane, +Y north, yaw in radians with zero
 pointing north. `docked` is `0|1`; cooldown is seconds. Existing version-1
 commands and profile record formats remain supported; new mission, upgrade,
 and flight fields are appended so legacy saves remain readable. `INFO
-commands=` advertises the added gameplay commands.
+commands=` advertises the added gameplay commands. Profile records from before
+the fuel/loadout extension load with full starter fuel and the basic starter
+modules; newer fuel and loadout fields are appended to the existing record.
+commands=` advertises the added gameplay commands. Profile records from before
+the fuel/loadout extension load with full starter fuel and the basic starter
+modules; newer fuel and loadout fields are appended to the existing record.

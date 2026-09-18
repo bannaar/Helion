@@ -58,6 +58,48 @@ int main() {
   step(explicitLevelOne, 1.0 / 60, 1);
   step(defaultLevelOne, 1.0 / 60);
   check(std::abs(speed(explicitLevelOne) - speed(defaultLevelOne)) < 1e-9, "level one remains default physics");
+  State fuelShip;
+  launch(fuelShip);
+  const double startingFuel = fuelShip.fuel;
+  fuelShip.input = {1, 0, 0}; fuelShip.inputAge = 0;
+  run(fuelShip,60,fuelShip.input);
+  check(fuelShip.fuel < startingFuel && fuelShip.fuel > 0,"thrust consumes bounded fuel");
+  State standardDrive, efficientDrive;
+  launch(standardDrive); launch(efficientDrive);
+  standardDrive.input = {1, 0, 0}; efficientDrive.input = {1, 0, 0};
+  standardDrive.inputAge = 0; efficientDrive.inputAge = 0;
+  for (int i = 0; i < 60; ++i) {
+    step(standardDrive,1.0 / 60,1,1.0);
+    step(efficientDrive,1.0 / 60,1,0.65);
+  }
+  check(efficientDrive.fuel > standardDrive.fuel,"efficient engine reduces fuel consumption");
+  State emptyFuel;
+  emptyFuel.fuel = 0;
+  check(launch(emptyFuel) == "ERR insufficient-fuel","empty fuel prevents launch");
+  emptyFuel.docked = false; emptyFuel.input = {1, 0, 0}; emptyFuel.inputAge = 0;
+  step(emptyFuel,1.0 / 60);
+  check(emptyFuel.fuel == 0 && speed(emptyFuel) == 0,"empty fuel prevents thrust");
+  State refuelShip;
+  refuelShip.fuel = 45;
+  int refuelCredits = 500;
+  FuelTransaction refuelTransaction;
+  check(refuel(refuelShip,refuelCredits,&refuelTransaction) == "OK REFUELED amount=55 cost=110" &&
+        refuelShip.fuel == refuelShip.maxFuel && refuelCredits == 390 &&
+        refuelTransaction.fuelAdded == 55 && refuelTransaction.creditsSpent == 110,
+        "station refueling charges for authoritative quantity");
+  FuelTransaction restoredFuelTransaction;
+  check(readFuelTransaction(fuelTransactionLine(refuelTransaction),restoredFuelTransaction) &&
+        restoredFuelTransaction.creditsSpent == 110 && restoredFuelTransaction.fuelAfter == 100,
+        "refuel transaction protocol roundtrip");
+  refuelShip.fuel = 0; refuelCredits = 0;
+  check(refuel(refuelShip,refuelCredits) == "ERR insufficient-credits" && refuelShip.fuel == 0 && refuelCredits == 0,
+        "insufficient credits cannot create fuel");
+  State unequipped;
+  launch(unequipped); unequipped.y = 210;
+  check(mine(unequipped,false) == "ERR mining-module-required" && unequipped.cargo == 0,
+        "mining requires fitted equipment");
+  check(mine(unequipped,true,0.65) == "OK MINED cargo=1" && unequipped.cooldown > 0.8 && unequipped.cooldown < 0.9,
+        "mining module changes extractor cooldown");
   State ship;
   check(mine(ship)=="ERR launch-required","cannot mine docked");
   launch(ship);
@@ -108,6 +150,10 @@ int main() {
     restored.docked && restoredCredits==1806 && restoredXp==40,"snapshot roundtrip");
   check(!readSnapshot("FLIGHT nan 0 0 0 0 1 0 0 0 0",restored,restoredCredits,restoredXp),"reject nonfinite state");
   check(!readSnapshot("FLIGHT 0 0 0 0 0 1 999 0 0 0",restored,restoredCredits,restoredXp),"reject invalid cargo");
+  State restoredFuel;
+  check(readFuelLine("FUEL 42.50 100.00",restoredFuel) && restoredFuel.fuel == 42.5 && restoredFuel.maxFuel == 100,
+        "fuel protocol roundtrip");
+  check(!readFuelLine("FUEL -1 100",restoredFuel),"reject invalid fuel protocol");
   State damaged;
   launch(damaged); damaged.x=0; damaged.y=320; damaged.vy=-200; damaged.cargo=2;
   step(damaged,1.0/60);

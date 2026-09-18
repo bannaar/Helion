@@ -54,7 +54,7 @@ bool saveFrame(const std::string& path,int width,int height) {
   SDL_FreeSurface(surface); return saved;
 }
 int terminalClient(int fd, helion::tls::Connection& connection) {
-  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
+  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /refuel, /outfit LIST|BUY|FIT|REMOVE, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
   helion::protocol::LineDecoder decoder;
   bool greeted=false, running=true, stdinClosed=false, quitQueued=false;
   std::string outgoing, typed;
@@ -212,6 +212,8 @@ int main(int argc,char** argv) {
         if(key==SDLK_e) queue("MINE");
         if(key==SDLK_f) queue("DOCK");
         if(key==SDLK_r && view.ship.docked) { view.console=true; view.typed="REPAIR"; }
+        if(key==SDLK_t && view.ship.docked) queue("REFUEL");
+        if(key==SDLK_u && view.ship.docked) { view.console=true; view.typed="OUTFIT LIST"; }
         if(key==SDLK_b) { view.console=true; view.typed="BUY food 1"; }
         if(key==SDLK_F2) { view.console=true; view.typed="PROFILE"; }
         if(key==SDLK_F3) { view.showTelemetry=!view.showTelemetry; }
@@ -256,8 +258,11 @@ int main(int argc,char** argv) {
           }
           if(view.ship.docked) visual=view.ship;
         } else {
+          const bool fuelFrame = helion::flight::readFuelLine(frame.line, view.ship);
           helion::flight::Contact contact;
-          if (helion::flight::readContact(frame.line, contact)) {
+          if (fuelFrame) {
+            // Fuel is an additive frame so older clients can still parse FLIGHT snapshots.
+          } else if (helion::flight::readContact(frame.line, contact)) {
             view.contacts.push_back(std::move(contact));
           } else if (frame.line == "CONTACTS END") {
             // Contact frames are replaced atomically once the stream terminates.
@@ -268,12 +273,17 @@ int main(int argc,char** argv) {
           }
           if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
           helion::flight::DockTransaction sale;
-          if(frame.line.rfind("STATE ",0)!=0) {
+          helion::flight::FuelTransaction refuel;
+          if(!fuelFrame && frame.line.rfind("STATE ",0)!=0) {
             if (helion::flight::readDockTransaction(frame.line, sale)) {
               view.log.push_back(std::move(frame.line));
               view.log.push_back("SALE / "+std::to_string(sale.cargoSold)+" ORE / +"+
                                  std::to_string(sale.creditsEarned)+" CR / +"+
                                  std::to_string(sale.experienceEarned)+" XP");
+            } else if (helion::flight::readFuelTransaction(frame.line, refuel)) {
+              view.log.push_back(std::move(frame.line));
+              view.log.push_back("REFUEL / +"+std::to_string(static_cast<int>(std::ceil(refuel.fuelAdded)))+
+                                 " FUEL / -"+std::to_string(refuel.creditsSpent)+" CR");
             } else {
               view.log.push_back(std::move(frame.line));
             }

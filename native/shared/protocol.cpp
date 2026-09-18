@@ -71,7 +71,7 @@ Request parseRequest(std::string_view line) {
       return request;
     }
     request.command = Command::chat;
-  } else if (command == "MISSION" || command == "ACCEPT" || command == "TURNIN" || command == "UPGRADE" || command == "REPAIR") {
+  } else if (command == "MISSION" || command == "ACCEPT" || command == "TURNIN" || command == "UPGRADE" || command == "REPAIR" || command == "REFUEL") {
     std::string extra;
     if (command == "UPGRADE") {
       if (!(input >> request.first) || (input >> extra) ||
@@ -83,8 +83,18 @@ Request parseRequest(std::string_view line) {
     } else {
       if (input >> extra) { request.error = "malformed-message"; return request; }
       request.command = command == "MISSION" ? Command::mission : command == "ACCEPT" ? Command::accept :
-        command == "TURNIN" ? Command::turnin : Command::repair;
+        command == "TURNIN" ? Command::turnin : command == "REFUEL" ? Command::refuel : Command::repair;
     }
+  } else if (command == "OUTFIT") {
+    std::string extra;
+    if (!(input >> request.first) || request.first.size() > 16 ||
+        (request.first == "LIST" && (input >> extra)) ||
+        (request.first != "LIST" && request.first != "BUY" && request.first != "FIT" && request.first != "REMOVE") ||
+        (request.first != "LIST" && (!(input >> request.second) || request.second.size() > 32 || (input >> extra)))) {
+      request.error = "usage=OUTFIT LIST|BUY|FIT module|REMOVE slot";
+      return request;
+    }
+    request.command = Command::outfit;
   } else if (command == "BUY" || command == "SELL") {
     std::string extra;
     if (!(input>>request.first>>request.second) || (input>>extra) ||

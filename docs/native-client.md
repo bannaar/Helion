@@ -65,6 +65,8 @@ reopen the console and Escape to return to flight. Use:
 /chat hello pilots
 /profile
 /state
+/refuel
+/outfit LIST
 /launch
 /flight
 /mine
@@ -88,12 +90,21 @@ For headless diagnostics, use terminal mode:
 Press **L** to launch, **W** to thrust, **A/D** to turn, and **S** to brake.
 Arrow keys also work. Approach a teal asteroid to within 85 m at no more than
 35 m/s and press **E** to mine. Wait 1.25 seconds between extractions; cargo
-capacity is eight units. Use the radar's amber base marker to return to
-Kepler station, then press **F** within 85 m at low speed to dock and sell.
-Each ore unit earns 60 credits and 5 XP, saved by the server. After a
+capacity is eight units. Thrust consumes fuel from the authoritative 100-unit
+starter tank. Use the radar's amber base marker to return to Kepler station,
+then press **F** within 85 m at low speed to dock and sell. Each ore unit earns
+60 credits and 5 XP, saved by the server. After a
 successful dock, the client shows the authoritative sale quantity, credit
 reward, and XP reward in the activity line; rejected actions remain visible
 with their server-provided reason.
+
+While docked, press **T** or enter `/refuel` to fill the tank at the station's
+server-calculated price. Press **U** to inspect the loadout, or use the console
+commands `/outfit BUY module-id`, `/outfit FIT module-id`, and
+`/outfit REMOVE slot`. The initial modules are basic mining, standard engine,
+and standard hull; the outfitting preview includes a faster mining extractor,
+fuel-efficient engine, reinforced hull plating, and a combat-preview pulse
+laser.
 
 Flight is top-down with a north-up camera. Opening the console or losing
 window focus applies the brake. The server also stops stale controls after

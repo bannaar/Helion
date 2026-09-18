@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -16,6 +17,7 @@
 #include <poll.h>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -28,6 +30,7 @@
 #include "server/connection_limit.h"
 #include "server/data_lock.h"
 #include "shared/flight.h"
+#include "shared/loadout.h"
 #include "shared/tls.h"
 
 namespace {
@@ -57,6 +60,10 @@ struct Profile {
   int hullLevel = 1;
   int engineLevel = 1;
   bool missionOreMined = false;
+  std::vector<std::string> ownedModules{"mining-basic", "engine-basic", "hull-standard"};
+  std::array<std::string, helion::loadout::kSlotCount> fittedModules{{
+    "mining-basic", "engine-basic", "hull-standard", ""
+  }};
 };
 
 struct ChatMessage {
@@ -76,6 +83,43 @@ struct Transport {
   std::mutex writeMutex;
 };
 std::unordered_map<int, std::shared_ptr<Transport>> transports;
+
+const helion::loadout::ModuleDefinition* fittedModule(const Profile& profile, helion::loadout::Slot slot) {
+  const auto& id = profile.fittedModules[helion::loadout::slotIndex(slot)];
+  return id.empty() ? nullptr : helion::loadout::find(id);
+}
+
+bool ownsModule(const Profile& profile, std::string_view id) {
+  return std::find(profile.ownedModules.begin(), profile.ownedModules.end(), id) != profile.ownedModules.end();
+}
+
+std::string joinModules(const std::vector<std::string>& modules) {
+  std::string result;
+  for (const auto& module : modules) {
+    if (!result.empty()) result += ',';
+    result += module;
+  }
+  return result;
+}
+
+void refreshDerivedShipState(Profile& profile) {
+  profile.flight.maxFuel = helion::flight::fuelCapacity(profile.engineLevel);
+  const auto* defense = fittedModule(profile, helion::loadout::Slot::defense);
+  profile.flight.maxHull = helion::flight::hullCapacity(profile.hullLevel) + (defense ? defense->hullBonus : 0);
+  profile.flight.hull = std::min(profile.flight.hull, profile.flight.maxHull);
+}
+
+std::string loadoutLine(const Profile& profile) {
+  const auto fitted = [&profile](helion::loadout::Slot slot) {
+    const auto& id = profile.fittedModules[helion::loadout::slotIndex(slot)];
+    return id.empty() ? std::string("none") : id;
+  };
+  return "LOADOUT owned=" + joinModules(profile.ownedModules) +
+    " fitted-mining=" + fitted(helion::loadout::Slot::mining) +
+    " fitted-engine=" + fitted(helion::loadout::Slot::engine) +
+    " fitted-defense=" + fitted(helion::loadout::Slot::defense) +
+    " fitted-weapon=" + fitted(helion::loadout::Slot::weapon);
+}
 
 std::string encode(const std::string& value) {
   std::string out;
@@ -113,7 +157,10 @@ void saveStateLocked() {
          << profile.flight.vx << '\t' << profile.flight.vy << '\t' << profile.flight.yaw << '\t'
          << profile.flight.docked << '\t' << profile.flight.cargo << '\t' << profile.flight.food << '\t'
          << profile.flight.parts << '\t' << profile.flight.station << '\t' << profile.flight.hull << '\t'
-         << profile.flight.maxHull << '\t' << profile.missionOreMined << '\n';
+         << profile.flight.maxHull << '\t' << profile.missionOreMined << '\t' << profile.flight.fuel << '\t'
+         << joinModules(profile.ownedModules);
+    for (const auto& fitted : profile.fittedModules) snapshot << '\t' << fitted;
+    snapshot << '\n';
   }
   for (const auto& message : messages) {
     snapshot << "M\t" << encode(message.user) << '\t' << encode(message.text) << '\n';
@@ -195,6 +242,14 @@ void loadState() {
           if (used != value.size()) throw std::runtime_error("malformed persistence number");
           return result;
         };
+        auto parseDouble = [](const std::string& value, double fallback) {
+          if (value.empty()) return fallback;
+          std::size_t used = 0;
+          const double result = std::stod(value, &used);
+          if (used != value.size() || !std::isfinite(result))
+            throw std::runtime_error("malformed persistence number");
+          return result;
+        };
         profile.credits = parseNumber(creditsText, profile.credits);
         profile.experience = parseNumber(experienceText, profile.experience);
         if (profile.credits < 0 || profile.experience < 0)
@@ -214,17 +269,53 @@ void loadState() {
         std::getline(input, value, '\t'); profile.flight.parts = parseNumber(value, 0);
         std::getline(input, value, '\t'); profile.flight.station = parseNumber(value, 0);
         std::getline(input, value, '\t'); profile.flight.hull = std::clamp(parseNumber(value, 100), 0, 200);
-        std::getline(input, value, '\t'); profile.flight.maxHull = std::clamp(parseNumber(value, helion::flight::hullCapacity(profile.hullLevel)), 1, 200);
-        profile.flight.maxHull = helion::flight::hullCapacity(profile.hullLevel);
-        profile.flight.hull = std::min(profile.flight.hull, profile.flight.maxHull);
-        std::string objective;
-        if (std::getline(input, objective, '\t')) {
-          if (objective != "0" && objective != "1") throw std::runtime_error("malformed mission objective");
-          profile.missionOreMined = objective == "1";
-          std::string trailing;
-          if (std::getline(input, trailing)) throw std::runtime_error("unexpected persistence fields");
+        std::getline(input, value, '\t'); profile.flight.maxHull = parseNumber(value, 100);
+        std::vector<std::string> extensions;
+        while (std::getline(input, value, '\t')) extensions.push_back(value);
+        if (extensions.size() > 7) throw std::runtime_error("unexpected persistence fields");
+        if (!extensions.empty()) {
+          if (extensions[0] != "0" && extensions[0] != "1")
+            throw std::runtime_error("malformed mission objective");
+          profile.missionOreMined = extensions[0] == "1";
+        }
+        const bool hasSavedFuel = extensions.size() >= 2;
+        if (hasSavedFuel) profile.flight.fuel = parseDouble(extensions[1], -1);
+        else profile.flight.fuel = helion::flight::fuelCapacity(profile.engineLevel);
+        if (extensions.size() >= 3) {
+          profile.ownedModules.clear();
+          profile.fittedModules.fill("");
+          std::size_t start = 0;
+          while (start <= extensions[2].size()) {
+            const auto end = extensions[2].find(',', start);
+            const std::string id = extensions[2].substr(start, end == std::string::npos ? std::string::npos : end - start);
+            const auto* module = helion::loadout::find(id);
+            if (!module || id.empty() || ownsModule(profile, id))
+              throw std::runtime_error("malformed persisted module ownership");
+            profile.ownedModules.push_back(id);
+            if (end == std::string::npos) break;
+            start = end + 1;
+          }
+          if (profile.ownedModules.empty()) throw std::runtime_error("malformed persisted module ownership");
+        }
+        for (std::size_t slot = 0; slot < helion::loadout::kSlotCount && extensions.size() >= slot + 4; ++slot) {
+          const std::string& id = extensions[slot + 3];
+          if (id.empty()) {
+            profile.fittedModules[slot].clear();
+            continue;
+          }
+          const auto* module = helion::loadout::find(id);
+          if (!module || helion::loadout::slotIndex(module->slot) != slot || !ownsModule(profile, id))
+            throw std::runtime_error("malformed persisted module fitting");
+          profile.fittedModules[slot] = id;
         }
         if (profile.missionStage == 2) profile.missionOreMined = false;
+        if (profile.flight.cargo < 0 || profile.flight.food < 0 || profile.flight.parts < 0 ||
+            profile.flight.cargo + profile.flight.food + profile.flight.parts > helion::flight::kCargoCapacity ||
+            profile.flight.station < 0 || profile.flight.station >= static_cast<int>(helion::flight::kStations.size()) ||
+            profile.flight.fuel < 0) throw std::runtime_error("malformed persisted ship state");
+        refreshDerivedShipState(profile);
+        if (profile.flight.fuel > profile.flight.maxFuel)
+          throw std::runtime_error("malformed persisted fuel state");
         profile.flight.inputAge = 1;
         if (!profiles.emplace(decode(first), std::move(profile)).second)
           throw std::runtime_error("duplicate profile in persistence file");
@@ -283,6 +374,11 @@ std::string stateLine() {
   return out.str();
 }
 
+void appendFlightState(std::vector<std::string>& responses, const Profile& profile) {
+  responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+  responses.push_back(helion::flight::fuelLine(profile.flight));
+}
+
 void broadcast(const std::string& line) {
   std::vector<int> recipients;
   {
@@ -320,7 +416,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR REFUEL OUTFIT LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -447,10 +543,13 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 " experience=" + std::to_string(profile.experience) +
                 " hull=" + std::to_string(profile.flight.hull) +
                 " max-hull=" + std::to_string(profile.flight.maxHull) +
+                " fuel=" + std::to_string(profile.flight.fuel) +
+                " max-fuel=" + std::to_string(profile.flight.maxFuel) +
                 " engine-level=" + std::to_string(profile.engineLevel) +
                 " hull-level=" + std::to_string(profile.hullLevel) +
                 " mission-stage=" + std::to_string(profile.missionStage) +
-                " mission-ore-mined=" + std::to_string(profile.missionOreMined);
+                " mission-ore-mined=" + std::to_string(profile.missionOreMined) +
+                " " + loadoutLine(profile);
             }
           }
           sendLine(fd, response);
@@ -497,6 +596,120 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           }
         }
         sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::refuel ||
+                 request.command == helion::protocol::Command::outfit) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          if (request.command == helion::protocol::Command::refuel) {
+            if (!profile.flight.docked) responses.push_back("ERR dock-required");
+            else {
+              const auto before = profile;
+              const bool dirtyBefore = flightStateDirty;
+              helion::flight::FuelTransaction transaction;
+              const auto result = helion::flight::refuel(profile.flight, profile.credits, &transaction);
+              if (result.rfind("OK", 0) == 0) {
+                try { persistStateLocked(); }
+                catch (const std::exception& error) {
+                  profile = before;
+                  flightStateDirty = dirtyBefore;
+                  responses.push_back("ERR persistence-failed");
+                  std::cerr << error.what() << '\n';
+                }
+              }
+              if (responses.empty()) {
+                responses.push_back(result);
+                if (result.rfind("OK", 0) == 0)
+                  responses.push_back(helion::flight::fuelTransactionLine(transaction));
+              }
+            }
+            appendFlightState(responses, profile);
+          } else if (request.first == "LIST") {
+            responses.push_back(loadoutLine(profile));
+          } else if (!profile.flight.docked) {
+            responses.push_back("ERR dock-required");
+          } else {
+            const auto* module = helion::loadout::find(request.second);
+            helion::loadout::Slot slot = helion::loadout::Slot::mining;
+            bool validSlot = true;
+            if (request.first == "REMOVE") {
+              if (request.second == "mining") slot = helion::loadout::Slot::mining;
+              else if (request.second == "engine") slot = helion::loadout::Slot::engine;
+              else if (request.second == "defense") slot = helion::loadout::Slot::defense;
+              else if (request.second == "weapon") slot = helion::loadout::Slot::weapon;
+              else validSlot = false;
+              if (!validSlot) responses.push_back("ERR unknown-slot");
+              else if (profile.fittedModules[helion::loadout::slotIndex(slot)].empty()) responses.push_back("ERR slot-empty");
+              else {
+                const auto before = profile;
+                const bool dirtyBefore = flightStateDirty;
+                profile.fittedModules[helion::loadout::slotIndex(slot)].clear();
+                refreshDerivedShipState(profile);
+                try {
+                  persistStateLocked();
+                  responses.push_back("OK MODULE REMOVED slot=" + request.second);
+                } catch (const std::exception& error) {
+                  profile = before;
+                  flightStateDirty = dirtyBefore;
+                  responses.push_back("ERR persistence-failed");
+                  std::cerr << error.what() << '\n';
+                }
+              }
+            } else if (!module) {
+              responses.push_back("ERR unknown-module");
+            } else if (request.first == "BUY") {
+              if (ownsModule(profile, request.second)) responses.push_back("ERR module-owned");
+              else if (profile.credits < module->price) responses.push_back("ERR insufficient-credits");
+              else {
+                const auto before = profile;
+                const bool dirtyBefore = flightStateDirty;
+                profile.credits -= module->price;
+                profile.ownedModules.push_back(module->id);
+                try {
+                  persistStateLocked();
+                  responses.push_back("OK MODULE BOUGHT module=" + std::string(module->id) +
+                                     " slot=" + helion::loadout::slotName(module->slot) +
+                                     " cost=" + std::to_string(module->price));
+                  responses.push_back("TRANSACTION MODULE_PURCHASE module=" + std::string(module->id) +
+                                     " slot=" + helion::loadout::slotName(module->slot) +
+                                     " credits=" + std::to_string(module->price));
+                } catch (const std::exception& error) {
+                  profile = before;
+                  flightStateDirty = dirtyBefore;
+                  responses.push_back("ERR persistence-failed");
+                  std::cerr << error.what() << '\n';
+                }
+              }
+            } else if (request.first == "FIT") {
+              if (!ownsModule(profile, request.second)) responses.push_back("ERR module-not-owned");
+              else if (profile.fittedModules[helion::loadout::slotIndex(module->slot)] == module->id)
+                responses.push_back("ERR module-already-fitted");
+              else {
+                const auto before = profile;
+                const bool dirtyBefore = flightStateDirty;
+                profile.fittedModules[helion::loadout::slotIndex(module->slot)] = module->id;
+                refreshDerivedShipState(profile);
+                try {
+                  persistStateLocked();
+                  responses.push_back("OK MODULE FIT module=" + std::string(module->id) +
+                                     " slot=" + helion::loadout::slotName(module->slot));
+                } catch (const std::exception& error) {
+                  profile = before;
+                  flightStateDirty = dirtyBefore;
+                  responses.push_back("ERR persistence-failed");
+                  std::cerr << error.what() << '\n';
+                }
+              }
+            } else {
+              responses.push_back("ERR invalid-outfit-action");
+            }
+            responses.push_back(loadoutLine(profile));
+            appendFlightState(responses, profile);
+          }
+        }
+        for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::upgrade || request.command == helion::protocol::Command::repair) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
         std::vector<std::string> responses;
@@ -518,7 +731,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               }
             }
             if (responses.empty()) responses.push_back(result);
-            responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+            appendFlightState(responses, profile);
           } else {
             int& level = request.first == "hull" ? profile.hullLevel : profile.engineLevel;
             const int cost = level * 500;
@@ -529,7 +742,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               const bool dirtyBefore = flightStateDirty;
               profile.credits -= cost;
               ++level;
-              profile.flight.maxHull = helion::flight::hullCapacity(profile.hullLevel);
+              refreshDerivedShipState(profile);
               try {
                 persistStateLocked();
                 responses.push_back("OK UPGRADE " + request.first + " level=" + std::to_string(level) + " cost=" + std::to_string(cost));
@@ -540,7 +753,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 std::cerr << error.what() << '\n';
               }
             }
-            responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+            appendFlightState(responses, profile);
           }
         }
         for (const auto& response : responses) sendLine(fd, response);
@@ -577,7 +790,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               }
             }
             if (responses.empty()) responses.push_back(result);
-            responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+            appendFlightState(responses, profile);
           }
         }
         for (const auto& response : responses) sendLine(fd, response);
@@ -601,10 +814,16 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             const bool dirtyBefore = flightStateDirty;
             const bool docking = request.command == helion::protocol::Command::dock;
             helion::flight::DockTransaction transaction;
-            std::string result = request.command == helion::protocol::Command::launch ? helion::flight::launch(flight) :
-              request.command == helion::protocol::Command::mine ? helion::flight::mine(flight) :
-              helion::flight::dock(flight, profile.credits, profile.experience,
-                                   docking ? &transaction : nullptr);
+            std::string result;
+            if (request.command == helion::protocol::Command::launch) result = helion::flight::launch(flight);
+            else if (request.command == helion::protocol::Command::mine) {
+              const auto* mining = fittedModule(profile, helion::loadout::Slot::mining);
+              result = mining ? helion::flight::mine(flight, true, mining->miningCooldownMultiplier) :
+                "ERR mining-module-required";
+            } else {
+              result = helion::flight::dock(flight, profile.credits, profile.experience,
+                                            docking ? &transaction : nullptr);
+            }
             if (result.rfind("OK", 0) == 0) {
               if (request.command == helion::protocol::Command::mine && profile.missionStage == 1)
                 profile.missionOreMined = true;
@@ -622,7 +841,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 responses.push_back(helion::flight::dockTransactionLine(transaction));
             }
           }
-          responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
+          appendFlightState(responses, profile);
         }
         for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::state) {
@@ -725,9 +944,12 @@ int main(int argc, char** argv) {
       while (accumulator >= 1.0 / 60) {
         for (auto& entry : profiles) {
           const auto before = entry.second.flight;
-          helion::flight::step(entry.second.flight, 1.0 / 60, entry.second.engineLevel);
+          const auto* engine = fittedModule(entry.second, helion::loadout::Slot::engine);
+          const double fuelMultiplier = engine ? engine->fuelConsumptionMultiplier : 1.0;
+          helion::flight::step(entry.second.flight, 1.0 / 60, entry.second.engineLevel, fuelMultiplier);
           if (!entry.second.flight.docked || before.docked != entry.second.flight.docked ||
-              before.hull != entry.second.flight.hull || before.cargo != entry.second.flight.cargo) {
+              before.hull != entry.second.flight.hull || before.cargo != entry.second.flight.cargo ||
+              before.fuel != entry.second.flight.fuel) {
             flightStateDirty = true;
           }
         }

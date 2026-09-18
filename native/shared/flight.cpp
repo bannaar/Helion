@@ -14,14 +14,25 @@ int nearestStation(const State& s) {
 }
 double speed(const State& s) { return std::hypot(s.vx, s.vy); }
 
-void step(State& s, double dt, int engineLevel) {
+void step(State& s, double dt, int engineLevel, double fuelConsumptionMultiplier) {
   if (!std::isfinite(dt) || dt <= 0) return;
   dt = std::min(dt, 0.05);
   s.cooldown = std::max(0.0, s.cooldown - dt);
   s.inputAge += dt;
   if (s.docked) return;
   // Missing input (disconnect, console, lost focus) engages flight assist.
-  const Input input = s.inputAge <= 0.5 ? s.input : Input{0, 0, 1};
+  Input input = s.inputAge <= 0.5 ? s.input : Input{0, 0, 1};
+  const double fuelMultiplier = std::clamp(fuelConsumptionMultiplier, 0.25, 2.0);
+  const double fuelBurn = input.thrust ? dt * kFuelBurnPerSecond * fuelMultiplier : 0;
+  if (fuelBurn > 0) {
+    if (s.fuel <= 0 || s.fuel < fuelBurn) {
+      s.fuel = 0;
+      input.thrust = 0;
+      input.brake = 1;
+    } else {
+      s.fuel -= fuelBurn;
+    }
+  }
   s.yaw = std::remainder(s.yaw + input.turn * 2.2 * dt, 2 * kPi);
   const double engineMultiplier = 1.0 + 0.12 * (std::clamp(engineLevel, 1, 5) - 1);
   const double acceleration = input.brake ? 0 : input.thrust * 130.0 * engineMultiplier;
@@ -73,23 +84,30 @@ int nearestRock(const State& s) {
 std::string launch(State& s) {
   if (!s.docked) return "ERR already-in-flight";
   if (s.hull <= 0) return "ERR repair-required";
+  if (!std::isfinite(s.fuel) || !std::isfinite(s.maxFuel) || s.fuel < 0 || s.maxFuel < 1 || s.fuel > s.maxFuel)
+    return "ERR invalid-fuel-state";
+  if (s.fuel <= 0) return "ERR insufficient-fuel";
   const int food=s.food, parts=s.parts, station=s.station, hull=s.hull, maxHull=s.maxHull;
+  const double fuel=s.fuel, maxFuel=s.maxFuel;
   s = State{};
   s.food=food; s.parts=parts; s.station=station; s.hull=hull; s.maxHull=maxHull;
+  s.fuel=fuel; s.maxFuel=maxFuel;
   s.docked = false;
   s.x=kStations[station].x; s.y=kStations[station].y+100;
   return "OK LAUNCHED";
 }
 
-std::string mine(State& s) {
+std::string mine(State& s, bool miningEnabled, double cooldownMultiplier) {
   if (s.docked) return "ERR launch-required";
+  if (!miningEnabled) return "ERR mining-module-required";
+  if (!std::isfinite(cooldownMultiplier) || cooldownMultiplier <= 0) return "ERR invalid-mining-module";
   if (cargoUsed(s) >= kCargoCapacity) return "ERR cargo-full";
   if (speed(s) > kWorkSpeed) return "ERR slow-down";
   const Rock& rock = kRocks[nearestRock(s)];
   if (std::hypot(s.x - rock.x, s.y - rock.y) > kMineRange) return "ERR asteroid-out-of-range";
   if (s.cooldown > 0) return "ERR mining-cooldown";
   ++s.cargo;
-  s.cooldown = 1.25;
+  s.cooldown = 1.25 * std::clamp(cooldownMultiplier, 0.5, 2.0);
   return "OK MINED cargo=" + std::to_string(s.cargo);
 }
 
@@ -108,10 +126,99 @@ std::string dock(State& s, int& credits, int& experience, DockTransaction* trans
   credits += earned;
   experience += experienceEarned;
   const int food=s.food, parts=s.parts, hull=s.hull, maxHull=s.maxHull;
+  const double fuel=s.fuel, maxFuel=s.maxFuel;
   s = State{};
   s.food=food; s.parts=parts; s.station=station; s.hull=hull; s.maxHull=maxHull;
+  s.fuel=fuel; s.maxFuel=maxFuel;
   s.x=kStations[station].x; s.y=kStations[station].y;
   return "OK DOCKED earned=" + std::to_string(earned);
+}
+
+int fuelCapacity(int engineLevel) {
+  return 100 + (std::clamp(engineLevel, 1, 5) - 1) * 20;
+}
+
+std::string refuel(State& s, int& credits, FuelTransaction* transaction) {
+  if (!s.docked) return "ERR dock-required";
+  if (!std::isfinite(s.fuel) || !std::isfinite(s.maxFuel) || s.fuel < 0 || s.maxFuel < 1 || s.fuel > s.maxFuel)
+    return "ERR invalid-fuel-state";
+  if (s.fuel >= s.maxFuel - 0.000001) return "ERR fuel-full";
+  const int station = std::clamp(s.station, 0, static_cast<int>(kStations.size()) - 1);
+  const double amount = s.maxFuel - s.fuel;
+  const int units = static_cast<int>(std::ceil(amount));
+  const int price = kStations[station].fuelPrice;
+  if (units <= 0 || units > std::numeric_limits<int>::max() / price) return "ERR profile-limit";
+  const int cost = units * price;
+  if (credits < cost) return "ERR insufficient-credits";
+  if (transaction) *transaction = {station, amount, price, cost, s.maxFuel, s.maxFuel};
+  credits -= cost;
+  s.fuel = s.maxFuel;
+  return "OK REFUELED amount=" + std::to_string(units) + " cost=" + std::to_string(cost);
+}
+
+std::string fuelTransactionLine(const FuelTransaction& transaction) {
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(2)
+      << "TRANSACTION REFUEL station=" << transaction.station
+      << " amount=" << transaction.fuelAdded
+      << " unit-price=" << transaction.unitPrice
+      << " credits=" << transaction.creditsSpent
+      << " fuel=" << transaction.fuelAfter
+      << " max-fuel=" << transaction.maxFuel;
+  return out.str();
+}
+
+bool readFuelTransaction(const std::string& line, FuelTransaction& transaction) {
+  std::istringstream in(line);
+  std::string tag, kind, station, amount, unitPrice, credits, fuel, maxFuel, extra;
+  FuelTransaction next;
+  if (!(in >> tag >> kind >> station >> amount >> unitPrice >> credits >> fuel >> maxFuel) ||
+      (in >> extra) || tag != "TRANSACTION" || kind != "REFUEL") return false;
+  const auto parseIntField = [](const std::string& field, const char* name, int& value) {
+    const std::string prefix = std::string(name) + "=";
+    if (field.rfind(prefix, 0) != 0 || field.size() == prefix.size()) return false;
+    std::size_t used = 0;
+    try { value = std::stoi(field.substr(prefix.size()), &used); }
+    catch (...) { return false; }
+    return used == field.size() - prefix.size();
+  };
+  const auto parseDoubleField = [](const std::string& field, const char* name, double& value) {
+    const std::string prefix = std::string(name) + "=";
+    if (field.rfind(prefix, 0) != 0 || field.size() == prefix.size()) return false;
+    std::size_t used = 0;
+    try { value = std::stod(field.substr(prefix.size()), &used); }
+    catch (...) { return false; }
+    return used == field.size() - prefix.size() && std::isfinite(value);
+  };
+  if (!parseIntField(station, "station", next.station) ||
+      !parseDoubleField(amount, "amount", next.fuelAdded) ||
+      !parseIntField(unitPrice, "unit-price", next.unitPrice) ||
+      !parseIntField(credits, "credits", next.creditsSpent) ||
+      !parseDoubleField(fuel, "fuel", next.fuelAfter) ||
+      !parseDoubleField(maxFuel, "max-fuel", next.maxFuel)) return false;
+  if (next.station < 0 || next.station >= static_cast<int>(kStations.size()) || next.fuelAdded <= 0 ||
+      next.fuelAdded > 1000 || next.unitPrice <= 0 || next.unitPrice > 1000 || next.creditsSpent <= 0 ||
+      next.fuelAfter < 0 || next.maxFuel < 1 || next.fuelAfter > next.maxFuel) return false;
+  transaction = next;
+  return true;
+}
+
+std::string fuelLine(const State& s) {
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(2) << "FUEL " << s.fuel << ' ' << s.maxFuel;
+  return out.str();
+}
+
+bool readFuelLine(const std::string& line, State& s) {
+  std::istringstream in(line);
+  std::string kind, extra;
+  double fuel = 0, maxFuel = 0;
+  if (!(in >> kind >> fuel >> maxFuel) || (in >> extra) || kind != "FUEL" ||
+      !std::isfinite(fuel) || !std::isfinite(maxFuel) || fuel < 0 || maxFuel < 1 || fuel > maxFuel ||
+      maxFuel > 1000) return false;
+  s.fuel = fuel;
+  s.maxFuel = maxFuel;
+  return true;
 }
 
 std::string dockTransactionLine(const DockTransaction& transaction) {

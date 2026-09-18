@@ -205,6 +205,27 @@ int main(int argc, char** argv) {
   check(tlsSend(first, login.data(), login.size(), 0) == static_cast<ssize_t>(login.size()), "send legacy login");
   check(receiveUntil(first, "OK LOGIN").find("OK LOGIN user=pilot") != std::string::npos,
         "legacy persistence without mission objective field loads");
+  check(flightState(first).docked, "legacy commander starts docked");
+  command(first,"LAUNCH","OK LAUNCHED");
+  command(first,"INPUT 1 0 0","FLIGHT ");
+  usleep(200000);
+  const auto pilotFlightProfile = command(first,"PROFILE","PROFILE");
+  check(pilotFlightProfile.find("max-fuel=100") != std::string::npos &&
+        pilotFlightProfile.find(" fuel=100") == std::string::npos,
+        "authoritative thrust consumes fuel");
+  flyTo(first,0,35);
+  command(first,"DOCK","TRANSACTION DOCK_SALE");
+  check(command(first,"REFUEL","TRANSACTION REFUEL").find("OK REFUELED") != std::string::npos,
+        "docked commander can purchase server-priced fuel");
+  check(command(first,"OUTFIT BUY engine-efficient","TRANSACTION MODULE_PURCHASE").find("credits=700") != std::string::npos,
+        "server prices module purchase");
+  command(first,"OUTFIT FIT engine-efficient","OK MODULE FIT");
+  command(first,"OUTFIT FIT pulse-laser","ERR module-not-owned");
+  expectPersistenceFailure(first,"OUTFIT BUY pulse-laser");
+  check(command(first,"OUTFIT LIST","LOADOUT").find("pulse-laser") == std::string::npos,
+        "failed module purchase rolls back ownership");
+  check(command(first,"OUTFIT LIST","LOADOUT").find("fitted-engine=engine-efficient") != std::string::npos,
+        "module fit is visible");
   const std::string create = "CREATE explorer synthetic-password Explorer One\n";
   check(tlsSend(first, create.data(), create.size(), 0) == static_cast<ssize_t>(create.size()), "create durable profile");
   check(receiveUntil(first, "OK CREATED").find("OK CREATED user=explorer") != std::string::npos,
@@ -287,6 +308,15 @@ int main(int argc, char** argv) {
     }
   }
   check(replacement >= 0, "slot released after disconnect");
+  check(tlsSend(replacement, login.data(), login.size(), 0) == static_cast<ssize_t>(login.size()),
+        "reconnect legacy commander");
+  check(receiveUntil(replacement, "OK LOGIN").find("OK LOGIN user=pilot") != std::string::npos,
+        "reconnected commander authenticates");
+  const auto restoredPilot = command(replacement,"PROFILE","PROFILE");
+  check(restoredPilot.find("credits=1500") == std::string::npos &&
+        restoredPilot.find(" fuel=100") != std::string::npos &&
+        restoredPilot.find("fitted-engine=engine-efficient") != std::string::npos,
+        "fuel and loadout survive reconnect");
   closeConnection(replacement);
 
   kill(child, SIGTERM);
@@ -502,7 +532,15 @@ int main(int argc, char** argv) {
   std::string oldFormat = content;
   const auto oldRecord = oldFormat.find("H\texplorer\t");
   const auto oldEnd = oldFormat.find('\n', oldRecord);
-  const auto oldObjectiveField = oldFormat.rfind('\t', oldEnd - 1);
+  const auto fieldTab = [](const std::string& source, std::size_t record, std::size_t field) {
+    auto position = record;
+    for (std::size_t index = 0; index < field; ++index) {
+      position = source.find('\t', position + 1);
+      if (position == std::string::npos) return position;
+    }
+    return position;
+  };
+  const auto oldObjectiveField = fieldTab(oldFormat, oldRecord, 23);
   check(oldRecord != std::string::npos && oldEnd != std::string::npos &&
         oldObjectiveField != std::string::npos && oldObjectiveField > oldRecord,
         "find old-format mission objective field");
@@ -537,7 +575,7 @@ int main(int argc, char** argv) {
   std::string invalidObjective = content;
   const auto invalidRecord = invalidObjective.find("H\texplorer\t");
   const auto invalidEnd = invalidObjective.find('\n', invalidRecord);
-  const auto objectiveField = invalidObjective.rfind('\t', invalidEnd - 1);
+  const auto objectiveField = fieldTab(invalidObjective, invalidRecord, 23);
   check(invalidRecord != std::string::npos && invalidEnd != std::string::npos &&
         objectiveField != std::string::npos && objectiveField > invalidRecord,
         "find mission objective field");

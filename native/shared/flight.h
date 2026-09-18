@@ -7,6 +7,8 @@ namespace helion::flight {
 constexpr double kPi = 3.141592653589793;
 constexpr int kCargoCapacity = 8;
 constexpr int kOrePrice = 60;
+constexpr double kStartingFuel = 100.0;
+constexpr double kFuelBurnPerSecond = 0.8;
 constexpr double kMineRange = 85;
 constexpr double kDockRange = 85;
 constexpr double kWorkSpeed = 35;
@@ -15,9 +17,9 @@ inline constexpr std::array<Rock, 7> kRocks{{
   {0, 280, 30}, {170, 340, 38}, {-190, 380, 24},
   {330, 140, 42}, {-330, 80, 36}, {150, -300, 32}, {-230, -270, 28}
 }};
-struct Station { const char* name; double x, y; int foodBuy, foodSell, partsBuy, partsSell, oreSell; };
+struct Station { const char* name; double x, y; int foodBuy, foodSell, partsBuy, partsSell, oreSell, fuelPrice; };
 inline constexpr std::array<Station,2> kStations{{
-  {"KEPLER",0,0,20,16,65,52,60}, {"CINDER",650,0,40,32,40,32,75}
+  {"KEPLER",0,0,20,16,65,52,60,2}, {"CINDER",650,0,40,32,40,32,75,3}
 }};
 struct Contact { std::string id, kind; double x=0, y=0, yaw=0; bool docked=false; };
 std::string contactLine(const Contact& contact);
@@ -33,6 +35,7 @@ struct State {
   bool docked = true;
   int cargo = 0, food = 0, parts = 0, station = 0;
   int hull = 100, maxHull = 100;
+  double fuel = kStartingFuel, maxFuel = kStartingFuel;
 };
 struct DockTransaction {
   int station = 0;
@@ -41,17 +44,31 @@ struct DockTransaction {
   int creditsEarned = 0;
   int experienceEarned = 0;
 };
-void step(State& state, double dt, int engineLevel = 1);
+struct FuelTransaction {
+  int station = 0;
+  double fuelAdded = 0;
+  int unitPrice = 0;
+  int creditsSpent = 0;
+  double fuelAfter = 0;
+  double maxFuel = 0;
+};
+void step(State& state, double dt, int engineLevel = 1, double fuelConsumptionMultiplier = 1.0);
 double speed(const State& state);
 int nearestRock(const State& state);
 int nearestStation(const State& state);
 int cargoUsed(const State& state);
 std::string trade(State& state, int& credits, bool buying, const std::string& commodity, int quantity);
 std::string launch(State& state);
-std::string mine(State& state);
+std::string mine(State& state, bool miningEnabled = true, double cooldownMultiplier = 1.0);
 std::string dock(State& state, int& credits, int& experience, DockTransaction* transaction = nullptr);
 std::string dockTransactionLine(const DockTransaction& transaction);
 bool readDockTransaction(const std::string& line, DockTransaction& transaction);
+std::string refuel(State& state, int& credits, FuelTransaction* transaction = nullptr);
+std::string fuelTransactionLine(const FuelTransaction& transaction);
+bool readFuelTransaction(const std::string& line, FuelTransaction& transaction);
+std::string fuelLine(const State& state);
+bool readFuelLine(const std::string& line, State& state);
+int fuelCapacity(int engineLevel);
 int hullCapacity(int hullLevel);
 std::string repair(State& state, int& credits, int hullLevel = 1);
 std::string snapshot(const State& state, int credits, int experience);

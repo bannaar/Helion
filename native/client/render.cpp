@@ -200,7 +200,10 @@ void render(int width, int height, const View& v) {
   rect(20,92,254,107,panel); text(34,106,"FLIGHT CONTRACT",teal,1.5f);
   text(34,132,v.ship.docked ? "01 / LAUNCH FROM KEPLER" : v.ship.cargo==0 ? "02 / EXTRACT ORE" : "03 / RETURN AND SELL",white,1.5f);
   text(34,155,"ORE VALUE / 60 CR PER UNIT",muted,1.5f);
-  text(34,178,"B BUY FOOD / CONSOLE MARKET",amber,1.5f);
+  const int displayedFuel=std::max(0,static_cast<int>(std::ceil(v.ship.fuel)));
+  const int displayedMaxFuel=std::max(1,static_cast<int>(std::ceil(v.ship.maxFuel)));
+  text(34,178,"FUEL / "+std::to_string(displayedFuel)+" OF "+std::to_string(displayedMaxFuel),
+       v.ship.fuel < v.ship.maxFuel*0.2 ? amber : muted,1.5f);
   // Sector radar and a station vector always remain visible when flying away.
   if (v.showTelemetry) rect(788,92,152,152,panel);
   if (v.showTelemetry) text(800,103,"SECTOR SCAN",muted,1.5f);
@@ -222,14 +225,15 @@ void render(int width, int height, const View& v) {
   text(24,bottom+96,std::to_string(v.ship.hull)+" / "+std::to_string(v.ship.maxHull),hullBars<=2 ? amber : white,1.5f);
   const double range=std::hypot(v.ship.x-target.x,v.ship.y-target.y);
   text(392,bottom+16,"ORE TARGET / "+std::to_string(static_cast<int>(range))+" M",muted,1.5f);
-  std::string prompt=v.ship.docked ? (v.ship.hull<v.ship.maxHull ? "[R] REPAIR HULL" : "[L] LAUNCH") :
+  std::string prompt=v.ship.docked ? (v.ship.hull<v.ship.maxHull ? "[R] REPAIR HULL" :
+    v.ship.fuel<v.ship.maxFuel ? "[T] REFUEL / [L] LAUNCH" : "[L] LAUNCH") :
     v.ship.cargo==8 ? "HOLD FULL / RETURN TO BASE" :
     range>flight::kMineRange ? "APPROACH TO 85 M" : flight::speed(v.ship)>flight::kWorkSpeed ? "[S] BRAKE TO MINE" :
     v.ship.cooldown>0 ? "EXTRACTOR RECHARGING" : "[E] EXTRACT ORE";
   if (!v.ship.docked && std::hypot(v.ship.x,v.ship.y)<=flight::kDockRange)
     prompt=flight::speed(v.ship)>flight::kWorkSpeed ? "[S] BRAKE TO DOCK" : "[F] DOCK AND SELL ORE";
   text(392,bottom+39,prompt,teal,1.5f);
-  text(185,bottom+77,"W THRUST   A/D TURN   S BRAKE   E MINE   F DOCK   L LAUNCH   R REPAIR   B TRADE   ENTER COMMS",muted,1.5f);
+  text(185,bottom+77,"W THRUST   A/D TURN   S BRAKE   E MINE   F DOCK   L LAUNCH   T REFUEL   U OUTFIT",muted,1.5f);
   if (!v.log.empty() && !v.console) {
     rect(20,bottom-37,740,26,panel); text(30,bottom-30,v.log.back().substr(0,78),amber,1.5f);
   }

@@ -9,10 +9,14 @@ path.
 Graphics capability negotiation is isolated in the native client boundary. The
 fixed-function renderer requests OpenGL 3.0 compatibility first and falls back
 to OpenGL 2.1 compatibility. OpenGL 3.3 core is deliberately not selected by
-the current renderer; a future core-profile path would require shaders and a
-separate renderer migration. Runtime reports distinguish actual vendor,
-renderer, profile, and software/hardware classification from the requested
-context.
+normal gameplay; the experimental core diagnostic renderer requests OpenGL
+3.3 core explicitly and never passes a core context to fixed-function code.
+Runtime reports distinguish actual vendor, renderer, profile, and
+software/hardware classification from the requested context. Context request,
+modern function loading, shader/program ownership, buffer ownership, transform
+math, and the diagnostic scene are separate from the legacy gameplay renderer.
+The core path can be made the normal renderer only after gameplay-rendering
+parity is reached.
 
 ## Current compatibility boundary
 

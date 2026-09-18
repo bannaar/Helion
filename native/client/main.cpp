@@ -19,6 +19,7 @@
 #include "shared/protocol.h"
 #include "shared/organizations.h"
 #include "client/render.h"
+#include "client/core_renderer.h"
 #include "client/graphics_runtime.h"
 #include "shared/tls.h"
 
@@ -111,6 +112,7 @@ int terminalClient(int fd, helion::tls::Connection& connection) {
 int main(int argc,char** argv) {
   std::signal(SIGPIPE, SIG_IGN);
   bool renderCheck=false, graphicsInfo=false, terminal=false;
+  helion::graphics::RendererMode rendererMode = helion::graphics::RendererMode::auto_mode;
   std::string host="127.0.0.1", port="4242", caFile, renderPath;
   int positional=0;
   try {
@@ -118,6 +120,10 @@ int main(int argc,char** argv) {
       const std::string arg=argv[i];
       if(arg=="--terminal") terminal=true;
       else if(arg=="--graphics-info") graphicsInfo=true;
+      else if(arg=="--renderer" && i+1<argc) {
+        if(!helion::graphics::parseRendererMode(argv[++i],rendererMode))
+          throw std::runtime_error("unknown renderer; use auto, legacy, or core");
+      }
       else if(arg=="--ca" && i+1<argc) caFile=argv[++i];
       else if(arg=="--render-check" && i+1<argc) { renderCheck=true; renderPath=argv[++i]; }
       else if(arg.rfind("--",0)==0) throw std::runtime_error("unknown or incomplete option");
@@ -126,13 +132,18 @@ int main(int argc,char** argv) {
       else throw std::runtime_error("too many arguments");
     }
   } catch(const std::exception& error) {
-    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info]\n"; return 2;
+    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info] [--renderer auto|legacy|core]\n"; return 2;
   }
-  const int fd=(renderCheck || graphicsInfo) ? -1 : connectTo(host,port);
-  if(!renderCheck && !graphicsInfo && fd<0) { std::cerr<<"Unable to connect to "<<host<<':'<<port<<'\n'; return 1; }
+  if (terminal && rendererMode == helion::graphics::RendererMode::core) {
+    std::cerr << "--terminal cannot be used with the diagnostic core renderer\n";
+    return 2;
+  }
+  const bool noConnection = renderCheck || graphicsInfo || rendererMode == helion::graphics::RendererMode::core;
+  const int fd=noConnection ? -1 : connectTo(host,port);
+  if(!noConnection && fd<0) { std::cerr<<"Unable to connect to "<<host<<':'<<port<<'\n'; return 1; }
   helion::tls::Context tlsContext(nullptr,SSL_CTX_free);
   std::unique_ptr<helion::tls::Connection> connection;
-  if(!renderCheck && !graphicsInfo) {
+  if(!noConnection) {
     try {
       tlsContext=helion::tls::clientContext(caFile);
       connection=std::make_unique<helion::tls::Connection>(tlsContext.get(),fd);
@@ -141,13 +152,31 @@ int main(int argc,char** argv) {
       std::cerr<<error.what()<<'\n'; close(fd); return 1;
     }
   }
-  if(terminal && !graphicsInfo) {
+  if(terminal && !noConnection) {
     if(!connection) return 2;
     const int result=terminalClient(fd,*connection);
     connection->closeNotify(); shutdown(fd,SHUT_RDWR); close(fd); return result;
   }
   if(SDL_Init(SDL_INIT_VIDEO)!=0) { std::cerr<<SDL_GetError()<<'\n'; if(fd>=0) close(fd); return 1; }
-  auto graphics = helion::client::createGraphicsContext("Helion / Kepler Reach", 960, 600, renderCheck || graphicsInfo);
+  bool coreProbeAvailable = false;
+  if (rendererMode == helion::graphics::RendererMode::auto_mode) {
+    auto coreProbe = helion::client::createCoreGraphicsContext("Helion core capability probe", 16, 16, true);
+    coreProbeAvailable = coreProbe.result.selected;
+    if (coreProbeAvailable) helion::client::destroyGraphicsContext(coreProbe);
+    std::cout << "GRAPHICS CORE-PROBE available=" << (coreProbeAvailable ? "yes" : "no")
+              << (coreProbe.result.error.empty() ? "" : " error=" + coreProbe.result.error) << '\n';
+  }
+  const auto selection = helion::graphics::selectRenderer(
+    rendererMode, rendererMode == helion::graphics::RendererMode::core ? true : coreProbeAvailable);
+  if (!selection.error.empty()) {
+    std::cerr << selection.error << '\n';
+    SDL_Quit();
+    if(fd>=0) close(fd);
+    return 1;
+  }
+  auto graphics = rendererMode == helion::graphics::RendererMode::core
+    ? helion::client::createCoreGraphicsContext("Helion / Core diagnostic", 960, 600, renderCheck || graphicsInfo)
+    : helion::client::createGraphicsContext("Helion / Kepler Reach", 960, 600, renderCheck || graphicsInfo);
   if(!graphics.result.selected) {
     std::cerr << helion::graphics::diagnosticLine(graphics.result) << '\n';
     helion::client::destroyGraphicsContext(graphics);
@@ -157,6 +186,53 @@ int main(int argc,char** argv) {
   }
   std::cout << helion::graphics::diagnosticLine(graphics.result) << '\n';
   SDL_Window* window=graphics.window;
+  if (rendererMode == helion::graphics::RendererMode::core) {
+    helion::client::CoreRenderer coreRenderer;
+    std::string coreError;
+    if (!coreRenderer.initialize(coreError)) {
+      std::cerr << "CORE-RENDERER initialization failed: " << coreError << '\n';
+      coreRenderer.release();
+      helion::client::destroyGraphicsContext(graphics);
+      SDL_Quit();
+      return 1;
+    }
+    std::cout << "CORE-RENDERER shader=#version " << helion::client::kCoreShaderVersion
+              << " scene=ship-station-grid\n";
+    if (graphicsInfo) {
+      coreRenderer.release();
+      helion::client::destroyGraphicsContext(graphics);
+      SDL_Quit();
+      return 0;
+    }
+    SDL_SetWindowMinimumSize(window, 960, 600);
+    bool running = true;
+    while (running) {
+      SDL_Event event{};
+      while (SDL_PollEvent(&event)) if (event.type == SDL_QUIT) running = false;
+      int width = 0, height = 0;
+      SDL_GL_GetDrawableSize(window, &width, &height);
+      if (width > 0 && height > 0) {
+        if (!coreRenderer.render(width, height, renderCheck, coreError)) {
+          std::cerr << "CORE-RENDERER render failed: " << coreError << '\n';
+          running = false;
+        }
+        if (renderCheck) {
+          const bool saved = saveFrame(renderPath, width, height);
+          SDL_GL_SwapWindow(window);
+          coreRenderer.release();
+          helion::client::destroyGraphicsContext(graphics);
+          SDL_Quit();
+          return saved ? 0 : 1;
+        }
+        SDL_GL_SwapWindow(window);
+      }
+      SDL_Delay(8);
+    }
+    coreRenderer.release();
+    helion::client::destroyGraphicsContext(graphics);
+    SDL_Quit();
+    return 0;
+  }
   if(graphicsInfo) {
     helion::client::destroyGraphicsContext(graphics);
     SDL_Quit();

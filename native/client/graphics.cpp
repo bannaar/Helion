@@ -2,11 +2,20 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 
 namespace helion::graphics {
 namespace {
 bool atLeast(int major, int minor, int requiredMajor, int requiredMinor) {
   return major > requiredMajor || (major == requiredMajor && minor >= requiredMinor);
+}
+
+bool shadingLanguageAtLeast(std::string_view version, int requiredMajor, int requiredMinor) {
+  int major = 0;
+  int minor = 0;
+  const std::string value(version);
+  if (std::sscanf(value.c_str(), "%d.%d", &major, &minor) != 2) return false;
+  return atLeast(major, minor, requiredMajor, requiredMinor);
 }
 
 std::string lower(std::string_view value) {
@@ -89,6 +98,43 @@ std::string diagnosticLine(const GraphicsContextResult& result) {
     " glsl=" + (actual.shadingLanguageVersion.empty() ? "unavailable" : actual.shadingLanguageVersion);
   if (!result.selected) line += " error=" + result.error;
   return line;
+}
+
+bool parseRendererMode(std::string_view value, RendererMode& mode) {
+  if (value == "auto") mode = RendererMode::auto_mode;
+  else if (value == "legacy") mode = RendererMode::legacy;
+  else if (value == "core") mode = RendererMode::core;
+  else return false;
+  return true;
+}
+
+const char* rendererModeName(RendererMode mode) {
+  switch (mode) {
+    case RendererMode::auto_mode: return "auto";
+    case RendererMode::legacy: return "legacy";
+    case RendererMode::core: return "core";
+  }
+  return "unknown";
+}
+
+bool usableCoreContext(const GraphicsCapabilities& capabilities) {
+  return capabilities.complete && capabilities.profile == Profile::core &&
+    atLeast(capabilities.major, capabilities.minor, 3, 3) &&
+    shadingLanguageAtLeast(capabilities.shadingLanguageVersion, 3, 30);
+}
+
+RendererSelection selectRenderer(RendererMode requested, bool coreAvailable) {
+  RendererSelection result;
+  result.requested = requested;
+  result.coreAvailable = coreAvailable;
+  if (requested == RendererMode::core) {
+    if (!coreAvailable) result.error = "OpenGL 3.3 core renderer is unavailable";
+    else result.useCore = true;
+    return result;
+  }
+  // Auto deliberately remains legacy until the core renderer reaches gameplay parity.
+  result.useCore = false;
+  return result;
 }
 
 } // namespace helion::graphics

@@ -1,8 +1,9 @@
 # Helion standalone client
 
-The standalone client is an SDL2 application with a fixed-function OpenGL
-renderer. It is designed to run on Linux machines with OpenGL 2.1-class
-hardware, including Intel HD 3000-era integrated graphics.
+The standalone client is an SDL2 application with a fixed-function gameplay
+renderer and an experimental OpenGL 3.3 core diagnostic renderer. It is
+designed to run on Linux machines with OpenGL 2.1-class hardware, including
+Intel HD 3000-era integrated graphics.
 
 ## 1. Requirements
 
@@ -167,6 +168,40 @@ The client still uses double buffering, a resizable 960×600 window, and
 fixed-function projection and colored primitives. It does not require shaders,
 vertex buffer objects, VAOs, or OpenGL 3+ features. OpenGL 2.1 fallback remains
 fully playable.
+
+### Experimental core renderer
+
+Renderer selection is explicit:
+
+```sh
+./build-native/native/helion_client --renderer auto
+./build-native/native/helion_client --renderer legacy
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer core
+```
+
+`auto` probes for a core context for diagnostics but deliberately keeps normal
+gameplay on the proven legacy path. `legacy` always uses the 3.0 compatibility
+then 2.1 compatibility policy. `core` requests OpenGL 3.3 core, rejects a
+compatibility context, loads only the modern functions it needs through SDL,
+and opens a deterministic ship/station/grid diagnostic scene. It never falls
+back silently to the legacy renderer. An unknown renderer value is rejected.
+
+The core scene uses a `#version 330 core` position/color shader, a VAO and VBO,
+and a small model/view/projection transform. It is a compatibility and driver
+validation path, not the gameplay renderer: text, textures, models, and the
+full cockpit remain legacy work. Run a captured core frame on the verified
+desktop driver with:
+
+```sh
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client \
+  --renderer core --render-check /tmp/helion-core-hardware.bmp
+```
+
+The command must report the Intel HD 3000 hardware renderer, a 3.3 core
+context, successful shader setup, and a nonempty BMP. Software renderers such
+as llvmpipe are reported as software and do not count as hardware validation.
+The eventual gameplay renderer can prefer core only after feature parity;
+OpenGL 3.3 core requires shaders because fixed-function calls are unavailable.
 On a Linux desktop, inspect the active renderer with:
 
 ```sh

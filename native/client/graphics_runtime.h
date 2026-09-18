@@ -13,6 +13,7 @@ struct GraphicsContext {
 };
 
 GraphicsContext createGraphicsContext(const char* title, int width, int height, bool hidden);
+GraphicsContext createCoreGraphicsContext(const char* title, int width, int height, bool hidden);
 void destroyGraphicsContext(GraphicsContext& graphicsContext);
 
 } // namespace helion::client

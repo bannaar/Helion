@@ -1,9 +1,10 @@
 # Helion native server and OpenGL client
 
 This standalone C++17 pair uses TLS over POSIX TCP sockets. The client opens an SDL2
-window with an OpenGL compatibility-profile fixed-function renderer (OpenGL 3.0
-compatibility first, OpenGL 2.1 fallback; no shaders,
-VAOs, or modern OpenGL requirements). The client now includes a playable
+window with an OpenGL compatibility-profile fixed-function gameplay renderer
+(OpenGL 3.0 compatibility first, OpenGL 2.1 fallback). An experimental
+OpenGL 3.3 core renderer is available for a procedural diagnostic scene; the
+gameplay path still has no shader, VAO, or modern OpenGL requirement. The client now includes a playable
 top-down mining sector with server-authoritative flight and saved payouts.
 Networking and the command parser remain
 usable from a terminal with `--terminal`.
@@ -116,9 +117,25 @@ snapshots, and GalNet chat remains shared.
 renderer, version, GLSL version when available, fallback state, and a
 conservative hardware/software classification. The current target is Intel HD
 Graphics 3000 (`8086:0116`) with kernel driver `i915`, Mesa 25.2.8, userspace
-driver `crocus`, direct rendering, and OpenGL 3.3 compatibility. OpenGL 3.3
-core is not selected by the fixed-function renderer; a future core renderer
-would require shaders.
+driver `crocus`, direct rendering, and OpenGL 3.3 compatibility. Use
+`--renderer auto`, `--renderer legacy`, or `--renderer core` to select a path.
+`auto` keeps gameplay on legacy while recording whether a 3.3 core probe
+succeeds. `core` requires a true OpenGL 3.3 core profile and fails clearly if
+the context or a required SDL-loaded function is unavailable; it never falls
+back to fixed-function rendering. Its diagnostic scene draws a transformed
+colored ship marker, station marker, and navigation axes with `#version 330
+core` shaders. It is experimental until the gameplay scene has feature parity.
+
+Validate the core hardware path with:
+
+```sh
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer core \
+  --render-check /tmp/helion-core-hardware.bmp
+```
+
+Do not use llvmpipe or a forced software/offscreen run as evidence of HD 3000
+hardware support. The fixed-function offscreen check remains a separate
+diagnostic and the Intel X11 check must report the Mesa Intel renderer.
 
 For an accelerated X11 validation, omit software-forcing and offscreen
 variables:

@@ -89,6 +89,31 @@ GraphicsContext createGraphicsContext(const char* title, int width, int height, 
   return result;
 }
 
+GraphicsContext createCoreGraphicsContext(const char* title, int width, int height, bool hidden) {
+  GraphicsContext result;
+  const GraphicsRequest request{3, 3, Profile::core};
+  SDL_Window* window = nullptr;
+  SDL_GLContext context = nullptr;
+  const auto capabilities = attempt(window, context, title, width, height, hidden, request);
+  result.result.requested = request;
+  result.result.actual = capabilities;
+  if (!capabilities.complete) {
+    result.result.error = "OpenGL 3.3 core context returned incomplete capabilities";
+  } else if (capabilities.profile != Profile::core) {
+    result.result.error = "OpenGL 3.3 core request returned a non-core profile";
+  } else if (!helion::graphics::usableCoreContext(capabilities)) {
+    result.result.error = "OpenGL context is below the 3.3 core/GLSL requirement";
+  } else {
+    result.result.selected = true;
+    result.window = window;
+    result.context = context;
+    return result;
+  }
+  if (context) SDL_GL_DeleteContext(context);
+  if (window) SDL_DestroyWindow(window);
+  return result;
+}
+
 void destroyGraphicsContext(GraphicsContext& graphicsContext) {
   if (graphicsContext.context) SDL_GL_DeleteContext(graphicsContext.context);
   if (graphicsContext.window) SDL_DestroyWindow(graphicsContext.window);

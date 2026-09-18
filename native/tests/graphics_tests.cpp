@@ -8,7 +8,7 @@ void check(bool condition, const char* message) {
   if (!condition) { std::cerr << "FAIL: " << message << '\n'; ++failures; }
 }
 helion::graphics::GraphicsCapabilities caps(int major, int minor, helion::graphics::Profile profile) {
-  return {major, minor, profile, true, "Intel", "Mesa Intel HD Graphics 3000", "OpenGL", "GLSL"};
+  return {major, minor, profile, true, "Intel", "Mesa Intel HD Graphics 3000", "OpenGL", "3.30"};
 }
 }
 
@@ -38,7 +38,30 @@ int main() {
   check(classifyRenderer("Unknown", "Mystery") == RendererClass::unknown,
         "unknown renderer is not labeled hardware");
   check(diagnosticLine(preferred) ==
-        "GRAPHICS requested=3.0-compatibility actual=3.3-compatibility first-compat=yes fallback-21=no renderer-class=hardware vendor=Intel renderer=Mesa Intel HD Graphics 3000 version=OpenGL glsl=GLSL",
+        "GRAPHICS requested=3.0-compatibility actual=3.3-compatibility first-compat=yes fallback-21=no renderer-class=hardware vendor=Intel renderer=Mesa Intel HD Graphics 3000 version=OpenGL glsl=3.30",
         "diagnostic serialization is stable");
+  RendererMode parsed = RendererMode::legacy;
+  check(parseRendererMode("auto", parsed) && parsed == RendererMode::auto_mode,
+        "parses auto renderer mode");
+  check(parseRendererMode("legacy", parsed) && parsed == RendererMode::legacy,
+        "parses legacy renderer mode");
+  check(parseRendererMode("core", parsed) && parsed == RendererMode::core,
+        "parses core renderer mode");
+  check(!parseRendererMode("vulkan", parsed), "rejects unknown renderer mode");
+  check(rendererModeName(RendererMode::auto_mode) == std::string("auto") &&
+        rendererModeName(RendererMode::legacy) == std::string("legacy") &&
+        rendererModeName(RendererMode::core) == std::string("core"), "renderer labels are stable");
+  check(!selectRenderer(RendererMode::auto_mode, false).useCore &&
+        !selectRenderer(RendererMode::auto_mode, true).useCore,
+        "auto keeps legacy gameplay while recording core availability");
+  check(!selectRenderer(RendererMode::legacy, true).useCore,
+        "legacy mode never selects core");
+  check(selectRenderer(RendererMode::core, true).useCore &&
+        selectRenderer(RendererMode::core, false).error.size() > 0,
+        "core mode requires an available core renderer");
+  check(usableCoreContext(caps(3, 3, Profile::core)), "accepts complete 3.3 core context");
+  check(!usableCoreContext(caps(3, 3, Profile::compatibility)) &&
+        !usableCoreContext(caps(3, 2, Profile::core)),
+        "rejects compatibility and under-versioned core contexts");
   return failures == 0 ? 0 : 1;
 }

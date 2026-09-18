@@ -34,6 +34,13 @@ struct State {
   int cargo = 0, food = 0, parts = 0, station = 0;
   int hull = 100, maxHull = 100;
 };
+struct DockTransaction {
+  int station = 0;
+  int cargoSold = 0;
+  int unitPrice = 0;
+  int creditsEarned = 0;
+  int experienceEarned = 0;
+};
 void step(State& state, double dt, int engineLevel = 1);
 double speed(const State& state);
 int nearestRock(const State& state);
@@ -42,7 +49,9 @@ int cargoUsed(const State& state);
 std::string trade(State& state, int& credits, bool buying, const std::string& commodity, int quantity);
 std::string launch(State& state);
 std::string mine(State& state);
-std::string dock(State& state, int& credits, int& experience);
+std::string dock(State& state, int& credits, int& experience, DockTransaction* transaction = nullptr);
+std::string dockTransactionLine(const DockTransaction& transaction);
+bool readDockTransaction(const std::string& line, DockTransaction& transaction);
 int hullCapacity(int hullLevel);
 std::string repair(State& state, int& credits, int hullLevel = 1);
 std::string snapshot(const State& state, int credits, int experience);

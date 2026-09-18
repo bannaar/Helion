@@ -267,7 +267,17 @@ int main(int argc,char** argv) {
             view.authenticated=true; view.console=false; queue("FLIGHT");
           }
           if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
-          if(frame.line.rfind("STATE ",0)!=0) view.log.push_back(std::move(frame.line));
+          helion::flight::DockTransaction sale;
+          if(frame.line.rfind("STATE ",0)!=0) {
+            if (helion::flight::readDockTransaction(frame.line, sale)) {
+              view.log.push_back(std::move(frame.line));
+              view.log.push_back("SALE / "+std::to_string(sale.cargoSold)+" ORE / +"+
+                                 std::to_string(sale.creditsEarned)+" CR / +"+
+                                 std::to_string(sale.experienceEarned)+" XP");
+            } else {
+              view.log.push_back(std::move(frame.line));
+            }
+          }
         }
       }
     }

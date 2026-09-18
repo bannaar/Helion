@@ -93,21 +93,63 @@ std::string mine(State& s) {
   return "OK MINED cargo=" + std::to_string(s.cargo);
 }
 
-std::string dock(State& s, int& credits, int& experience) {
+std::string dock(State& s, int& credits, int& experience, DockTransaction* transaction) {
   if (s.docked) return "ERR already-docked";
   const int station=nearestStation(s);
   if (std::hypot(s.x-kStations[station].x, s.y-kStations[station].y) > kDockRange) return "ERR station-out-of-range";
   if (speed(s) > kWorkSpeed) return "ERR slow-down";
-  const int earned = s.cargo * kStations[station].oreSell;
+  const int cargoSold = s.cargo;
+  const int unitPrice = kStations[station].oreSell;
+  const int earned = cargoSold * unitPrice;
+  const int experienceEarned = cargoSold * 5;
   if (credits > std::numeric_limits<int>::max() - earned ||
-      experience > std::numeric_limits<int>::max() - s.cargo * 5) return "ERR profile-limit";
+      experience > std::numeric_limits<int>::max() - experienceEarned) return "ERR profile-limit";
+  if (transaction) *transaction = {station, cargoSold, unitPrice, earned, experienceEarned};
   credits += earned;
-  experience += s.cargo * 5;
+  experience += experienceEarned;
   const int food=s.food, parts=s.parts, hull=s.hull, maxHull=s.maxHull;
   s = State{};
   s.food=food; s.parts=parts; s.station=station; s.hull=hull; s.maxHull=maxHull;
   s.x=kStations[station].x; s.y=kStations[station].y;
   return "OK DOCKED earned=" + std::to_string(earned);
+}
+
+std::string dockTransactionLine(const DockTransaction& transaction) {
+  std::ostringstream out;
+  out << "TRANSACTION DOCK_SALE station=" << transaction.station
+      << " quantity=" << transaction.cargoSold
+      << " unit-price=" << transaction.unitPrice
+      << " credits=" << transaction.creditsEarned
+      << " experience=" << transaction.experienceEarned;
+  return out.str();
+}
+
+bool readDockTransaction(const std::string& line, DockTransaction& transaction) {
+  std::istringstream in(line);
+  std::string tag, kind, station, quantity, unitPrice, credits, experience, extra;
+  DockTransaction next;
+  if (!(in >> tag >> kind >> station >> quantity >> unitPrice >> credits >> experience) ||
+      (in >> extra) || tag != "TRANSACTION" || kind != "DOCK_SALE") return false;
+  const auto parseField = [](const std::string& field, const char* name, int& value) {
+    const std::string prefix = std::string(name) + "=";
+    if (field.rfind(prefix, 0) != 0 || field.size() == prefix.size()) return false;
+    std::size_t used = 0;
+    try { value = std::stoi(field.substr(prefix.size()), &used); }
+    catch (...) { return false; }
+    return used == field.size() - prefix.size();
+  };
+  if (!parseField(station, "station", next.station) ||
+      !parseField(quantity, "quantity", next.cargoSold) ||
+      !parseField(unitPrice, "unit-price", next.unitPrice) ||
+      !parseField(credits, "credits", next.creditsEarned) ||
+      !parseField(experience, "experience", next.experienceEarned)) return false;
+  if (next.station < 0 || next.station >= static_cast<int>(kStations.size()) ||
+      next.cargoSold < 0 || next.cargoSold > kCargoCapacity || next.unitPrice < 0 ||
+      next.unitPrice > 100000 || next.creditsEarned < 0 || next.experienceEarned < 0 ||
+      next.creditsEarned != next.cargoSold * next.unitPrice ||
+      next.experienceEarned != next.cargoSold * 5) return false;
+  transaction = next;
+  return true;
 }
 
 std::string repair(State& s, int& credits, int hullLevel) {

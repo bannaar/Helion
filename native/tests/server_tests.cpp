@@ -107,7 +107,7 @@ std::string command(int fd,const std::string& value,const std::string& expected)
   return response;
 }
 
-void expectPersistenceFailure(int fd, const std::string& value) {
+std::string expectPersistenceFailure(int fd, const std::string& value) {
   const std::string movedDirectory = testDirectory + ".away";
   check(rename(testDirectory.c_str(), movedDirectory.c_str()) == 0, "make save unavailable for rollback");
   const std::string bytes = value + "\n";
@@ -115,6 +115,7 @@ void expectPersistenceFailure(int fd, const std::string& value) {
   const auto response = receiveUntil(fd, "ERR persistence-failed");
   check(rename(movedDirectory.c_str(), testDirectory.c_str()) == 0, "restore save directory after rollback");
   check(response.find("ERR persistence-failed") != std::string::npos, "durable action rolls back on save failure");
+  return response;
 }
 
 helion::flight::State flightState(int fd) {
@@ -208,6 +209,9 @@ int main(int argc, char** argv) {
   check(tlsSend(first, create.data(), create.size(), 0) == static_cast<ssize_t>(create.size()), "create durable profile");
   check(receiveUntil(first, "OK CREATED").find("OK CREATED user=explorer") != std::string::npos,
         "profile saved successfully");
+  const auto starter = flightState(first);
+  check(starter.docked && starter.cargo == 0 && starter.hull == starter.maxHull,
+        "new account starts docked and ready");
   command(first,"REPAIR","ERR hull-full");
   command(first,"MISSION","MISSION 1 title=First Ore");
   expectPersistenceFailure(first,"ACCEPT");
@@ -238,15 +242,23 @@ int main(int argc, char** argv) {
         "failed mining rolls back mission objective");
   command(first,"TURNIN","ERR objective-incomplete");
   command(first,"MINE","OK MINED cargo=1");
+  check(flightState(first).cargo == 1,"successful mining updates authoritative cargo");
   check(command(first,"PROFILE","PROFILE").find("mission-ore-mined=1") != std::string::npos,
         "successful mining marks mission objective");
   command(first,"MINE","ERR mining-cooldown");
   command(first,"DOCK","ERR station-out-of-range");
   flyTo(first,0,35);
-  expectPersistenceFailure(first,"DOCK");
+  const auto failedSale = expectPersistenceFailure(first,"DOCK");
+  check(failedSale.find("TRANSACTION DOCK_SALE") == std::string::npos,
+        "failed sale emits no transaction result");
   const auto recoveredFlight=flightState(first);
   check(!recoveredFlight.docked && recoveredFlight.cargo==1,"failed sale preserves cargo and flight");
-  command(first,"DOCK","OK DOCKED earned=60");
+  const auto sale = command(first,"DOCK","TRANSACTION DOCK_SALE");
+  check(sale.find("OK DOCKED earned=60") != std::string::npos &&
+        sale.find("TRANSACTION DOCK_SALE station=0 quantity=1 unit-price=60 credits=60 experience=5") != std::string::npos,
+        "server reports authoritative dock sale result");
+  check(command(first,"PROFILE","PROFILE").find("credits=1536 experience=5") != std::string::npos,
+        "sale commits credits and experience");
   check(flightState(first).docked,"docked live ship");
   const std::string chat = "CHAT Ready for launch\n";
   check(tlsSend(first, chat.data(), chat.size(), 0) == static_cast<ssize_t>(chat.size()), "send durable chat");
@@ -339,6 +351,9 @@ int main(int argc, char** argv) {
         "send restored login");
   check(receiveUntil(restarted, "OK LOGIN").find("OK LOGIN user=explorer display=Explorer One") != std::string::npos,
         "created account survives restart");
+  const auto restoredFlight = flightState(restarted);
+  check(restoredFlight.docked && restoredFlight.cargo == 0 && restoredFlight.hull == 50,
+        "docked sold state survives reconnect");
   expectPersistenceFailure(restarted,"REPAIR");
   const auto failedRepairProfile = command(restarted,"PROFILE","PROFILE");
   check(failedRepairProfile.find("credits=1536") != std::string::npos &&

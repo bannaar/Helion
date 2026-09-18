@@ -90,7 +90,10 @@ Arrow keys also work. Approach a teal asteroid to within 85 m at no more than
 35 m/s and press **E** to mine. Wait 1.25 seconds between extractions; cargo
 capacity is eight units. Use the radar's amber base marker to return to
 Kepler station, then press **F** within 85 m at low speed to dock and sell.
-Each ore unit earns 60 credits and 5 XP, saved by the server.
+Each ore unit earns 60 credits and 5 XP, saved by the server. After a
+successful dock, the client shows the authoritative sale quantity, credit
+reward, and XP reward in the activity line; rejected actions remain visible
+with their server-provided reason.
 
 Flight is top-down with a north-up camera. Opening the console or losing
 window focus applies the brake. The server also stops stale controls after

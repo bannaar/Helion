@@ -74,6 +74,23 @@ int main() {
   ship.x=0;ship.y=50;
   check(dock(ship,credits,xp)=="OK DOCKED earned=480","sell full cargo");
   check(credits==1980 && xp==40 && ship.cargo==0 && ship.docked,"reward and clear cargo");
+  State transactionShip;
+  launch(transactionShip); transactionShip.x=0; transactionShip.y=50; transactionShip.cargo=2;
+  int transactionCredits=1500, transactionXp=0;
+  DockTransaction transaction;
+  check(dock(transactionShip,transactionCredits,transactionXp,&transaction)=="OK DOCKED earned=120" &&
+        transaction.station==0 && transaction.cargoSold==2 && transaction.unitPrice==60 &&
+        transaction.creditsEarned==120 && transaction.experienceEarned==10,
+        "structured dock sale result");
+  DockTransaction restoredTransaction;
+  check(readDockTransaction(dockTransactionLine(transaction),restoredTransaction) &&
+        restoredTransaction.station==transaction.station &&
+        restoredTransaction.cargoSold==transaction.cargoSold &&
+        restoredTransaction.creditsEarned==transaction.creditsEarned &&
+        restoredTransaction.experienceEarned==transaction.experienceEarned,
+        "dock sale protocol roundtrip");
+  check(!readDockTransaction("TRANSACTION DOCK_SALE station=0 quantity=2 unit-price=60 credits=999 experience=10",
+                            restoredTransaction), "reject forged dock sale result");
   check(trade(ship, credits, true, "food", 3) == "OK BOUGHT food quantity=3 total=60" &&
         ship.food == 3 && credits == 1920, "buy station supplies");
   check(trade(ship, credits, true, "parts", 2) == "OK BOUGHT parts quantity=2 total=130" &&

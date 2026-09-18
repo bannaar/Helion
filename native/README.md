@@ -121,7 +121,7 @@ newline-terminated line: `CREATE username password display`, `LOGIN username
 password`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
 `MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `REPAIR`, `LAUNCH`, `INPUT`, `FLIGHT`,
 `MINE`, `DOCK`, or `QUIT`. Responses are newline-terminated
-`OK`, `ERR`, `PROFILE`, `STATE`, and `CHAT` records. The server stores salted
+`OK`, `ERR`, `PROFILE`, `STATE`, `TRANSACTION`, and `CHAT` records. The server stores salted
 scrypt password hashes, migrates existing plaintext profile records on startup,
 and creates owner-only data files. New passwords must be 12–128 bytes. The connection requires TLS 1.2 or newer. Clients verify the certificate
 chain, expiration, and DNS/IP Subject Alternative Name using OS trust roots
@@ -137,11 +137,22 @@ chat payload is 512 bytes.
 `INPUT thrust turn brake` accepts exactly `0|1`, `-1|0|1`, and `0|1`.
 Positive turn is left. `LAUNCH`, `FLIGHT`, `MINE`, `DOCK`, and `REPAIR` take no
 arguments; all gameplay commands require authentication. Each gameplay command
-returns a flight snapshot, except authentication/persistence failures:
+returns a flight snapshot, except authentication/persistence failures. A
+successful `DOCK` also emits a server-calculated transaction record between
+the legacy result and the snapshot:
 
 ```text
 FLIGHT x y vx vy yaw docked cargo credits experience cooldown food parts station hull maxHull
+
+TRANSACTION DOCK_SALE station=0 quantity=1 unit-price=60 credits=60 experience=5
 ```
+
+The `OK DOCKED earned=...` line remains for protocol compatibility. The
+structured transaction is informational: the server derives the quantity from
+authoritative cargo and computes credits and XP; clients cannot supply or
+override either value. Cargo removal and the reward are committed together,
+and a persistence failure rolls the profile back without sending a transaction
+record.
 
 Coordinates are metres on an XY plane, +Y north, yaw in radians with zero
 pointing north. `docked` is `0|1`; cooldown is seconds. Existing version-1

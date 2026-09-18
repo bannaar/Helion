@@ -197,6 +197,8 @@ void loadState() {
         };
         profile.credits = parseNumber(creditsText, profile.credits);
         profile.experience = parseNumber(experienceText, profile.experience);
+        if (profile.credits < 0 || profile.experience < 0)
+          throw std::runtime_error("malformed persistence number");
         std::string value;
         std::getline(input, value, '\t'); profile.missionStage = parseNumber(value, 0);
         std::getline(input, value, '\t'); profile.hullLevel = std::clamp(parseNumber(value, 1), 1, 5);
@@ -597,9 +599,12 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           } else if (request.command != helion::protocol::Command::flight) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
+            const bool docking = request.command == helion::protocol::Command::dock;
+            helion::flight::DockTransaction transaction;
             std::string result = request.command == helion::protocol::Command::launch ? helion::flight::launch(flight) :
               request.command == helion::protocol::Command::mine ? helion::flight::mine(flight) :
-              helion::flight::dock(flight, profile.credits, profile.experience);
+              helion::flight::dock(flight, profile.credits, profile.experience,
+                                   docking ? &transaction : nullptr);
             if (result.rfind("OK", 0) == 0) {
               if (request.command == helion::protocol::Command::mine && profile.missionStage == 1)
                 profile.missionOreMined = true;
@@ -611,7 +616,11 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 std::cerr << error.what() << '\n';
               }
             }
-            if (responses.empty()) responses.push_back(result);
+            if (responses.empty()) {
+              responses.push_back(result);
+              if (docking && result.rfind("OK", 0) == 0)
+                responses.push_back(helion::flight::dockTransactionLine(transaction));
+            }
           }
           responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
         }
@@ -776,6 +785,15 @@ int main(int argc, char** argv) {
           transport->connection->closeNotify();
         } catch (const std::exception& error) {
           std::cerr << "client connection rejected: " << error.what() << '\n';
+        }
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          if (flightStateDirty) {
+            try { persistStateLocked(); }
+            catch (const std::exception& error) {
+              std::cerr << "disconnect flight checkpoint failed: " << error.what() << '\n';
+            }
+          }
         }
         removeClient(client);
         {

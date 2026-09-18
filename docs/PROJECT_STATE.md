@@ -69,4 +69,7 @@ The repository now has GitHub Actions for release builds, package creation,
 full TLS/installer tests, and an AddressSanitizer/UndefinedBehaviorSanitizer
 server build. The legacy OpenGL renderer intentionally remains dependency-light
 and uses SDL2 plus procedural assets; GLAD, GLM, ImGui, and stb_ttf are not
-required for the current HD 3000-compatible client.
+required. The client requests OpenGL 3.0 compatibility first and safely falls
+back to OpenGL 2.1 compatibility. On the verified target, Mesa 25.2.8 with
+Intel HD Graphics 3000 and `crocus` provides accelerated OpenGL 3.3
+compatibility; OpenGL 3.3 core is reserved for a future shader renderer.

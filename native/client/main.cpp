@@ -19,6 +19,7 @@
 #include "shared/protocol.h"
 #include "shared/organizations.h"
 #include "client/render.h"
+#include "client/graphics_runtime.h"
 #include "shared/tls.h"
 
 namespace {
@@ -109,13 +110,14 @@ int terminalClient(int fd, helion::tls::Connection& connection) {
 
 int main(int argc,char** argv) {
   std::signal(SIGPIPE, SIG_IGN);
-  bool renderCheck=false, terminal=false;
+  bool renderCheck=false, graphicsInfo=false, terminal=false;
   std::string host="127.0.0.1", port="4242", caFile, renderPath;
   int positional=0;
   try {
     for(int i=1;i<argc;++i) {
       const std::string arg=argv[i];
       if(arg=="--terminal") terminal=true;
+      else if(arg=="--graphics-info") graphicsInfo=true;
       else if(arg=="--ca" && i+1<argc) caFile=argv[++i];
       else if(arg=="--render-check" && i+1<argc) { renderCheck=true; renderPath=argv[++i]; }
       else if(arg.rfind("--",0)==0) throw std::runtime_error("unknown or incomplete option");
@@ -124,13 +126,13 @@ int main(int argc,char** argv) {
       else throw std::runtime_error("too many arguments");
     }
   } catch(const std::exception& error) {
-    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal]\n"; return 2;
+    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info]\n"; return 2;
   }
-  const int fd=renderCheck?-1:connectTo(host,port);
-  if(!renderCheck && fd<0) { std::cerr<<"Unable to connect to "<<host<<':'<<port<<'\n'; return 1; }
+  const int fd=(renderCheck || graphicsInfo) ? -1 : connectTo(host,port);
+  if(!renderCheck && !graphicsInfo && fd<0) { std::cerr<<"Unable to connect to "<<host<<':'<<port<<'\n'; return 1; }
   helion::tls::Context tlsContext(nullptr,SSL_CTX_free);
   std::unique_ptr<helion::tls::Connection> connection;
-  if(!renderCheck) {
+  if(!renderCheck && !graphicsInfo) {
     try {
       tlsContext=helion::tls::clientContext(caFile);
       connection=std::make_unique<helion::tls::Connection>(tlsContext.get(),fd);
@@ -139,21 +141,30 @@ int main(int argc,char** argv) {
       std::cerr<<error.what()<<'\n'; close(fd); return 1;
     }
   }
-  if(terminal) {
+  if(terminal && !graphicsInfo) {
     if(!connection) return 2;
     const int result=terminalClient(fd,*connection);
     connection->closeNotify(); shutdown(fd,SHUT_RDWR); close(fd); return result;
   }
   if(SDL_Init(SDL_INIT_VIDEO)!=0) { std::cerr<<SDL_GetError()<<'\n'; if(fd>=0) close(fd); return 1; }
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
-  SDL_Window* window=SDL_CreateWindow("Helion / Kepler Reach",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
-    960,600,SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE|(renderCheck?SDL_WINDOW_HIDDEN:0));
-  SDL_GLContext context=window?SDL_GL_CreateContext(window):nullptr;
-  if(!context) { std::cerr<<SDL_GetError()<<'\n'; if(window) SDL_DestroyWindow(window); SDL_Quit(); if(fd>=0)close(fd); return 1; }
+  auto graphics = helion::client::createGraphicsContext("Helion / Kepler Reach", 960, 600, renderCheck || graphicsInfo);
+  if(!graphics.result.selected) {
+    std::cerr << helion::graphics::diagnosticLine(graphics.result) << '\n';
+    helion::client::destroyGraphicsContext(graphics);
+    SDL_Quit();
+    if(fd>=0) close(fd);
+    return 1;
+  }
+  std::cout << helion::graphics::diagnosticLine(graphics.result) << '\n';
+  SDL_Window* window=graphics.window;
+  if(graphicsInfo) {
+    helion::client::destroyGraphicsContext(graphics);
+    SDL_Quit();
+    return 0;
+  }
   SDL_SetWindowMinimumSize(window,960,600); SDL_GL_SetSwapInterval(1);
   helion::client::View view; view.connected=!renderCheck;
-  view.log={"TLS verified / Connected to "+host+":"+port};
+  view.log={helion::graphics::diagnosticLine(graphics.result), "TLS verified / Connected to "+host+":"+port};
   if(renderCheck) {
     view.connected=true; view.authenticated=true; view.console=false;
     helion::flight::launch(view.ship); view.ship.y=205; view.ship.cargo=3;
@@ -163,7 +174,7 @@ int main(int argc,char** argv) {
     view.console=true; view.authenticated=false; view.typed="/login explorer synthetic-password";
     helion::client::render(960,600,view);
     saved=saveFrame(renderPath+".console.bmp",960,600)&&saved;
-    SDL_GL_DeleteContext(context); SDL_DestroyWindow(window); SDL_Quit(); return saved?0:1;
+    helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return saved?0:1;
   }
   bool running=true,greetingSeen=false,focused=true;
   helion::protocol::LineDecoder decoder;
@@ -340,5 +351,5 @@ int main(int argc,char** argv) {
   }
   SDL_StopTextInput(); connection->sendAll("QUIT\n",500); connection->closeNotify();
   shutdown(fd,SHUT_RDWR); close(fd);
-  SDL_GL_DeleteContext(context); SDL_DestroyWindow(window); SDL_Quit(); return 0;
+  helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return 0;
 }

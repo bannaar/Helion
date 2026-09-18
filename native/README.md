@@ -1,7 +1,8 @@
 # Helion native server and OpenGL client
 
 This standalone C++17 pair uses TLS over POSIX TCP sockets. The client opens an SDL2
-window with an OpenGL 2.1-compatible fixed-function renderer (no shaders,
+window with an OpenGL compatibility-profile fixed-function renderer (OpenGL 3.0
+compatibility first, OpenGL 2.1 fallback; no shaders,
 VAOs, or modern OpenGL requirements). The client now includes a playable
 top-down mining sector with server-authoritative flight and saved payouts.
 Networking and the command parser remain
@@ -108,6 +109,27 @@ currently flies a separate instance of the same sector; shared asteroid
 depletion and full player ship replication are not yet implemented. Contact
 records and deterministic NPC traffic are exposed through multiplayer
 snapshots, and GalNet chat remains shared.
+
+## Graphics diagnostics
+
+`helion_client --graphics-info` reports the actual SDL context, GL vendor,
+renderer, version, GLSL version when available, fallback state, and a
+conservative hardware/software classification. The current target is Intel HD
+Graphics 3000 (`8086:0116`) with kernel driver `i915`, Mesa 25.2.8, userspace
+driver `crocus`, direct rendering, and OpenGL 3.3 compatibility. OpenGL 3.3
+core is not selected by the fixed-function renderer; a future core renderer
+would require shaders.
+
+For an accelerated X11 validation, omit software-forcing and offscreen
+variables:
+
+```sh
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --graphics-info
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --render-check /tmp/helion-hardware.bmp
+```
+
+The offscreen render check remains a diagnostic only and does not prove GPU
+acceleration.
 
 ## Native assets and render check
 

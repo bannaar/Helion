@@ -134,17 +134,39 @@ Credits, XP, upgrades, market cargo, mined ore, position, velocity, and dock
 state survive server restarts. Each commander still has separate asteroid
 depletion, while GalNet chat and live contact positions are shared.
 
-## 5. Graphics configuration
+## 5. Graphics capability and context selection
 
-The client requests:
+The fixed-function renderer first requests an OpenGL 3.0 compatibility
+context. If that attempt fails or produces an unusable/core context, the
+client destroys it and retries with OpenGL 2.1 compatibility. It never selects
+OpenGL 3.3 core for this renderer; a future core-profile renderer would need
+shaders and a separate migration.
 
-- OpenGL major version 2
-- OpenGL minor version 1
-- Double buffering
-- Resizable 960×600 window
-- Fixed-function projection and colored primitives
+The target was verified with Intel HD Graphics 3000 / PCI `8086:0116`, kernel
+driver `i915`, Mesa 25.2.8, and Mesa userspace driver `crocus`. `glxinfo -B`
+reported direct rendering, OpenGL core 3.3, compatibility 3.3, and OpenGL ES
+3.0. On the accelerated X11 desktop, the native runtime reported:
 
-It does not require GLSL, vertex buffer objects, VAOs, or OpenGL 3+ features.
+```text
+GRAPHICS requested=3.0-compatibility actual=3.3-compatibility first-compat=yes fallback-21=no renderer-class=hardware vendor=Intel renderer=Mesa Intel(R) HD Graphics 3000 (SNB GT2) version=3.3 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.2 glsl=3.30
+```
+
+Use `--graphics-info` to inspect runtime capabilities without connecting to a
+server:
+
+```sh
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --graphics-info
+```
+
+The report includes the requested and actual SDL context, profile, GL vendor,
+renderer, version, GLSL version, fallback state, and conservative renderer
+classification. Known software renderers such as llvmpipe and softpipe are
+never labeled hardware.
+
+The client still uses double buffering, a resizable 960×600 window, and
+fixed-function projection and colored primitives. It does not require shaders,
+vertex buffer objects, VAOs, or OpenGL 3+ features. OpenGL 2.1 fallback remains
+fully playable.
 On a Linux desktop, inspect the active renderer with:
 
 ```sh
@@ -158,11 +180,23 @@ sudo apt install mesa-utils
 ```
 
 The renderer line should show the Intel driver or another hardware renderer.
-Forcing software rendering is useful only for troubleshooting:
+Forcing software rendering is useful only for troubleshooting and does not
+prove HD 3000 compatibility:
 
 ```sh
 LIBGL_ALWAYS_SOFTWARE=1 ./build-native/native/helion_client 127.0.0.1 4242 --ca /path/to/local-tls/server.crt
 ```
+
+For the actual desktop hardware check, omit both `LIBGL_ALWAYS_SOFTWARE` and
+the offscreen driver:
+
+```sh
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --graphics-info
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --render-check /tmp/helion-hardware.bmp
+```
+
+The existing offscreen render check remains a useful deterministic diagnostic,
+but it is not evidence of GPU acceleration.
 
 ## 6. Desktop launcher
 

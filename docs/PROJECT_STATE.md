@@ -72,10 +72,12 @@ and uses SDL2 plus procedural assets; GLAD, GLM, ImGui, and stb_ttf are not
 required. The client requests OpenGL 3.0 compatibility first and safely falls
 back to OpenGL 2.1 compatibility. On the verified target, Mesa 25.2.8 with
 Intel HD Graphics 3000 and `crocus` provides accelerated OpenGL 3.3
-compatibility and core contexts. The graphics capability foundation now
-supports explicit `--renderer auto`, `--renderer legacy`, and experimental
-`--renderer core` selection. Normal gameplay remains on the compatibility /
-2.1-fallback renderer. Core mode requests OpenGL 3.3 core, compiles a minimal
-shader, and renders a procedural ship/station/grid scene for hardware
-validation; it is not a port of the gameplay scene. Shader-based text,
-textures, models, and gameplay-rendering parity remain future work.
+compatibility and core contexts. The graphics foundation supports explicit
+`--renderer auto`, `--renderer legacy`, and `--renderer core` selection. Normal
+gameplay remains on the compatibility / 2.1-fallback renderer. Core mode now
+enters the real client loop and renders copied Kepler presentation state with
+GLSL 3.30: stations, asteroids, traffic, commanders, Red Wake contacts,
+targeting, mining/fire feedback, and geometric status HUD indicators. Text,
+cockpit parity, textures, model loading, and automatic core selection remain
+future work. The measured 960x600 Intel HD 3000 diagnostic frame is about
+0.10 ms with three draw calls and bounded static/dynamic geometry.

@@ -135,10 +135,10 @@ int main(int argc,char** argv) {
     std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info] [--renderer auto|legacy|core]\n"; return 2;
   }
   if (terminal && rendererMode == helion::graphics::RendererMode::core) {
-    std::cerr << "--terminal cannot be used with the diagnostic core renderer\n";
+    std::cerr << "--terminal cannot be used with the core renderer\n";
     return 2;
   }
-  const bool noConnection = renderCheck || graphicsInfo || rendererMode == helion::graphics::RendererMode::core;
+  const bool noConnection = renderCheck || graphicsInfo;
   const int fd=noConnection ? -1 : connectTo(host,port);
   if(!noConnection && fd<0) { std::cerr<<"Unable to connect to "<<host<<':'<<port<<'\n'; return 1; }
   helion::tls::Context tlsContext(nullptr,SSL_CTX_free);
@@ -186,54 +186,23 @@ int main(int argc,char** argv) {
   }
   std::cout << helion::graphics::diagnosticLine(graphics.result) << '\n';
   SDL_Window* window=graphics.window;
-  if (rendererMode == helion::graphics::RendererMode::core) {
-    helion::client::CoreRenderer coreRenderer;
+  const bool coreMode = rendererMode == helion::graphics::RendererMode::core;
+  std::unique_ptr<helion::client::CoreRenderer> coreRenderer;
+  if (coreMode) {
+    coreRenderer = std::make_unique<helion::client::CoreRenderer>();
     std::string coreError;
-    if (!coreRenderer.initialize(coreError)) {
+    if (!coreRenderer->initialize(coreError)) {
       std::cerr << "CORE-RENDERER initialization failed: " << coreError << '\n';
-      coreRenderer.release();
+      coreRenderer.reset();
       helion::client::destroyGraphicsContext(graphics);
       SDL_Quit();
       return 1;
     }
     std::cout << "CORE-RENDERER shader=#version " << helion::client::kCoreShaderVersion
               << " scene=ship-station-grid\n";
-    if (graphicsInfo) {
-      coreRenderer.release();
-      helion::client::destroyGraphicsContext(graphics);
-      SDL_Quit();
-      return 0;
-    }
-    SDL_SetWindowMinimumSize(window, 960, 600);
-    bool running = true;
-    while (running) {
-      SDL_Event event{};
-      while (SDL_PollEvent(&event)) if (event.type == SDL_QUIT) running = false;
-      int width = 0, height = 0;
-      SDL_GL_GetDrawableSize(window, &width, &height);
-      if (width > 0 && height > 0) {
-        if (!coreRenderer.render(width, height, renderCheck, coreError)) {
-          std::cerr << "CORE-RENDERER render failed: " << coreError << '\n';
-          running = false;
-        }
-        if (renderCheck) {
-          const bool saved = saveFrame(renderPath, width, height);
-          SDL_GL_SwapWindow(window);
-          coreRenderer.release();
-          helion::client::destroyGraphicsContext(graphics);
-          SDL_Quit();
-          return saved ? 0 : 1;
-        }
-        SDL_GL_SwapWindow(window);
-      }
-      SDL_Delay(8);
-    }
-    coreRenderer.release();
-    helion::client::destroyGraphicsContext(graphics);
-    SDL_Quit();
-    return 0;
   }
   if(graphicsInfo) {
+    coreRenderer.reset();
     helion::client::destroyGraphicsContext(graphics);
     SDL_Quit();
     return 0;
@@ -244,12 +213,32 @@ int main(int argc,char** argv) {
   if(renderCheck) {
     view.connected=true; view.authenticated=true; view.console=false;
     helion::flight::launch(view.ship); view.ship.y=205; view.ship.cargo=3;
-    view.time=2; view.beamUntil=2.3; view.log={"OK MINED cargo=3"};
-    helion::client::render(960,600,view);
-    bool saved=saveFrame(renderPath,960,600);
-    view.console=true; view.authenticated=false; view.typed="/login explorer synthetic-password";
-    helion::client::render(960,600,view);
-    saved=saveFrame(renderPath+".console.bmp",960,600)&&saved;
+    view.time=2; view.beamUntil=2.3; view.weaponUntil=2.2; view.log={"OK MINED cargo=3"};
+    bool saved = false;
+    if (coreRenderer) {
+      view.contacts.push_back({"RAIDER-1", "hostile", 320, 310, 0, false, true, 75, 100,
+        "criminal.red_wake", "Red Wake"});
+      view.targetId = "RAIDER-1";
+      std::string coreError;
+      helion::client::CoreRenderStats stats;
+      const auto snapshot = helion::client::makePresentationSnapshot(view);
+      bool rendered = true;
+      for (int frame = 0; frame < 3; ++frame)
+        rendered = coreRenderer->render(960, 600, snapshot, true, &stats, coreError) && rendered;
+      saved = rendered && saveFrame(renderPath, 960, 600);
+      std::cout << "CORE-PERF frames=3 frame-ms=" << stats.frameMilliseconds << " draw-calls=" << stats.drawCalls
+                << " static-vertices=" << stats.staticVertices << " dynamic-vertices=" << stats.dynamicVertices << '\n';
+      if (!coreError.empty()) std::cerr << "CORE-RENDERER render failed: " << coreError << '\n';
+    } else {
+      const auto snapshot = helion::client::makePresentationSnapshot(view);
+      helion::client::render(960,600,view,snapshot);
+      saved=saveFrame(renderPath,960,600);
+      view.console=true; view.authenticated=false; view.typed="/login explorer synthetic-password";
+      const auto consoleSnapshot = helion::client::makePresentationSnapshot(view);
+      helion::client::render(960,600,view,consoleSnapshot);
+      saved=saveFrame(renderPath+".console.bmp",960,600)&&saved;
+    }
+    coreRenderer.reset();
     helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return saved?0:1;
   }
   bool running=true,greetingSeen=false,focused=true;
@@ -393,6 +382,11 @@ int main(int argc,char** argv) {
             view.authenticated=true; view.console=false; queue("FLIGHT"); queue("PROFILE"); queue("GALNET");
           }
           if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
+          if(frame.line.rfind("COMBAT HIT",0)==0 || frame.line.rfind("COMBAT DESTROYED target",0)==0)
+            view.weaponUntil=now+0.28;
+          if(frame.line.rfind("COMBAT DAMAGE",0)==0 || frame.line.rfind("COMBAT DESTROYED player",0)==0)
+            view.damageUntil=now+0.55;
+          if(frame.line.rfind("OK RECOVERED",0)==0) view.damageUntil=now+0.25;
           if(frame.line.rfind("COMBAT DESTROYED",0)==0) queue("PROFILE");
           helion::flight::DockTransaction sale;
           helion::flight::FuelTransaction refuel;
@@ -416,16 +410,31 @@ int main(int argc,char** argv) {
     if(view.connected && now-lastReply>10) { view.connected=false; view.log.push_back("ERR command link timed out"); }
     if(!view.connected) { outgoing.clear(); view.thrust=false; }
     if(view.log.size()>64) view.log.erase(view.log.begin(),view.log.end()-64);
-    const double alpha=1-std::exp(-18*dt);
-    visual.x+=(view.ship.x-visual.x)*alpha; visual.y+=(view.ship.y-visual.y)*alpha;
-    visual.yaw+=std::remainder(view.ship.yaw-visual.yaw,2*helion::flight::kPi)*alpha;
-    const auto authoritative=view.ship;
-    view.ship.x=visual.x; view.ship.y=visual.y; view.ship.yaw=visual.yaw;
     int width,height; SDL_GL_GetDrawableSize(window,&width,&height);
-    if(width>0 && height>0) { helion::client::render(width,height,view); SDL_GL_SwapWindow(window); }
-    view.ship=authoritative; SDL_Delay(8);
+    if(width>0 && height>0) {
+      if (coreRenderer) {
+        std::string coreError;
+        const auto snapshot = helion::client::makePresentationSnapshot(view);
+        if (!coreRenderer->render(width, height, snapshot, false, nullptr, coreError)) {
+          view.log.push_back("CORE RENDER ERROR / " + coreError);
+          running = false;
+        }
+      } else {
+        const double alpha=1-std::exp(-18*dt);
+        visual.x+=(view.ship.x-visual.x)*alpha; visual.y+=(view.ship.y-visual.y)*alpha;
+        visual.yaw+=std::remainder(view.ship.yaw-visual.yaw,2*helion::flight::kPi)*alpha;
+        const auto authoritative=view.ship;
+        view.ship.x=visual.x; view.ship.y=visual.y; view.ship.yaw=visual.yaw;
+        const auto snapshot = helion::client::makePresentationSnapshot(view);
+        helion::client::render(width,height,view,snapshot);
+        view.ship=authoritative;
+      }
+      SDL_GL_SwapWindow(window);
+    }
+    SDL_Delay(8);
   }
   SDL_StopTextInput(); connection->sendAll("QUIT\n",500); connection->closeNotify();
   shutdown(fd,SHUT_RDWR); close(fd);
+  coreRenderer.reset();
   helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return 0;
 }

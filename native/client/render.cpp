@@ -1,4 +1,5 @@
 #include "client/render.h"
+#include "client/presentation.h"
 #include "shared/organizations.h"
 #include <SDL2/SDL_opengl.h>
 #include <algorithm>
@@ -283,5 +284,22 @@ void render(int width, int height, const View& v) {
     if (typed.size()>73) typed=typed.substr(typed.size()-73);
     text(42,bottom-36,"> "+typed+(static_cast<int>(v.time*2)%2==0 ? "_" : ""),teal,1.5f);
   }
+}
+
+void render(int width, int height, const View& view, const PresentationSnapshot& snapshot) {
+  View presentationView = view;
+  presentationView.ship = snapshot.player;
+  presentationView.credits = snapshot.credits;
+  presentationView.experience = snapshot.experience;
+  presentationView.targetId = snapshot.selectedTarget;
+  presentationView.beamUntil = snapshot.miningActive ? snapshot.time + 0.1 : snapshot.time - 1.0;
+  presentationView.weaponUntil = snapshot.weaponFired ? snapshot.time + 0.1 : snapshot.time - 1.0;
+  presentationView.damageUntil = snapshot.incomingDamage ? snapshot.time + 0.1 : snapshot.time - 1.0;
+  presentationView.contacts.clear();
+  for (const auto& contact : snapshot.contacts)
+    presentationView.contacts.push_back({contact.id, contact.kind, contact.x, contact.y, contact.yaw,
+      contact.docked, contact.hostile, contact.hull, contact.maxHull,
+      contact.affiliationId, contact.affiliationName});
+  render(width, height, presentationView);
 }
 } // namespace helion::client

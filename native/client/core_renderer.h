@@ -1,10 +1,12 @@
 #pragma once
 
 #include "client/math.h"
+#include "client/presentation.h"
 
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -12,6 +14,7 @@
 namespace helion::client {
 
 inline constexpr std::string_view kCoreShaderVersion = "330 core";
+inline constexpr std::size_t kMaxCoreDynamicVertices = 12000;
 
 struct CoreFunctions {
   using CreateShader = GLuint (*)(GLenum);
@@ -72,6 +75,13 @@ struct CoreFunctions {
 
 std::string firstMissingCoreFunction(const std::vector<std::string>& available);
 
+struct CoreRenderStats {
+  int drawCalls = 0;
+  std::size_t staticVertices = 0;
+  std::size_t dynamicVertices = 0;
+  double frameMilliseconds = 0;
+};
+
 class CoreRenderer {
  public:
   CoreRenderer() = default;
@@ -81,19 +91,24 @@ class CoreRenderer {
   CoreRenderer& operator=(const CoreRenderer&) = delete;
 
   bool initialize(std::string& error);
-  bool render(int width, int height, bool checkErrors, std::string& error);
+  bool render(int width, int height, const PresentationSnapshot& snapshot,
+              bool checkErrors, CoreRenderStats* stats, std::string& error);
   void release();
   bool initialized() const { return initialized_; }
 
  private:
   bool compileShader(GLenum type, const char* source, GLuint& shader, std::string& error);
   bool linkProgram(GLuint vertexShader, GLuint fragmentShader, std::string& error);
+  bool setupBuffer(GLuint vertexArray, GLuint vertexBuffer, std::string& error);
 
   CoreFunctions functions_;
   GLuint program_ = 0;
-  GLuint vertexArray_ = 0;
-  GLuint vertexBuffer_ = 0;
+  GLuint staticVertexArray_ = 0;
+  GLuint staticVertexBuffer_ = 0;
+  GLuint dynamicVertexArray_ = 0;
+  GLuint dynamicVertexBuffer_ = 0;
   GLint mvpLocation_ = -1;
+  std::size_t staticVertexCount_ = 0;
   bool initialized_ = false;
 };
 

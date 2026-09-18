@@ -2,9 +2,9 @@
 
 This standalone C++17 pair uses TLS over POSIX TCP sockets. The client opens an SDL2
 window with an OpenGL compatibility-profile fixed-function gameplay renderer
-(OpenGL 3.0 compatibility first, OpenGL 2.1 fallback). An experimental
-OpenGL 3.3 core renderer is available for a procedural diagnostic scene; the
-gameplay path still has no shader, VAO, or modern OpenGL requirement. The client now includes a playable
+(OpenGL 3.0 compatibility first, OpenGL 2.1 fallback). The OpenGL 3.3 core
+renderer now presents live Kepler flight state with procedural VAO/VBO geometry;
+legacy remains the default gameplay path. The client now includes a playable
 top-down mining sector with server-authoritative flight and saved payouts.
 Networking and the command parser remain
 usable from a terminal with `--terminal`.
@@ -122,9 +122,11 @@ driver `crocus`, direct rendering, and OpenGL 3.3 compatibility. Use
 `auto` keeps gameplay on legacy while recording whether a 3.3 core probe
 succeeds. `core` requires a true OpenGL 3.3 core profile and fails clearly if
 the context or a required SDL-loaded function is unavailable; it never falls
-back to fixed-function rendering. Its diagnostic scene draws a transformed
-colored ship marker, station marker, and navigation axes with `#version 330
-core` shaders. It is experimental until the gameplay scene has feature parity.
+back to fixed-function rendering. It enters the real server/client loop and
+draws the player, stations, asteroids, haulers, commanders, Red Wake contacts,
+target reticles, mining/fire beams, and geometric hull/fuel/cargo/cooldown/
+docking/recovery indicators with `#version 330 core` shaders. Console text and
+cockpit-font parity remain legacy-only, and `auto` remains legacy.
 
 Validate the core hardware path with:
 
@@ -133,9 +135,18 @@ SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer core \
   --render-check /tmp/helion-core-hardware.bmp
 ```
 
+For live core gameplay, supply the normal host, port, and CA arguments:
+
+```sh
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client 127.0.0.1 4242 \
+  --ca /path/to/server.crt --renderer core
+```
+
 Do not use llvmpipe or a forced software/offscreen run as evidence of HD 3000
 hardware support. The fixed-function offscreen check remains a separate
-diagnostic and the Intel X11 check must report the Mesa Intel renderer.
+diagnostic and the Intel X11 check must report the Mesa Intel renderer. A
+captured 960x600 core frame measured about 0.10 ms, three draw calls, 100
+static vertices, and 963 dynamic vertices on the verified desktop.
 
 For an accelerated X11 validation, omit software-forcing and offscreen
 variables:

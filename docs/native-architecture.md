@@ -15,8 +15,12 @@ Runtime reports distinguish actual vendor, renderer, profile, and
 software/hardware classification from the requested context. Context request,
 modern function loading, shader/program ownership, buffer ownership, transform
 math, and the diagnostic scene are separate from the legacy gameplay renderer.
-The core path can be made the normal renderer only after gameplay-rendering
-parity is reached.
+Core gameplay now consumes a renderer-neutral presentation snapshot assembled
+from the existing client `View`; it contains copied player, station, asteroid,
+contact, target, feedback, and HUD state but has no networking, authority, or
+OpenGL ownership. Static and bounded dynamic geometry are separate GPU paths.
+The core path can be made the automatic renderer only after gameplay-rendering
+parity, text, cockpit, and stability are reached.
 
 ## Current compatibility boundary
 

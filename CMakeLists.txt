@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.16)
+project(helion_native LANGUAGES CXX)
+
+option(HELION_BUILD_SERVER "Build the headless server" ON)
+option(HELION_BUILD_CLIENT "Build the SDL2/OpenGL client" ON)
+option(HELION_BUILD_TESTS "Build native protocol tests" ON)
+option(HELION_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(HELION_WARNINGS_AS_ERRORS "Treat native compiler warnings as errors" OFF)
+
+if(NOT HELION_BUILD_SERVER AND NOT HELION_BUILD_CLIENT AND NOT HELION_BUILD_TESTS)
+  message(FATAL_ERROR "Enable at least one Helion build option")
+endif()
+
+if(HELION_BUILD_TESTS)
+  enable_testing()
+endif()
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(HELION_SANITIZERS)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    message(FATAL_ERROR "HELION_SANITIZERS requires GCC or Clang")
+  endif()
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
+if(HELION_WARNINGS_AS_ERRORS)
+  add_compile_options(-Werror)
+endif()
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+add_subdirectory(native)
+
+set(CPACK_PACKAGE_NAME "helion")
+set(CPACK_PACKAGE_VERSION "0.2.0")
+set(CPACK_PACKAGE_VENDOR "Helion")
+set(CPACK_PACKAGE_CONTACT "Helion maintainers")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Native space mining game with encrypted client/server transport")
+set(CPACK_GENERATOR "TGZ;DEB")
+set(CPACK_PACKAGE_FILE_NAME "helion-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "openssl, util-linux, coreutils")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+include(CPack)

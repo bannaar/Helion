@@ -1,0 +1,1268 @@
+HELION Lore, Factions & Gameplay World Bible Version 0.2
+
+PURPOSE
+
+This document establishes a gameplay-oriented lore foundation for
+Helion. The setting is designed so that factions, corporations, crime,
+law enforcement, military forces, alien civilizations, GalNet,
+reputation, trade, missions, exploration, and conflict can become
+functioning game systems rather than background text.
+
+SETTING
+
+Humanity did not conquer the stars. It inherited a crime scene.
+
+Helion takes place several centuries after humanity spread through a
+network of naturally occurring and artificially stabilized transit
+phenomena called Helion Gates.
+
+Nobody knows who originally built the oldest portions of the network.
+Humanity merely learned how to turn it back on.
+
+That discovery produced the Expansion Age, when governments,
+corporations, religious movements, prospectors, and entire populations
+poured outward. Colonies became nations. Mining settlements became
+industrial powers. Corporate security fleets became navies.
+
+Then came the Severance.
+
+A large section of the gate network failed almost simultaneously.
+Systems vanished from contact. Trade collapsed. Some colonies starved.
+Others became completely independent civilizations.
+
+Something also began appearing around the dead gates.
+
+It was not human.
+
+The present era is roughly a century later. Civilization has recovered,
+but there is no unified galactic government. Inhabited space is a
+patchwork of powers held together by commerce, treaties, private
+industry, and the surviving gate network.
+
+The player begins in one of the comparatively quiet frontier systems:
+Kepler.
+
+Quiet does not last.
+
+CORE GAMEPLAY PRINCIPLE
+
+Lore in Helion should generate gameplay.
+
+Political borders create legal systems, security levels, permits, wars,
+and smuggling opportunities.
+
+Corporations create equipment families, contracts, supply chains,
+industrial conflicts, and reputation ladders.
+
+Pirate and criminal organizations create black markets, contraband,
+bounty hunting, piracy, and alternative career progression.
+
+Military powers create faction warfare, naval careers, restricted
+systems, military equipment, and large-scale events.
+
+Alien civilizations create exploration, archaeology, diplomacy,
+technological progression, mysteries, and late-game threats.
+
+GalNet connects these systems by reporting events produced by the
+simulation and directing players toward opportunities.
+
+MAJOR HUMAN POWERS
+
+1.  THE HELION COMMONWEALTH
+
+The Helion Commonwealth is the largest successor to the old interstellar
+government.
+
+Its philosophy is simple: civilization survives because somebody keeps
+the lights on.
+
+It controls wealthy core systems and much of the surviving gate
+infrastructure. Its strengths are stability, infrastructure, scientific
+institutions, and a large professional navy. Its weaknesses are
+bureaucracy, political infighting, and an increasingly uncomfortable
+dependence on corporations.
+
+Gameplay Identity: - Lawful and relatively secure space -
+Beginner-friendly systems - Exploration and scientific missions - Rescue
+and logistics - Military contracts - Anti-piracy operations - Restricted
+technology unlocked through reputation
+
+Players gain Commonwealth standing through patrols, rescues, delivery of
+critical supplies, bounty hunting, exploration, and military service.
+
+Criminal activity can produce Commonwealth wanted status, causing
+patrols to scan, interdict, fine, arrest, or attack the player depending
+on severity.
+
+2.  THE FREE SYSTEMS COMPACT
+
+The Compact formed from colonies abandoned during the Severance.
+
+Its defining belief is that nobody gets to abandon its worlds twice.
+
+Individual systems retain enormous autonomy. Compact culture therefore
+varies significantly from system to system. Their technology favors
+ruggedness, modularity, field repair, and local manufacturing.
+
+Gameplay Identity: - Frontier settlements - Independent mining -
+Salvage - Bounty hunting - Local militias - Player organizations -
+System-level politics - Rugged modular ships
+
+Compact missions include settlement defense, machinery transport, pirate
+suppression, infrastructure recovery, prospecting, and salvage.
+
+Its military is the Compact Mutual Defense Fleet, while individual
+systems maintain local militias.
+
+This supports separate reputation layers, for example:
+
+Commonwealth: FRIENDLY Free Compact: ALLIED Kepler Authority: REVERED
+Orion Extraction Group: NEUTRAL Vanta Syndicate: HOSTILE
+
+3.  THE SOLAR DIRECTORATE
+
+The Solar Directorate believes the Severance demonstrated that
+fragmented government nearly destroyed civilization.
+
+Its answer is centralization.
+
+Directorate systems have low piracy, strong infrastructure, aggressive
+surveillance, and extensive regulation. Their territory is safe as long
+as the Directorate approves of what a pilot is doing.
+
+Gameplay Identity: - Military careers - Restricted technology - Security
+checkpoints - Cargo inspections - Smuggling - Espionage - Political
+missions - Transponder and stealth gameplay
+
+Directorate security can classify cargo as legal, restricted, or
+prohibited. This gives gameplay value to hidden cargo compartments,
+forged documentation, stealth systems, bribery, and alternative routes.
+
+4.  THE MERIDIAN LEAGUE
+
+The Meridian League is less a conventional country than a civilization
+organized around commerce.
+
+Its systems are governed through a federation of trading houses, station
+governments, corporations, and commercial interests.
+
+Everything has a market.
+
+Gameplay Identity: - Trading - Hauling - Commodity speculation -
+Corporate contracts - Industrial competition - Smuggling - Economic
+warfare - Major shipyards and exchanges
+
+Dynamic events should affect commodity prices. Wars increase demand for
+metals, fuel, weapons, and medicine. Famines increase food prices.
+Construction projects consume machinery and industrial materials. Pirate
+activity can make safe trade routes more valuable.
+
+5.  THE OUTER REACH
+
+The Outer Reach is not a unified government.
+
+It is everything beyond reliable government control: mining colonies,
+failed terraforming projects, independent stations, scientific enclaves,
+religious communities, smuggler ports, pirate kingdoms, and forgotten
+settlements.
+
+Security gradually changes as players move outward:
+
+Commonwealth Navy → System Security → Private Security → Local Militia →
+No Effective Authority
+
+The Reach forms Helion’s natural high-risk, high-reward frontier.
+
+CORPORATIONS
+
+ORION EXTRACTION GROUP
+
+Industry: Mining and heavy industry.
+
+Orion produces mining lasers, refinery equipment, cargo systems,
+industrial ships, and extraction technology.
+
+Gameplay: - Mining contracts - Resource surveys - Industrial hauling -
+Mining equipment progression - Deep-core mining - Corporate reputation -
+Labor and colony storylines
+
+Helion’s existing mining career loop can serve as the player’s first
+introduction to Orion.
+
+ASTER DYNAMICS
+
+Industry: Ships and propulsion.
+
+Aster specializes in agile ships, advanced drives, navigation
+technology, and exploration hardware.
+
+Gameplay: - Racing - Exploration - Navigation challenges - Propulsion
+upgrades - Prototype testing
+
+TITAN FORGE
+
+Industry: Heavy shipbuilding and weapons.
+
+Titan Forge produces armor, cannons, military ships, and heavy
+industrial hardware.
+
+Gameplay: - Combat equipment - Military procurement - Escort missions -
+Weapons testing - Heavy ship progression
+
+NOVAGEN
+
+Industry: Biotechnology, medicine, and terraforming.
+
+Gameplay: - Medical deliveries - Biological sample recovery -
+Hazardous-world expeditions - Terraforming support - Research contracts
+
+NovaGen also possesses classified research concerning alien biology.
+
+HORIZON SYSTEMS
+
+Industry: Sensors, computers, drones, and electronic warfare.
+
+Gameplay: - Exploration - Scanning - Reconnaissance - Drone systems -
+Electronic warfare - Signal interception
+
+HELIX INTERSTELLAR
+
+Industry: Helion Gate technology.
+
+Helix maintains and studies large portions of humanity’s gate
+infrastructure. This gives the corporation enormous influence despite
+owning relatively little conventional territory.
+
+Gameplay: - Gate maintenance - Gate exploration - High-security
+transport - Archaeological expeditions - Classified research - Long-term
+main-story involvement
+
+CRIMINAL ORGANIZATIONS
+
+THE VANTA SYNDICATE
+
+The Vanta Syndicate is the largest organized criminal network in
+inhabited space.
+
+Activities include smuggling, piracy, black markets, stolen ships,
+forged transponders, contraband, and illegal technology.
+
+Players may gain Vanta reputation.
+
+Gameplay Unlocks: - Black-market stations - Illegal modules - Stolen
+cargo fencing - Contraband missions - Assassination contracts - Forged
+transponders - Hidden cargo technology
+
+High Vanta reputation may damage relationships with lawful factions.
+
+THE RED WAKE
+
+The Red Wake consists of aggressive pirate groups that raid trade lanes
+and isolated settlements.
+
+They are predators rather than romantic smugglers.
+
+Gameplay: - Pirate NPC encounters - Convoy attacks - Bounty hunting -
+Pirate bases - Raid events - Pirate career progression - Dangerous
+frontier regions
+
+Players who join or assist the Red Wake gain access to pirate ports and
+raiding contracts while becoming increasingly unwelcome in lawful space.
+
+SMUGGLERS: THE WAYFARERS’ GUILD
+
+The Wayfarers’ Guild is an informal network of pilots who transport
+cargo that governments or corporations do not want moved.
+
+Some cargo is clearly criminal. Other cargo creates moral ambiguity.
+
+A smuggling mission might involve illegal weapons, stolen technology,
+refugees, medicine restricted by corporate patents, political
+dissidents, or prohibited alien artifacts.
+
+This allows contraband gameplay to contain narrative choices rather than
+simple legal/illegal labels.
+
+LAW ENFORCEMENT
+
+SYSTEM SECURITY
+
+Every civilized system can maintain local law enforcement.
+
+Kepler’s organization is the Kepler Security Service.
+
+Responsibilities: - Station security - Navigation-zone patrols - Cargo
+scans - Crime response - Fines - Local bounties - Traffic enforcement -
+Search and rescue
+
+FACTION LAW ENFORCEMENT
+
+Commonwealth: Commonwealth Marshals
+
+Directorate: Internal Security Directorate
+
+Free Systems Compact: Local system militias and Compact authorities
+
+Meridian League: Contract security organizations and commercial
+enforcement agencies
+
+INTERSTELLAR NAVIGATION & SECURITY AUTHORITY (INSA)
+
+INSA is a treaty organization handling serious crimes that cross
+political borders.
+
+Jurisdiction can include: - Large-scale piracy - Slave trafficking -
+Gate sabotage - Mass-casualty attacks - Stolen military technology -
+Illegal alien artifacts - Major organized crime
+
+Wanted progression can operate in layers:
+
+Local Fine → System Warrant → Faction Bounty → INSA Warrant
+
+An INSA warrant follows a player through participating civilizations.
+
+NAVIES AND MILITARIES
+
+COMMONWEALTH NAVY
+
+Doctrine: Balanced fleet warfare, carriers, escorts, logistics, and
+coordinated professional forces.
+
+Gameplay: - Naval missions - Patrols - Escort duty - Anti-piracy -
+Wartime operations - Military rank progression
+
+DIRECTORATE FLEET
+
+Doctrine: Heavy formations, surveillance, electronic warfare,
+discipline, and centralized command.
+
+Gameplay: - Military campaigns - Security operations - Restricted
+technology - Intelligence missions - Electronic warfare
+
+COMPACT MUTUAL DEFENSE FLEET
+
+Doctrine: Modular ships, militia forces, converted civilian craft, and
+decentralized defense.
+
+Gameplay: - Settlement defense - Emergency mobilization - Convoy
+defense - Improvised fleet actions
+
+MERIDIAN SECURITY FLEET
+
+Doctrine: Advanced corporate hardware supported by contractors and
+mercenary forces.
+
+Gameplay: - Corporate warfare - Trade-route security - Asset
+protection - Mercenary contracts
+
+THE GATEWATCH
+
+Gatewatch is a multinational military and scientific organization tasked
+with protecting Helion Gates.
+
+Officially, Gatewatch protects transit infrastructure.
+
+Unofficially, Gatewatch is watching the gates because something
+occasionally comes through them.
+
+Gameplay: - Gate defense - Classified missions - Exploration - Alien
+encounters - Emergency events - Late-game story progression
+
+ALIEN CIVILIZATIONS, RIFTS & UNKNOWN SPACE
+
+DESIGN PRINCIPLE
+
+Helion's alien storyline is built around two major extraterrestrial civilizations and the hidden region called Unknown Space.
+
+The first species, the Khepri, fills the role of humanity's living first-contact mystery. They are biologically and technologically alien, can enter Known Space at will, and are not initially hostile. They are curious about humanity and react dynamically to player behavior.
+
+The second civilization, the Vael, fills the role of Helion's ancient and deeply mysterious post-biological civilization. Humanity first encounters their ruins, autonomous guardians, dormant installations, and advanced technology in Unknown Space. Only much later does humanity learn that some Vael still exist.
+
+Both are tied to temporary wormhole-like passages called Rifts.
+
+RIFTS
+
+Rifts are unstable spacetime passages connecting Known Space to Unknown Space and sometimes connecting regions of Unknown Space to one another.
+
+Unlike Helion Gates, Rifts have no permanent gate structure and normally cannot be selected directly from a navigation map.
+
+Human pilots must locate them through exploration gameplay:
+
+System Scan
+→ Detect Unknown Gravitational Signature
+→ Launch Probes
+→ Triangulate
+→ Resolve Signature
+→ Identify Rift
+→ Bookmark
+→ Enter
+
+Rifts have gameplay properties including:
+
+- Stability
+- Remaining lifetime
+- Maximum ship mass
+- Total transit mass
+- Destination class
+- Signature strength
+- Environmental effects
+- Return-route uncertainty
+
+Some Rifts connect Known Space to shallow Unknown Space.
+
+Others connect Unknown Space to deeper regions.
+
+Rare Rifts can lead into Deep Unknown Space.
+
+A Rift can collapse after a player enters it. Explorers can therefore become stranded and must scan for another route home.
+
+This makes fuel, supplies, hull condition, cargo capacity, repair capability, navigation equipment, and cooperation with other explorers meaningful.
+
+UNKNOWN SPACE
+
+Unknown Space is not represented on normal human navigation charts.
+
+It has:
+
+- No conventional GalNet infrastructure
+- No guaranteed navigation beacons
+- Few or no human stations
+- Uncertain rescue capability
+- Unstable routes
+- Alien structures
+- Ancient wreckage
+- Unmapped resources
+- Rare technologies
+- High-risk exploration sites
+
+Unknown Space becomes a full career environment rather than a single mission destination.
+
+Players can scan signatures inside Unknown Space and discover:
+
+- Additional Rifts
+- Alien vessels
+- Vael ruins
+- Dormant stations
+- Ancient fleets
+- Resource fields
+- Anomalies
+- Artificial signals
+- Khepri activity
+- Unknown high-threat signatures
+
+THE KHEPRI
+
+The Khepri are humanity's first major encounter with a living extraterrestrial civilization.
+
+They are not initially hostile.
+
+Humanity does not discover the Khepri in their home territory.
+
+The Khepri discover humanity.
+
+FIRST CONTACT
+
+The first documented Khepri encounter occurs when an unidentified vessel approaches a human ship operating near the frontier.
+
+The vessel has:
+
+- No human transponder
+- No recognizable drive plume
+- No known reactor signature
+- No response to conventional communication
+
+It does not attack.
+
+It approaches, scans the human vessel, observes its activity, and leaves.
+
+Additional encounters follow.
+
+Khepri vessels watch miners, investigate cargo, observe stations, follow convoys, inspect wreckage, and sometimes accompany ships for short periods.
+
+Human explorers initially assume that the Khepri enter Known Space through undiscovered Rifts.
+
+That assumption proves incorrect.
+
+Humans must scan down Rifts.
+
+The Khepri appear capable of entering and leaving the Rift network at will.
+
+KHEPRI BIOLOGY AND TECHNOLOGY
+
+The Khepri are genuinely nonhuman.
+
+Their vessels are partly biological and partly technological. Humanity cannot initially determine where the organism ends and the spacecraft begins.
+
+Known characteristics include:
+
+- Organic neural structures
+- Mineralized armor
+- Self-repairing tissue
+- Grown power conduits
+- Symbiotic machinery
+- Adaptive internal structures
+- Unfamiliar energy systems
+
+Different Khepri ship types may represent biological castes rather than manufactured ship classes.
+
+KHEPRI VESSEL CASTES
+
+Observer
+
+Small reconnaissance organism.
+
+Behavior:
+- Approaches human ships
+- Scans
+- Watches mining and travel
+- Avoids unnecessary combat
+- Withdraws when threatened
+
+Gatherer
+
+Resource-collection organism.
+
+Behavior:
+- Mines or harvests resources
+- Collects wreckage
+- Investigates cargo
+- Acquires biological and mineral samples
+
+Shepherd
+
+Coordination organism.
+
+Behavior:
+- Directs groups
+- Protects Gatherers and Observers
+- Manages local Khepri activity
+- Demonstrates more complex communication
+
+Guardian
+
+Defensive combat organism.
+
+Behavior:
+- Appears after repeated aggression
+- Protects Khepri vessels and sites
+- Responds strongly to hostile actions
+
+Reaver
+
+Specialized combat organism.
+
+Behavior:
+- Appears after prolonged conflict
+- Uses tactics adapted to human weapons
+- Hunts known hostile targets
+- Represents escalation rather than normal first contact
+
+Broodship
+
+Massive mobile Khepri organism capable of supporting or producing smaller castes.
+
+A Broodship encounter is a major regional event.
+
+KHEPRI DISPOSITION SYSTEM
+
+Khepri behavior should be driven by player and community actions rather than a permanent universal hostile flag.
+
+Possible encounter states:
+
+CURIOUS
+OBSERVING
+CAUTIOUS
+DEFENSIVE
+AGITATED
+HOSTILE
+HUNTING
+
+Peaceful behavior can lead to observation and experimentation.
+
+Examples:
+
+- Mining peacefully nearby
+- Dropping cargo for inspection
+- Transmitting signals
+- Following without firing
+- Returning recovered Khepri material
+- Assisting a damaged Khepri vessel
+
+Aggressive behavior changes their response.
+
+Examples:
+
+- Weapons lock
+- Repeated close approaches
+- Theft from Khepri sites
+- Firing upon a vessel
+- Destroying a vessel
+- Attacking a Broodship or protected site
+
+Khepri behavior can change at multiple levels:
+
+- Individual encounter
+- Player relationship
+- Local system behavior
+- Regional behavior
+- Civilization-wide response during major events
+
+A player who peacefully studies the Khepri should experience different interactions from a player who repeatedly hunts them.
+
+THE POSSIBILITY OF WAR
+
+A Khepri war does not need to begin as a predetermined story event.
+
+Player behavior can contribute to escalation.
+
+Possible progression:
+
+Unknown Contact Observed
+→ Human Curiosity
+→ First Peaceful Interactions
+→ First Khepri Vessel Attacked
+→ Defensive Responses
+→ Guardian Appearances
+→ Repeated Human-Khepri Violence
+→ Reaver Deployment
+→ Attacks on Armed Human Traffic
+→ Regional Conflict
+→ Possible Khepri War
+
+GalNet, Gatewatch, corporations, and governments react throughout the escalation.
+
+Players may therefore participate in the history that produces the conflict rather than simply receiving a scripted announcement.
+
+KHEPRI GAMEPLAY CAREERS
+
+Xenobiology:
+Collect biological and technological samples without necessarily killing Khepri.
+
+Xenolinguistics:
+Analyze signals and develop communication models.
+
+Exploration:
+Locate Khepri structures, migration routes, and activity in Unknown Space.
+
+Trade:
+Discover materials or resources that Khepri value.
+
+Diplomacy:
+Participate in controlled contact experiments and first-contact missions.
+
+Combat:
+Fight hostile Khepri when relations deteriorate.
+
+Salvage:
+Recover components from destroyed or abandoned alien vessels.
+
+KHEPRI ADAPTATION
+
+Khepri can learn collectively.
+
+Repeated use of particular human weapons or tactics can alter future encounters.
+
+Possible adaptations include:
+
+- Armor resistance
+- Different engagement ranges
+- New defensive behavior
+- Countermeasures
+- New combat castes
+
+This creates evolving alien combat rather than static enemy statistics.
+
+THE VAEL
+
+The Vael are an ancient, extremely advanced civilization associated with Unknown Space.
+
+Humanity initially believes they are extinct.
+
+Human explorers first encounter:
+
+- Vael ruins
+- Dormant stations
+- Artificial moons
+- Ancient fleets
+- Automated industrial complexes
+- Data archives
+- Defensive systems
+- Autonomous guardians
+
+Many structures are thousands or millions of years old.
+
+Some remain operational.
+
+THE SENTINELS
+
+Humanity initially calls the autonomous defenders of Vael sites Sentinels.
+
+Sentinels normally ignore or observe explorers who do not interfere with protected structures.
+
+They become defensive when players:
+
+- Damage Vael structures
+- Remove protected technology
+- Attack Sentinels
+- Attempt restricted access
+- Activate dangerous systems
+
+Sentinels use technology significantly beyond normal human capabilities.
+
+They provide high-level Unknown-Space PvE.
+
+Destroying them can produce extremely valuable salvage but may also escalate the response of the site.
+
+VAEL EXPLORATION SITES
+
+Vael Archive
+
+Ancient information repository.
+
+Gameplay:
+- Scanning
+- Decoding
+- Hacking
+- Historical discoveries
+- Navigation data
+- Alien research
+
+Dormant Citadel
+
+Large fortified structure containing automated defenses and inaccessible internal regions.
+
+Silent Fleet
+
+Hundreds of ancient vessels drifting in formation.
+
+Some are inert.
+
+Others may react to intrusion.
+
+Machine Garden
+
+Autonomous manufacturing ecosystem capable of maintaining or constructing Vael technology.
+
+The Observatory
+
+Ancient installation pointed toward regions beyond mapped Unknown Space.
+
+Grave System
+
+A system filled with destroyed Vael structures and vessels.
+
+Its existence suggests that something was capable of defeating the Vael.
+
+VAEL TECHNOLOGY AND SALVAGE
+
+Possible recovered materials include:
+
+- Vael Power Matrix
+- Vael Sensor Core
+- Unknown Neural Substrate
+- Phase Conduit
+- Spacetime Regulator
+- Ancient Navigation Core
+
+These become part of the wider economy.
+
+Corporations pay for them.
+
+Gatewatch may restrict them.
+
+Governments may classify them.
+
+Smugglers may traffic them.
+
+Engineers can eventually create human-Vael hybrid modules.
+
+Alien exploration therefore feeds trade, industry, crime, research, military development, and progression.
+
+THE VAEL AWAKENING
+
+For a significant portion of Helion's story, humanity believes the Vael are dead.
+
+Eventually an expedition discovers a pristine Vael installation.
+
+Systems activate.
+
+Sentinels alter their behavior.
+
+A living or instantiated Vael appears.
+
+Its first translated communication may be:
+
+"You are inside our dead."
+
+Humanity then discovers that the Vael did not completely become extinct.
+
+THE VEIL
+
+Much of Vael civilization transitioned into enormous distributed computational environments collectively called the Veil.
+
+For many Vael, physical bodies became optional.
+
+Some remained biological.
+
+Some became synthetic.
+
+Some exist primarily as information and instantiate physical forms when necessary.
+
+This explains why apparently abandoned Vael infrastructure has continued operating for immense periods.
+
+The civilization is not entirely dead.
+
+Parts of it are dormant.
+
+VAEL POLITICAL GROUPS
+
+The Custodians
+
+Purpose:
+Protect Vael ruins, history, and technology.
+
+Attitude toward humanity:
+Generally opposed to uncontrolled human salvage and intrusion.
+
+The Awakened
+
+Purpose:
+Return to active physical civilization and engage with the changing galaxy.
+
+Attitude toward humanity:
+Curious and potentially cooperative.
+
+The Continuum
+
+Purpose:
+Remain primarily within the Veil.
+
+Attitude toward humanity:
+Distant. Human biological civilization may appear primitive or temporary to them.
+
+The Exiles
+
+Purpose:
+Vael who rejected or abandoned the Veil.
+
+Attitude toward humanity:
+Varies widely.
+
+The Severed
+
+A damaged or corrupted Vael population associated with an ancient catastrophe.
+
+Their exact nature should remain unrevealed during early development.
+
+THE KHEPRI-VAEL CONNECTION
+
+Humanity initially assumes:
+
+The Khepri use Unknown Space.
+The Vael inhabited Unknown Space.
+Therefore the Vael created or controlled the Khepri.
+
+This is wrong.
+
+Vael records eventually reveal that Khepri existed in Unknown Space before the Vael established their civilization there.
+
+The Vael feared one particular Khepri capability:
+
+Natural Rift navigation.
+
+Vael technology is required to identify and manipulate the Rift network.
+
+Humanity requires scanners and probes.
+
+Khepri appear to sense and traverse it naturally.
+
+THE KHEPRI MIGRATION
+
+Humanity initially interprets increasing Khepri activity in Known Space as exploration or expansion.
+
+Later evidence suggests something different.
+
+The Khepri are migrating.
+
+Something deeper in Unknown Space is forcing populations outward.
+
+The identity of that force should remain one of Helion's long-term mysteries.
+
+It is significant because:
+
+- The Khepri can naturally navigate Rifts.
+- The Vael possessed extremely advanced technology.
+- The Vael withdrew into the Veil.
+- Vael Grave Systems exist.
+- Something is causing Khepri migration.
+
+These clues eventually lead players toward Deep Unknown Space.
+
+ALIEN ECONOMY
+
+Alien interaction should introduce valuable commodities and research materials.
+
+Examples:
+
+Khepri Neural Tissue
+Source: damaged/dead Khepri organisms
+Use: xenobiology and advanced research
+Legal status: potentially restricted
+
+Khepri Mineral Carapace
+Source: salvage
+Use: armor and materials research
+
+Khepri Resonance Organ
+Source: rare salvage
+Use: sensor/communication research
+
+Vael Power Matrix
+Source: Vael sites
+Use: advanced energy systems
+
+Vael Sensor Core
+Source: ruins and Sentinels
+Use: scanning and navigation research
+
+Vael Phase Conduit
+Source: advanced Vael structures
+Use: hybrid modules
+
+Vael Navigation Core
+Source: rare sites
+Use: Rift research
+
+Alien commodities can be:
+
+- Legal
+- Restricted
+- Protected
+- Classified
+- Prohibited
+
+depending on jurisdiction.
+
+This creates alien-related trade, smuggling, law enforcement, corporate competition, and black markets.
+
+ALIEN TECHNOLOGY PROGRESSION
+
+Alien equipment should not simply replace human technology with higher statistics.
+
+It should introduce different capabilities and tradeoffs.
+
+Examples:
+
+Human Scanner:
+Reliable, inexpensive, understood.
+
+Khepri-Derived Resonance Sensor:
+Can detect unusual biological or Rift signatures but requires specialized power and maintenance.
+
+Human Drive:
+Predictable and serviceable almost everywhere.
+
+Vael-Derived Spacetime Regulator:
+Improves Rift analysis or navigation but may be difficult to repair and may attract regulatory attention.
+
+Human Armor:
+Cheap and robust.
+
+Khepri-Derived Composite:
+Self-repairing under certain conditions but vulnerable to specific damage types.
+
+This keeps human industry relevant.
+
+GALNET AND ALIEN EVENTS
+
+GalNet should document alien history as players experience it.
+
+Example progression:
+
+UNKNOWN VESSEL REPORTED NEAR KEPLER
+
+GATEWATCH: PILOTS ADVISED NOT TO ENGAGE
+
+FIRST KHEPRI VESSEL DESTROYED
+
+SCIENTISTS CONDEMN UNPROVOKED ATTACK
+
+KHEPRI GUARDIAN CASTE OBSERVED
+
+MULTIPLE KHEPRI CONTACTS ENTER KEPLER
+
+FIRST STABLE RIFT MAPPED
+
+EXPEDITION RETURNS FROM UNKNOWN SPACE
+
+ANCIENT ARTIFICIAL STRUCTURES CONFIRMED
+
+VAEL TECHNOLOGY RECOVERED
+
+GATEWATCH RESTRICTS ALIEN SALVAGE
+
+FIRST LIVING VAEL CONTACT CONFIRMED
+
+KHEPRI MIGRATION THEORY GAINS SUPPORT
+
+DEEP UNKNOWN SIGNATURE DETECTED
+
+GalNet reports should be connected to actual simulation and player actions wherever practical.
+
+ALIEN DEVELOPMENT ROADMAP
+
+Alien gameplay should enter Helion gradually.
+
+Phase 1:
+Exploration scanners and signal signatures.
+
+Phase 2:
+Probe mechanics and scannable Rifts.
+
+Phase 3:
+Unknown Space navigation and survival.
+
+Phase 4:
+Non-hostile Khepri observation encounters.
+
+Phase 5:
+Khepri disposition and reaction system.
+
+Phase 6:
+Khepri communication and research.
+
+Phase 7:
+Vael ruins and exploration sites.
+
+Phase 8:
+Sentinel PvE and alien salvage.
+
+Phase 9:
+Human-alien hybrid technology.
+
+Phase 10:
+Living Vael contact.
+
+Phase 11:
+Khepri migration storyline.
+
+Phase 12:
+Deep Unknown Space.
+
+Phase 13:
+Reveal the larger threat or phenomenon driving the migration.
+
+LONG-TERM ALIEN STORY
+
+Humanity discovers Rifts and begins entering Unknown Space.
+
+The Khepri begin appearing in Known Space.
+
+They are curious rather than hostile.
+
+Human behavior determines whether early contact develops toward cooperation, fear, or conflict.
+
+Explorers discover the remains of the Vael civilization.
+
+Humanity raids, studies, protects, sells, and fights over Vael technology.
+
+Eventually humanity discovers that the Vael are not entirely extinct.
+
+Living Vael reveal that the Khepri predate their presence in Unknown Space and possess a natural relationship with the Rift network.
+
+Increasing Khepri movement is eventually recognized as migration rather than invasion.
+
+Something deeper in Unknown Space is pushing them toward Known Space.
+
+The Vael know more than they initially reveal.
+
+The Khepri may be trying to escape.
+
+Humanity must decide whether to exploit Unknown Space, defend Known Space, cooperate with alien civilizations, or continue pushing deeper.
+
+The eventual question is no longer simply:
+
+"What is in Unknown Space?"
+
+It becomes:
+
+"What is coming out of it?"
+
+GALNET
+
+GalNet should be a major gameplay system rather than static flavor text.
+
+Suggested Channels: - Top Stories - Local - Economy - Security - War -
+Exploration - Corporate - Community - Bounties
+
+GalNet stories should increasingly be generated from simulation state.
+
+Examples:
+
+Repeated pirate raids: PIRATE ACTIVITY SURGES IN KEPLER
+
+Large quantities of player-delivered ore: KEPLER INDUSTRIAL OUTPUT
+REACHES RECORD LEVEL
+
+Faction mobilization: COMMONWEALTH MOBILIZES THIRD FLEET
+
+Commodity shortage: MEDICAL SUPPLY SHORTAGE HITS OUTER COLONIES
+
+GalNet should create a feedback loop:
+
+Gameplay → Simulation → News → Player Decisions → Simulation
+
+GalNet can also distribute missions, warnings, market opportunities,
+faction propaganda, exploration discoveries, player achievements, wanted
+notices, and community events.
+
+GAMEPLAY INTEGRATION
+
+THE STARTING EXPERIENCE
+
+The player begins as a newly licensed independent commander at Kepler
+Station.
+
+Initial state: - Starter Sidewinder - 1,500 credits - Docked at Kepler -
+Limited equipment - Limited faction reputation
+
+The player’s first meaningful contract can be provided by Orion
+Extraction Group.
+
+FIRST ORE
+
+Accept contract → Launch from Kepler → Navigate to mining area → Locate
+asteroid → Mine ore → Fill cargo → Return to Kepler → Dock → Sell ore →
+Receive credits and XP → Complete contract → Gain Orion/local reputation
+
+This existing economic loop becomes the doorway into the larger
+universe.
+
+CAREER EXPANSION
+
+First Ore → Orion Contracts → Local Reputation → Kepler Economy →
+Faction Contacts → Multi-System Travel → Corporate Politics → Piracy /
+Policing / Smuggling → Faction Conflict → Gatewatch → Alien Artifacts →
+Veyra Contact → Choir Signals → The Null → Secret of the Helion Network
+
+PLAYER CAREERS
+
+Players should not be required to follow one central story.
+
+Possible careers include: - Miner - Trader - Hauler - Explorer -
+Salvager - Bounty hunter - Smuggler - Pirate - Corporate contractor -
+Commonwealth naval pilot - Compact militia pilot - Mercenary -
+Scientist - Alien archaeologist - Gatewatch operative
+
+These careers should interact with the same economy, faction,
+reputation, crime, and world-event systems.
+
+REPUTATION MODEL
+
+Reputation should exist at several levels:
+
+-   Major political faction
+-   Local system government
+-   Corporation
+-   Military organization
+-   Criminal organization
+-   Alien civilization
+
+Reputation affects: - Mission availability - Payment - Equipment
+access - Ship access - Station access - Security response - Legal
+treatment - Information availability - Story branches
+
+CRIME MODEL
+
+Crime should produce escalating consequences.
+
+Examples: - Trespassing - Illegal cargo - Smuggling - Theft - Assault -
+Piracy - Murder - Gate sabotage - Alien artifact trafficking
+
+Possible consequences: - Fine - Cargo confiscation - Local warrant -
+System bounty - Faction bounty - INSA warrant - Station denial -
+Interdiction - Kill-on-sight status
+
+ECONOMIC MODEL
+
+Lore and economy should interact.
+
+Events alter supply and demand.
+
+Examples: - War increases weapons, armor, medicine, and fuel demand. -
+Construction increases metal and machinery demand. - Famine increases
+food prices. - Epidemics increase medicine demand. - Pirate activity
+increases insurance/security costs and creates risky high-margin
+routes. - Gate failures isolate markets. - Discoveries create demand for
+scientific equipment. - Alien events create demand for specialized
+technology.
+
+MILITARY GAMEPLAY
+
+Players may participate in military organizations without requiring
+every player to become a soldier.
+
+Military gameplay can include: - Patrols - Reconnaissance - Convoy
+escort - Search and rescue - Interdiction - Fleet battles - Base
+defense - Intelligence gathering - Blockade running - Logistics -
+Wartime hauling
+
+Rank progression can unlock missions, ships, equipment, and restricted
+systems.
+
+ALIEN GAMEPLAY PROGRESSION
+
+Alien content should unfold gradually.
+
+Phase 1: Strange signals and artifacts.
+
+Phase 2: Ruins and unexplained technology.
+
+Phase 3: Evidence of the Veyra.
+
+Phase 4: Direct Veyra contact and diplomacy.
+
+Phase 5: Choir phenomena.
+
+Phase 6: Null incursions.
+
+Phase 7: Discovery of the deeper history of the Helion Gate network.
+
+This keeps alien encounters meaningful instead of making them ordinary
+background traffic from the beginning.
+
+MULTIPLAYER INTEGRATION
+
+As Helion’s multiplayer simulation expands, player careers should
+collide naturally.
+
+Examples: - Miners create resources. - Traders move resources. - Pirates
+attack traders. - Bounty hunters pursue pirates. - Security forces
+protect systems. - Smugglers exploit legal borders. - Corporations
+compete for resources. - Explorers discover profitable regions. -
+Military players participate in faction conflicts. - GalNet reports the
+resulting events.
+
+The objective is a shared simulation in which professions depend upon
+and disrupt one another.
+
+LONG-TERM IDENTITY
+
+Helion should become a persistent space sandbox in which economics,
+exploration, crime, politics, military conflict, and an unfolding alien
+mystery are different ways of interacting with the same universe.
+
+The setting should support both independent sandbox play and a slowly
+unfolding galactic narrative.
+
+The central mystery is the Helion Gate network itself.
+
+Humanity did not build it.
+
+The Veyra did not build it.
+
+The Choir may understand part of it.
+
+The Null may be trying to contain it.
+
+And humanity has been turning it back on.

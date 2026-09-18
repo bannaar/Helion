@@ -34,6 +34,7 @@ screenshots of the SDL/OpenGL client.
 | `native/client/` | Standalone SDL2/OpenGL client |
 | `native/README.md` | Native quick start and protocol reference |
 | `docs/installation.md` | Complete source, package, server, and client installation guide |
+| `docs/lore/` | Canonical world bible and gameplay-integration roadmap |
 | `docs/native-server.md` | Server installation and production configuration |
 | `docs/native-client.md` | Client installation, launcher usage, and graphics troubleshooting |
 | `migrations/` | Browser database migrations |

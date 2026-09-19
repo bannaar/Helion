@@ -77,7 +77,12 @@ compatibility and core contexts. The graphics foundation supports explicit
 gameplay remains on the compatibility / 2.1-fallback renderer. Core mode now
 enters the real client loop and renders copied Kepler presentation state with
 GLSL 3.30: stations, asteroids, traffic, commanders, Red Wake contacts,
-targeting, mining/fire feedback, and geometric status HUD indicators. Text,
-cockpit parity, textures, model loading, and automatic core selection remain
-future work. The measured 960x600 Intel HD 3000 diagnostic frame is about
-0.10 ms with three draw calls and bounded static/dynamic geometry.
+targeting, mining/fire feedback, geometric status indicators, a built-in
+bitmap font, and a compact cockpit/HUD. The cockpit presents mission,
+reputation, GalNet/recent-message, combat, mining, docking, and recovery
+feedback without adding a second event system. Text is intentionally limited
+to a bounded Latin bitmap alphabet; textures beyond the font atlas, model
+loading, full legacy cockpit parity, and automatic core selection remain
+future work. Batch 8 Intel HD 3000 X11 states measure about 3.8–4.7 ms at
+960x600, four draw calls, one texture, and bounded world/HUD/text geometry.
+`auto` remains legacy until parity and stability are approved.

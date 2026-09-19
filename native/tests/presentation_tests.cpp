@@ -51,6 +51,10 @@ int main() {
   check(snapshot.asteroids.size() == 1 && snapshot.stations.size() == 1,
         "snapshot supports bounded world collections");
   View view;
+  view.commanderName = "TEST PILOT";
+  view.missionSummary = "ACTIVE / FIRST ORE";
+  view.reputation["authority.kepler"] = 25;
+  view.log = {"GALNET / TEST EVENT"};
   view.contacts.resize(kMaxPresentationContacts + 8);
   for (std::size_t i = 0; i < view.contacts.size(); ++i) {
     view.contacts[i].id = "CONTACT-" + std::to_string(i);
@@ -59,6 +63,9 @@ int main() {
   const auto bounded = makePresentationSnapshot(view);
   check(bounded.contacts.size() == kMaxPresentationContacts,
         "snapshot bounds maximum contact presentation state");
+  check(bounded.commanderName == "TEST PILOT" && bounded.missionSummary == "ACTIVE / FIRST ORE" &&
+        bounded.reputation.at("authority.kepler") == 25 && bounded.recentMessages.size() == 1,
+        "snapshot copies cockpit metadata and recent messages");
   std::cout << "presentation snapshot tests passed\n";
   return failures == 0 ? 0 : 1;
 }

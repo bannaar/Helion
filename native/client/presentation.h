@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,10 @@ struct PresentationSnapshot {
   flight::State player;
   int credits = 0;
   int experience = 0;
+  std::map<std::string, int> reputation;
+  std::string commanderName;
+  std::string stationContext;
+  std::string missionSummary;
   std::vector<PresentationStation> stations;
   std::vector<PresentationAsteroid> asteroids;
   std::vector<PresentationContact> contacts;
@@ -66,6 +71,7 @@ struct PresentationSnapshot {
   bool authenticated = false;
   bool connected = false;
   double time = 0;
+  std::vector<std::string> recentMessages;
 };
 
 struct CameraFrame {

@@ -24,6 +24,9 @@ PresentationSnapshot makePresentationSnapshot(const View& view) {
   snapshot.player = view.ship;
   snapshot.credits = view.credits;
   snapshot.experience = view.experience;
+  snapshot.reputation = view.reputation;
+  snapshot.commanderName = view.commanderName;
+  snapshot.missionSummary = view.missionSummary;
   snapshot.selectedTarget = view.targetId;
   snapshot.miningActive = view.time < view.beamUntil;
   snapshot.weaponFired = view.time < view.weaponUntil;
@@ -31,6 +34,10 @@ PresentationSnapshot makePresentationSnapshot(const View& view) {
   snapshot.authenticated = view.authenticated;
   snapshot.connected = view.connected;
   snapshot.time = view.time;
+  if (view.ship.docked && view.ship.station >= 0 &&
+      view.ship.station < static_cast<int>(flight::kStations.size()))
+    snapshot.stationContext = flight::kStations[static_cast<std::size_t>(view.ship.station)].name;
+  else snapshot.stationContext = "KEPLER SYSTEM";
   for (const auto& station : flight::kStations)
     snapshot.stations.push_back({station.name, station.x, station.y, colorFor(PresentationClass::station)});
   for (const auto& rock : flight::kRocks)
@@ -45,6 +52,10 @@ PresentationSnapshot makePresentationSnapshot(const View& view) {
       classification, colorFor(classification), contact.x, contact.y, contact.yaw,
       contact.hull, contact.maxHull, contact.docked, contact.hostile, contact.id == view.targetId});
   }
+  const std::size_t visibleMessages = std::min<std::size_t>(12, view.log.size());
+  snapshot.recentMessages.reserve(visibleMessages);
+  for (std::size_t i = view.log.size() - visibleMessages; i < view.log.size(); ++i)
+    snapshot.recentMessages.push_back(view.log[i]);
   return snapshot;
 }
 

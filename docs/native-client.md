@@ -189,9 +189,10 @@ snapshot. It never falls back silently to the legacy renderer. An unknown
 renderer value is rejected.
 
 The core scene uses a `#version 330 core` position/color shader, a VAO and VBO,
-and a small model/view/projection transform. It is a compatibility and driver
-validation path, not the gameplay renderer: text, textures, models, and the
-full cockpit remain legacy work. Run a captured core frame on the verified
+and a small model/view/projection transform. It now also has a compact built-in
+5x7 bitmap font, one atlas texture, batched glyph quads, and a bounded cockpit
+presentation. It is still an incremental gameplay renderer rather than a
+complete visual replacement. Run a captured core frame on the verified
 desktop driver with:
 
 ```sh
@@ -212,20 +213,41 @@ SDL_VIDEODRIVER=x11 ./build-native/native/helion_client 127.0.0.1 4242 \
 
 Core mode renders the player, Kepler and Cinder, asteroids, hauler traffic,
 other commanders, Red Wake contacts, target reticles, mining and weapon beams,
-and destroyed-state markers. Its geometric HUD shows hull, fuel, cargo,
-weapon cooldown, mining/fire state, target direction/range, docking, and
-recovery state. The same server-authoritative controls and commands remain in
-use; detailed console text and the cockpit font remain legacy-only. `auto`
-still selects legacy gameplay until core visual parity and stability are
-demonstrated.
+and destroyed-state markers. Its cockpit shows commander/system context,
+credits, XP, hull, fuel, cargo, weapon readiness, mission issuer and
+jurisdiction, organization standings, target affiliation/range/hull, and
+docked, mining, combat, and recovery states. A bounded recent-message panel
+shows GalNet headlines, mission, mining, combat, reward, docking, and error
+feedback from the existing client log. The same server-authoritative controls
+and commands remain in use. `auto` still selects legacy gameplay until core
+visual parity and stability are demonstrated.
 
 The renderer-neutral snapshot copies presentation state from `View` without
 owning it, mutating gameplay, sending commands, or retaining OpenGL objects.
-Static grid geometry is uploaded once; bounded dynamic world and HUD geometry
-reuse VAO/VBO resources. The verified HD 3000 X11 check reports approximately
-0.10 ms for the captured 960×600 frame, three draw calls, 100 static vertices,
-and 963 dynamic vertices. This is a short diagnostic measurement, not a
-performance target.
+World geometry, geometric HUD indicators, text, and recent messages are kept
+as separate presentation layers. Static grid geometry is uploaded once;
+bounded dynamic world, HUD, and text geometry reuse VAO/VBO resources. The
+built-in font supports the current Latin command/status alphabet and maps
+unsupported characters to `?`; it is intentionally not a Unicode shaping or
+font-layout system. On the verified HD 3000 X11 path, the Batch 8 states take
+about 3.8–4.7 ms per captured 960×600 frame, with four draw calls, 726–819
+world vertices, 78–150 HUD vertices, 43k–56k text vertices, and one texture.
+The GalNet-heavy state reached 735 glyphs. These are bounded diagnostic
+measurements, not performance targets.
+
+For deterministic core presentation checks, select a fixture state and size:
+
+```sh
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer core \
+  --render-check /tmp/helion-core-galnet.bmp --render-state galnet \
+  --render-size 960 600
+```
+
+Available states are `normal`, `mining`, `target`, `combat`, `docked`,
+`destroyed`, and `galnet`. The real TLS gameplay harness separately exercises
+authentication, mining, mission/reputation, combat, recovery, reconnect, and
+the core context probe; socket gameplay is authoritative while rendering is
+validated at deterministic snapshot checkpoints.
 
 OpenGL 3.3 core requires shaders because fixed-function calls are unavailable.
 On a Linux desktop, inspect the active renderer with:

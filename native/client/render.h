@@ -12,6 +12,8 @@ struct View {
   bool connected = false, authenticated = false, console = true, thrust = false;
   double time = 0, beamUntil = 0, weaponUntil = 0, damageUntil = 0;
   std::string typed;
+  std::string commanderName = "UNREGISTERED";
+  std::string missionSummary = "FIRST ORE / CHECK CONTRACTS";
   std::vector<std::string> log;
   std::vector<flight::Contact> contacts;
   std::string targetId;

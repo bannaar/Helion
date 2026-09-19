@@ -1,4 +1,5 @@
 #include "client/core_renderer.h"
+#include "client/cockpit.h"
 
 #include <algorithm>
 #include <array>
@@ -8,14 +9,16 @@
 
 namespace helion::client {
 namespace {
-constexpr std::array<std::string_view, 25> kRequiredFunctions = {
+constexpr std::array<std::string_view, 35> kRequiredFunctions = {
   "glCreateShader", "glShaderSource", "glCompileShader", "glGetShaderiv",
   "glGetShaderInfoLog", "glDeleteShader", "glCreateProgram", "glAttachShader",
   "glLinkProgram", "glGetProgramiv", "glGetProgramInfoLog", "glUseProgram",
   "glDeleteProgram", "glGenVertexArrays", "glBindVertexArray", "glDeleteVertexArrays",
   "glGenBuffers", "glBindBuffer", "glBufferData", "glDeleteBuffers",
   "glEnableVertexAttribArray", "glVertexAttribPointer", "glGetUniformLocation",
-  "glUniformMatrix4fv", "glDrawArrays"
+  "glUniformMatrix4fv", "glUniform1i", "glActiveTexture", "glGenTextures",
+  "glBindTexture", "glTexImage2D", "glTexParameteri", "glDeleteTextures",
+  "glEnable", "glDisable", "glBlendFunc", "glDrawArrays"
 };
 
 struct Vertex {
@@ -63,6 +66,12 @@ void addQuad(Vertices& vertices, float x, float y, float width, float height,
              const PresentationColor& color) {
   addTriangle(vertices, x, y, x + width, y, x + width, y + height, color);
   addTriangle(vertices, x, y, x + width, y + height, x, y + height, color);
+}
+
+void addHudQuad(Vertices& vertices, const HudLayout& layout, float x, float y,
+                float width, float height, const PresentationColor& color) {
+  addQuad(vertices, layout.originX + x * layout.scale, layout.originY + y * layout.scale,
+    width * layout.scale, height * layout.scale, color);
 }
 
 void addLine(Vertices& vertices, float ax, float ay, float bx, float by, float thickness,
@@ -226,6 +235,16 @@ bool CoreFunctions::load(std::string& error) {
   HELION_LOAD_CORE(glVertexAttribPointer)
   HELION_LOAD_CORE(glGetUniformLocation)
   HELION_LOAD_CORE(glUniformMatrix4fv)
+  HELION_LOAD_CORE(glUniform1i)
+  HELION_LOAD_CORE(glActiveTexture)
+  HELION_LOAD_CORE(glGenTextures)
+  HELION_LOAD_CORE(glBindTexture)
+  HELION_LOAD_CORE(glTexImage2D)
+  HELION_LOAD_CORE(glTexParameteri)
+  HELION_LOAD_CORE(glDeleteTextures)
+  HELION_LOAD_CORE(glEnable)
+  HELION_LOAD_CORE(glDisable)
+  HELION_LOAD_CORE(glBlendFunc)
   HELION_LOAD_CORE(glDrawArrays)
 #undef HELION_LOAD_CORE
   return true;
@@ -238,7 +257,9 @@ bool CoreFunctions::complete() const {
     glDeleteProgram && glGenVertexArrays && glBindVertexArray && glDeleteVertexArrays &&
     glGenBuffers && glBindBuffer && glBufferData && glDeleteBuffers &&
     glEnableVertexAttribArray && glVertexAttribPointer && glGetUniformLocation &&
-    glUniformMatrix4fv && glDrawArrays;
+    glUniformMatrix4fv && glUniform1i && glActiveTexture && glGenTextures &&
+    glBindTexture && glTexImage2D && glTexParameteri && glDeleteTextures &&
+    glEnable && glDisable && glBlendFunc && glDrawArrays;
 }
 
 CoreRenderer::~CoreRenderer() {
@@ -353,6 +374,10 @@ void main() {
     release();
     return false;
   }
+  if (!textRenderer_.initialize(functions_, error)) {
+    release();
+    return false;
+  }
   initialized_ = true;
   return true;
 }
@@ -422,7 +447,7 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
   functions_.glBindVertexArray(0);
 
   Vertices hud;
-  hud.reserve(256);
+  hud.reserve(1200);
   const PresentationColor panel{0.04f, 0.10f, 0.14f};
   const PresentationColor grid{0.12f, 0.22f, 0.26f};
   const PresentationColor teal{0.25f, 0.88f, 0.76f};
@@ -430,34 +455,40 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
   const PresentationColor red{1.0f, 0.24f, 0.24f};
   const float uiWidth = static_cast<float>(std::max(width, 1));
   const float uiHeight = static_cast<float>(std::max(height, 1));
-  addQuad(hud, 16, 16, 250, 82, panel);
-  addQuad(hud, 28, 30, 110, 10, grid);
-  addQuad(hud, 28, 30, 110 * clampHudValue(snapshot.player.hull, snapshot.player.maxHull), 10,
+  const auto layout = hudLayout(width, height);
+  addHudQuad(hud, layout, 8, 8, 944, 72, panel);
+  addHudQuad(hud, layout, 8, 92, 340, 142, panel);
+  addHudQuad(hud, layout, 352, 92, 600, 142, panel);
+  addHudQuad(hud, layout, 8, 372, 944, 210, panel);
+  addHudQuad(hud, layout, 220, 120, 110, 10, grid);
+  addHudQuad(hud, layout, 220, 120, 110 * clampHudValue(snapshot.player.hull, snapshot.player.maxHull), 10,
     snapshot.player.hull <= snapshot.player.maxHull / 4 ? amber : teal);
-  addQuad(hud, 28, 52, 110, 10, grid);
-  addQuad(hud, 28, 52, 110 * clampHudValue(snapshot.player.fuel, snapshot.player.maxFuel), 10, teal);
-  addQuad(hud, 28, 74, 110, 10, grid);
-  addQuad(hud, 28, 74, 110 * clampHudValue(flight::cargoUsed(snapshot.player), flight::kCargoCapacity), 10, amber);
-  addQuad(hud, uiWidth - 150, 16, 134, 82, panel);
-  addQuad(hud, uiWidth - 138, 30, 110, 8, grid);
-  addQuad(hud, uiWidth - 138, 30, 110 * clampHudValue(snapshot.player.weaponCooldown, 1.0), 8, red);
-  addQuad(hud, uiWidth - 138, 52, 22, 22, snapshot.player.docked ? amber : grid);
-  if (snapshot.miningActive) addQuad(hud, uiWidth - 104, 52, 22, 22, teal);
-  if (snapshot.weaponFired) addQuad(hud, uiWidth - 70, 52, 22, 22, {1.0f, 0.32f, 0.65f});
+  addHudQuad(hud, layout, 220, 145, 110, 10, grid);
+  addHudQuad(hud, layout, 220, 145, 110 * clampHudValue(snapshot.player.fuel, snapshot.player.maxFuel), 10, teal);
+  addHudQuad(hud, layout, 220, 170, 110, 10, grid);
+  addHudQuad(hud, layout, 220, 170, 110 * clampHudValue(flight::cargoUsed(snapshot.player), flight::kCargoCapacity), 10, amber);
+  addHudQuad(hud, layout, 820, 120, 110, 8, grid);
+  addHudQuad(hud, layout, 820, 120, 110 * clampHudValue(snapshot.player.weaponCooldown, 1.0), 8, red);
+  addHudQuad(hud, layout, 820, 145, 22, 22, snapshot.player.docked ? amber : grid);
+  if (snapshot.miningActive) addHudQuad(hud, layout, 854, 145, 22, 22, teal);
+  if (snapshot.weaponFired) addHudQuad(hud, layout, 888, 145, 22, 22, {1.0f, 0.32f, 0.65f});
   const auto target = targetIt == snapshot.contacts.end() ? nullptr : &*targetIt;
   const auto indicator = targetIndicator(snapshot.player, target);
   if (indicator.visible) {
     const float cx = uiWidth * 0.5f + indicator.directionX * std::min(uiWidth, uiHeight) * 0.33f;
     const float cy = uiHeight * 0.5f - indicator.directionY * std::min(uiWidth, uiHeight) * 0.33f;
     addReticle(hud, cx, cy, 18.0f, target->color);
-    addQuad(hud, uiWidth * 0.5f - 70, uiHeight - 30, 140, 6, grid);
-    addQuad(hud, uiWidth * 0.5f - 70, uiHeight - 30,
-      140.0f * std::min(1.0f, indicator.distance / 520.0f), 6, target->color);
+    addQuad(hud, uiWidth * 0.5f - 70 * layout.scale, uiHeight - 30 * layout.scale,
+      140 * layout.scale, 6 * layout.scale, grid);
+    addQuad(hud, uiWidth * 0.5f - 70 * layout.scale, uiHeight - 30 * layout.scale,
+      140.0f * layout.scale * std::min(1.0f, indicator.distance / 520.0f), 6 * layout.scale, target->color);
   }
   if (snapshot.incomingDamage) addQuad(hud, 4, 4, uiWidth - 8, 4, red);
   if (snapshot.player.destroyed) {
-    addQuad(hud, uiWidth * 0.5f - 90, 28, 180, 8, red);
-    addQuad(hud, uiWidth * 0.5f - 90, 40, 180, 8, red);
+    addQuad(hud, uiWidth * 0.5f - 90 * layout.scale, 28 * layout.scale,
+      180 * layout.scale, 8 * layout.scale, red);
+    addQuad(hud, uiWidth * 0.5f - 90 * layout.scale, 40 * layout.scale,
+      180 * layout.scale, 8 * layout.scale, red);
   }
   const auto hudMvp = math::orthographic(0, uiWidth, uiHeight, 0, -1, 1);
   functions_.glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, hudMvp.value.data());
@@ -471,16 +502,28 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
   functions_.glBindVertexArray(0);
   functions_.glUseProgram(0);
   if (!checkStage("unbind")) return false;
+  const auto cockpitText = buildCockpitText(snapshot, width, height);
+  TextRenderStats textStats;
+  const auto textMvp = math::orthographic(0, uiWidth, uiHeight, 0, -1, 1);
+  if (!textRenderer_.render(textMvp, cockpitText.vertices, cockpitText.glyphs,
+                            checkErrors, &textStats, error)) return false;
+  if (!checkStage("text")) return false;
   if (stats) {
-    stats->drawCalls = 3;
+    stats->drawCalls = 3 + textStats.drawCalls;
     stats->staticVertices = staticVertexCount_;
+    stats->worldVertices = dynamic.size();
+    stats->hudVertices = hud.size();
+    stats->textVertices = textStats.vertices;
     stats->dynamicVertices = dynamic.size() + hud.size();
+    stats->glyphs = textStats.glyphs;
+    stats->textures = textStats.textures;
     stats->frameMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
   }
   return true;
 }
 
 void CoreRenderer::release() {
+  textRenderer_.release();
   if (functions_.glDeleteBuffers && staticVertexBuffer_) functions_.glDeleteBuffers(1, &staticVertexBuffer_);
   if (functions_.glDeleteBuffers && dynamicVertexBuffer_) functions_.glDeleteBuffers(1, &dynamicVertexBuffer_);
   if (functions_.glDeleteVertexArrays && staticVertexArray_) functions_.glDeleteVertexArrays(1, &staticVertexArray_);

@@ -2,6 +2,7 @@
 
 #include "client/math.h"
 #include "client/presentation.h"
+#include "client/text_renderer.h"
 
 #include <SDL2/SDL.h>
 #include <GL/gl.h>
@@ -41,6 +42,16 @@ struct CoreFunctions {
   using VertexAttribPointer = void (*)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
   using GetUniformLocation = GLint (*)(GLuint, const GLchar*);
   using UniformMatrix4fv = void (*)(GLint, GLsizei, GLboolean, const GLfloat*);
+  using Uniform1i = void (*)(GLint, GLint);
+  using ActiveTexture = void (*)(GLenum);
+  using GenTextures = void (*)(GLsizei, GLuint*);
+  using BindTexture = void (*)(GLenum, GLuint);
+  using TexImage2D = void (*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*);
+  using TexParameteri = void (*)(GLenum, GLenum, GLint);
+  using DeleteTextures = void (*)(GLsizei, const GLuint*);
+  using Enable = void (*)(GLenum);
+  using Disable = void (*)(GLenum);
+  using BlendFunc = void (*)(GLenum, GLenum);
   using DrawArrays = void (*)(GLenum, GLint, GLsizei);
 
   CreateShader glCreateShader = nullptr;
@@ -67,6 +78,16 @@ struct CoreFunctions {
   VertexAttribPointer glVertexAttribPointer = nullptr;
   GetUniformLocation glGetUniformLocation = nullptr;
   UniformMatrix4fv glUniformMatrix4fv = nullptr;
+  Uniform1i glUniform1i = nullptr;
+  ActiveTexture glActiveTexture = nullptr;
+  GenTextures glGenTextures = nullptr;
+  BindTexture glBindTexture = nullptr;
+  TexImage2D glTexImage2D = nullptr;
+  TexParameteri glTexParameteri = nullptr;
+  DeleteTextures glDeleteTextures = nullptr;
+  Enable glEnable = nullptr;
+  Disable glDisable = nullptr;
+  BlendFunc glBlendFunc = nullptr;
   DrawArrays glDrawArrays = nullptr;
 
   bool load(std::string& error);
@@ -78,7 +99,12 @@ std::string firstMissingCoreFunction(const std::vector<std::string>& available);
 struct CoreRenderStats {
   int drawCalls = 0;
   std::size_t staticVertices = 0;
+  std::size_t worldVertices = 0;
+  std::size_t hudVertices = 0;
+  std::size_t textVertices = 0;
   std::size_t dynamicVertices = 0;
+  std::size_t glyphs = 0;
+  std::size_t textures = 0;
   double frameMilliseconds = 0;
 };
 
@@ -109,6 +135,7 @@ class CoreRenderer {
   GLuint dynamicVertexBuffer_ = 0;
   GLint mvpLocation_ = -1;
   std::size_t staticVertexCount_ = 0;
+  TextRenderer textRenderer_;
   bool initialized_ = false;
 };
 

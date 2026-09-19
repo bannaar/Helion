@@ -21,7 +21,9 @@ int main() {
     "glDeleteProgram", "glGenVertexArrays", "glBindVertexArray", "glDeleteVertexArrays",
     "glGenBuffers", "glBindBuffer", "glBufferData", "glDeleteBuffers",
     "glEnableVertexAttribArray", "glVertexAttribPointer", "glGetUniformLocation",
-    "glUniformMatrix4fv", "glDrawArrays"}).empty()) return 1;
+    "glUniformMatrix4fv", "glUniform1i", "glActiveTexture", "glGenTextures",
+    "glBindTexture", "glTexImage2D", "glTexParameteri", "glDeleteTextures",
+    "glEnable", "glDisable", "glBlendFunc", "glDrawArrays"}).empty()) return 1;
 
   const auto unit = identity();
   const auto unchanged = transform(unit, {1.0f, 2.0f, 3.0f, 1.0f});

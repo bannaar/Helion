@@ -107,13 +107,89 @@ int terminalClient(int fd, helion::tls::Connection& connection) {
   }
   return greeted?0:1;
 }
+
+std::string fieldValue(std::string_view line, std::string_view key, std::string_view endMarker = {}) {
+  const auto start = line.find(key);
+  if (start == std::string_view::npos) return {};
+  const auto valueStart = start + key.size();
+  const auto end = endMarker.empty() ? line.find(' ', valueStart) : line.find(endMarker, valueStart);
+  return std::string(line.substr(valueStart, end == std::string_view::npos ? std::string_view::npos : end - valueStart));
+}
+
+void updatePresentationMetadata(helion::client::View& view, std::string_view line) {
+  if (line.rfind("PROFILE ", 0) == 0)
+    view.commanderName = fieldValue(line, "display=", " faction=");
+  else if (line.rfind("OK LOGIN ", 0) == 0 || line.rfind("OK CREATED ", 0) == 0)
+    view.commanderName = fieldValue(line, "display=");
+  if (line.rfind("MISSION ", 0) == 0) {
+    if (line.find("active") != std::string_view::npos)
+      view.missionSummary = "ACTIVE / MINE ORE AND RETURN TO STATION";
+    else if (line.find("complete") != std::string_view::npos)
+      view.missionSummary = "COMPLETE / ORION DELIVERY REWARDED";
+    else view.missionSummary = "AVAILABLE / ACCEPT FIRST ORE CONTRACT";
+  } else if (line.rfind("OK MISSION ACCEPTED", 0) == 0)
+    view.missionSummary = "ACTIVE / MINE ORE AND RETURN TO STATION";
+  else if (line.rfind("OK MISSION COMPLETE", 0) == 0)
+    view.missionSummary = "COMPLETE / ORION DELIVERY REWARDED";
+}
+
+bool validRenderState(std::string_view state) {
+  return state == "normal" || state == "mining" || state == "target" || state == "combat" ||
+    state == "docked" || state == "destroyed" || state == "galnet";
+}
+
+void configureRenderFixture(helion::client::View& view, std::string_view state) {
+  view.connected = true;
+  view.authenticated = true;
+  view.console = false;
+  view.commanderName = "ALPHA PILOT";
+  view.missionSummary = "ACTIVE / MINE ORE AND RETURN TO STATION";
+  view.reputation = {{"authority.kepler", 25}, {"corp.orion", 35}, {"criminal.red_wake", -25}};
+  view.time = 2;
+  view.log = {"GALNET / Kepler Authority security watch active"};
+  if (state == "docked") {
+    view.ship.cargo = 4;
+    view.credits = 1820;
+    view.log.push_back("OK DOCKED cargo=4 sold=0 credits=1820");
+    return;
+  }
+  helion::flight::launch(view.ship);
+  view.ship.y = 205;
+  view.ship.cargo = state == "mining" ? 1 : 0;
+  view.beamUntil = state == "mining" ? 2.8 : 0;
+  if (state == "destroyed") {
+    view.ship.hull = 0;
+    view.ship.destroyed = true;
+    view.damageUntil = 2.8;
+    view.log.push_back("COMBAT DESTROYED player=1 cargo-lost=1 recovery=RECOVER");
+  } else if (state == "combat") {
+    view.ship.hull = 70;
+    view.ship.weaponCooldown = 0.4;
+    view.weaponUntil = 2.5;
+    view.damageUntil = 2.7;
+    view.log.push_back("COMBAT HIT target=RAIDER-1 damage=25 hull=75");
+  } else if (state == "galnet") {
+    view.missionSummary = "COMPLETE / ORION DELIVERY REWARDED";
+    view.reputation = {{"authority.kepler", 30}, {"corp.orion", 45}, {"criminal.red_wake", -35}};
+    view.log = {"GALNET / Orion Extraction Group completed First Ore delivery",
+      "GALNET / Red Wake raider defeated in Kepler",
+      "REPUTATION CHANGE / Kepler Authority / +5 / Friendly",
+      "OK MISSION COMPLETE reward=250"};
+  }
+  if (state == "target" || state == "combat" || state == "galnet") {
+    view.contacts.push_back({"RAIDER-1", "hostile", 320, 310, 0, false, true, 75, 100,
+      "criminal.red_wake", "Red Wake"});
+    view.targetId = "RAIDER-1";
+  }
+}
 } // namespace
 
 int main(int argc,char** argv) {
   std::signal(SIGPIPE, SIG_IGN);
   bool renderCheck=false, graphicsInfo=false, terminal=false;
   helion::graphics::RendererMode rendererMode = helion::graphics::RendererMode::auto_mode;
-  std::string host="127.0.0.1", port="4242", caFile, renderPath;
+  std::string host="127.0.0.1", port="4242", caFile, renderPath, renderState="combat";
+  int renderWidth = 960, renderHeight = 600;
   int positional=0;
   try {
     for(int i=1;i<argc;++i) {
@@ -126,13 +202,23 @@ int main(int argc,char** argv) {
       }
       else if(arg=="--ca" && i+1<argc) caFile=argv[++i];
       else if(arg=="--render-check" && i+1<argc) { renderCheck=true; renderPath=argv[++i]; }
+      else if(arg=="--render-state" && i+1<argc) {
+        renderState=argv[++i];
+        if (!validRenderState(renderState)) throw std::runtime_error("unknown render state");
+      }
+      else if(arg=="--render-size" && i+2<argc) {
+        try { renderWidth = std::stoi(argv[++i]); renderHeight = std::stoi(argv[++i]); }
+        catch (...) { throw std::runtime_error("invalid render size"); }
+        if (renderWidth < 1 || renderHeight < 1 || renderWidth > 4096 || renderHeight > 4096)
+          throw std::runtime_error("invalid render size");
+      }
       else if(arg.rfind("--",0)==0) throw std::runtime_error("unknown or incomplete option");
       else if(positional++==0) host=arg;
       else if(positional==2) port=arg;
       else throw std::runtime_error("too many arguments");
     }
   } catch(const std::exception& error) {
-    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info] [--renderer auto|legacy|core]\n"; return 2;
+    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info] [--renderer auto|legacy|core] [--render-check path --render-state state --render-size width height]\n"; return 2;
   }
   if (terminal && rendererMode == helion::graphics::RendererMode::core) {
     std::cerr << "--terminal cannot be used with the core renderer\n";
@@ -175,8 +261,8 @@ int main(int argc,char** argv) {
     return 1;
   }
   auto graphics = rendererMode == helion::graphics::RendererMode::core
-    ? helion::client::createCoreGraphicsContext("Helion / Core diagnostic", 960, 600, renderCheck || graphicsInfo)
-    : helion::client::createGraphicsContext("Helion / Kepler Reach", 960, 600, renderCheck || graphicsInfo);
+    ? helion::client::createCoreGraphicsContext("Helion / Core diagnostic", renderWidth, renderHeight, renderCheck || graphicsInfo)
+    : helion::client::createGraphicsContext("Helion / Kepler Reach", renderWidth, renderHeight, renderCheck || graphicsInfo);
   if(!graphics.result.selected) {
     std::cerr << helion::graphics::diagnosticLine(graphics.result) << '\n';
     helion::client::destroyGraphicsContext(graphics);
@@ -211,32 +297,30 @@ int main(int argc,char** argv) {
   helion::client::View view; view.connected=!renderCheck;
   view.log={helion::graphics::diagnosticLine(graphics.result), "TLS verified / Connected to "+host+":"+port};
   if(renderCheck) {
-    view.connected=true; view.authenticated=true; view.console=false;
-    helion::flight::launch(view.ship); view.ship.y=205; view.ship.cargo=3;
-    view.time=2; view.beamUntil=2.3; view.weaponUntil=2.2; view.log={"OK MINED cargo=3"};
+    configureRenderFixture(view, renderState);
     bool saved = false;
     if (coreRenderer) {
-      view.contacts.push_back({"RAIDER-1", "hostile", 320, 310, 0, false, true, 75, 100,
-        "criminal.red_wake", "Red Wake"});
-      view.targetId = "RAIDER-1";
       std::string coreError;
       helion::client::CoreRenderStats stats;
       const auto snapshot = helion::client::makePresentationSnapshot(view);
       bool rendered = true;
       for (int frame = 0; frame < 3; ++frame)
-        rendered = coreRenderer->render(960, 600, snapshot, true, &stats, coreError) && rendered;
-      saved = rendered && saveFrame(renderPath, 960, 600);
+        rendered = coreRenderer->render(renderWidth, renderHeight, snapshot, true, &stats, coreError) && rendered;
+      saved = rendered && saveFrame(renderPath, renderWidth, renderHeight);
+      std::cout << "CORE-STATE state=" << renderState << '\n';
       std::cout << "CORE-PERF frames=3 frame-ms=" << stats.frameMilliseconds << " draw-calls=" << stats.drawCalls
-                << " static-vertices=" << stats.staticVertices << " dynamic-vertices=" << stats.dynamicVertices << '\n';
+                << " static-vertices=" << stats.staticVertices << " world-vertices=" << stats.worldVertices
+                << " hud-vertices=" << stats.hudVertices << " text-vertices=" << stats.textVertices
+                << " glyphs=" << stats.glyphs << " textures=" << stats.textures << '\n';
       if (!coreError.empty()) std::cerr << "CORE-RENDERER render failed: " << coreError << '\n';
     } else {
       const auto snapshot = helion::client::makePresentationSnapshot(view);
-      helion::client::render(960,600,view,snapshot);
-      saved=saveFrame(renderPath,960,600);
+      helion::client::render(renderWidth,renderHeight,view,snapshot);
+      saved=saveFrame(renderPath,renderWidth,renderHeight);
       view.console=true; view.authenticated=false; view.typed="/login explorer synthetic-password";
       const auto consoleSnapshot = helion::client::makePresentationSnapshot(view);
-      helion::client::render(960,600,view,consoleSnapshot);
-      saved=saveFrame(renderPath+".console.bmp",960,600)&&saved;
+      helion::client::render(renderWidth,renderHeight,view,consoleSnapshot);
+      saved=saveFrame(renderPath+".console.bmp",renderWidth,renderHeight)&&saved;
     }
     coreRenderer.reset();
     helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return saved?0:1;
@@ -341,6 +425,7 @@ int main(int argc,char** argv) {
           greetingSeen=true;
         }
         if(frame.kind!=helion::protocol::FrameKind::line) { view.connected=false; view.log.push_back("ERR malformed response"); break; }
+        updatePresentationMetadata(view, frame.line);
         if(frame.line.rfind("FLIGHT ",0)==0) {
           if(!helion::flight::readSnapshot(frame.line,view.ship,view.credits,view.experience)) {
             view.connected=false; view.log.push_back("ERR malformed flight state"); break;

@@ -1,5 +1,6 @@
 #pragma once
 #include "shared/flight.h"
+#include "client/ui.h"
 #include <string>
 #include <map>
 #include <vector>
@@ -19,6 +20,7 @@ struct View {
   std::string targetId;
   std::map<std::string, int> reputation;
   bool showTelemetry = true;
+  UiState ui;
 };
 // All visual assets are original, procedural fixed-function geometry.
 void render(int width, int height, const View& view);

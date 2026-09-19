@@ -102,9 +102,15 @@ struct CoreRenderStats {
   std::size_t worldVertices = 0;
   std::size_t hudVertices = 0;
   std::size_t textVertices = 0;
+  std::size_t textGlyphVertices = 0;
+  std::size_t textComponents = 0;
+  std::size_t textBytes = 0;
+  int textDrawCalls = 0;
   std::size_t dynamicVertices = 0;
   std::size_t glyphs = 0;
   std::size_t textures = 0;
+  double cpuBuildMilliseconds = 0;
+  double renderMilliseconds = 0;
   double frameMilliseconds = 0;
 };
 

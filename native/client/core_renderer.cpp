@@ -424,28 +424,6 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     dynamic.resize(kMaxCoreDynamicVertices - kMaxCoreDynamicVertices % 3);
   }
 
-  glViewport(0, 0, std::max(width, 1), std::max(height, 1));
-  glClearColor(0.008f, 0.015f, 0.045f, 1.0f);
-  glClear(GL_COLOR_BUFFER_BIT);
-  if (!checkStage("clear")) return false;
-  functions_.glUseProgram(program_);
-  if (!checkStage("use-program")) return false;
-  functions_.glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, worldMvp.value.data());
-  functions_.glBindVertexArray(staticVertexArray_);
-  functions_.glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(staticVertexCount_));
-  if (!checkStage("static-draw")) return false;
-  functions_.glBindVertexArray(0);
-  functions_.glBindVertexArray(dynamicVertexArray_);
-  functions_.glBindBuffer(GL_ARRAY_BUFFER, dynamicVertexBuffer_);
-  functions_.glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(dynamic.size() * sizeof(Vertex)),
-    dynamic.data(), GL_DYNAMIC_DRAW);
-  if (!checkStage("dynamic-upload")) return false;
-  functions_.glBindBuffer(GL_ARRAY_BUFFER, 0);
-  functions_.glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, worldMvp.value.data());
-  functions_.glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(dynamic.size()));
-  if (!checkStage("dynamic-draw")) return false;
-  functions_.glBindVertexArray(0);
-
   Vertices hud;
   hud.reserve(1200);
   const PresentationColor panel{0.04f, 0.10f, 0.14f};
@@ -456,13 +434,19 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
   const float uiWidth = static_cast<float>(std::max(width, 1));
   const float uiHeight = static_cast<float>(std::max(height, 1));
   const auto layout = hudLayout(width, height);
-  addHudQuad(hud, layout, 8, 8, 944, 72, panel);
-  addHudQuad(hud, layout, 8, 92, 340, 142, panel);
-  addHudQuad(hud, layout, 352, 92, 600, 142, panel);
-  addHudQuad(hud, layout, 8, 372, 944, 210, panel);
+  if (snapshot.ui.screen != UiScreen::flight) {
+    addHudQuad(hud, layout, 8, 8, 944, 584, panel);
+    addHudQuad(hud, layout, 8, 8, 944, 86, {0.06f, 0.15f, 0.18f});
+    addHudQuad(hud, layout, 20, 100, 920, 1, grid);
+  } else {
+    addHudQuad(hud, layout, 8, 8, 944, 72, panel);
+    addHudQuad(hud, layout, 8, 92, 340, 142, panel);
+    addHudQuad(hud, layout, 352, 92, 600, 142, panel);
+    addHudQuad(hud, layout, 8, 372, 944, 210, panel);
+  }
   addHudQuad(hud, layout, 220, 120, 110, 10, grid);
-  addHudQuad(hud, layout, 220, 120, 110 * clampHudValue(snapshot.player.hull, snapshot.player.maxHull), 10,
-    snapshot.player.hull <= snapshot.player.maxHull / 4 ? amber : teal);
+  addHudQuad(hud, layout, 220, 120, 110 * clampHudValue(snapshot.player.hull, snapshot.player.maxHull),
+    10, snapshot.player.hull <= snapshot.player.maxHull / 4 ? amber : teal);
   addHudQuad(hud, layout, 220, 145, 110, 10, grid);
   addHudQuad(hud, layout, 220, 145, 110 * clampHudValue(snapshot.player.fuel, snapshot.player.maxFuel), 10, teal);
   addHudQuad(hud, layout, 220, 170, 110, 10, grid);
@@ -490,6 +474,32 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     addQuad(hud, uiWidth * 0.5f - 90 * layout.scale, 40 * layout.scale,
       180 * layout.scale, 8 * layout.scale, red);
   }
+  const auto cockpitText = buildCockpitText(snapshot, width, height);
+  const auto buildFinished = std::chrono::steady_clock::now();
+  const auto gpuStarted = buildFinished;
+
+  glViewport(0, 0, std::max(width, 1), std::max(height, 1));
+  glClearColor(0.008f, 0.015f, 0.045f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  if (!checkStage("clear")) return false;
+  functions_.glUseProgram(program_);
+  if (!checkStage("use-program")) return false;
+  functions_.glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, worldMvp.value.data());
+  functions_.glBindVertexArray(staticVertexArray_);
+  functions_.glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(staticVertexCount_));
+  if (!checkStage("static-draw")) return false;
+  functions_.glBindVertexArray(0);
+  functions_.glBindVertexArray(dynamicVertexArray_);
+  functions_.glBindBuffer(GL_ARRAY_BUFFER, dynamicVertexBuffer_);
+  functions_.glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(dynamic.size() * sizeof(Vertex)),
+    dynamic.data(), GL_DYNAMIC_DRAW);
+  if (!checkStage("dynamic-upload")) return false;
+  functions_.glBindBuffer(GL_ARRAY_BUFFER, 0);
+  functions_.glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, worldMvp.value.data());
+  functions_.glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(dynamic.size()));
+  if (!checkStage("dynamic-draw")) return false;
+  functions_.glBindVertexArray(0);
+
   const auto hudMvp = math::orthographic(0, uiWidth, uiHeight, 0, -1, 1);
   functions_.glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, hudMvp.value.data());
   functions_.glBindVertexArray(dynamicVertexArray_);
@@ -502,7 +512,6 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
   functions_.glBindVertexArray(0);
   functions_.glUseProgram(0);
   if (!checkStage("unbind")) return false;
-  const auto cockpitText = buildCockpitText(snapshot, width, height);
   TextRenderStats textStats;
   const auto textMvp = math::orthographic(0, uiWidth, uiHeight, 0, -1, 1);
   if (!textRenderer_.render(textMvp, cockpitText.vertices, cockpitText.glyphs,
@@ -514,9 +523,15 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     stats->worldVertices = dynamic.size();
     stats->hudVertices = hud.size();
     stats->textVertices = textStats.vertices;
+    stats->textGlyphVertices = textStats.glyphQuadVertices;
+    stats->textComponents = textStats.components;
+    stats->textBytes = textStats.uploadedBytes;
+    stats->textDrawCalls = textStats.drawCalls;
     stats->dynamicVertices = dynamic.size() + hud.size();
     stats->glyphs = textStats.glyphs;
     stats->textures = textStats.textures;
+    stats->cpuBuildMilliseconds = std::chrono::duration<double, std::milli>(buildFinished - started).count();
+    stats->renderMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gpuStarted).count();
     stats->frameMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
   }
   return true;

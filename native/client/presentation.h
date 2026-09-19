@@ -1,6 +1,7 @@
 #pragma once
 
 #include "shared/flight.h"
+#include "client/ui.h"
 
 #include <array>
 #include <cstddef>
@@ -72,6 +73,7 @@ struct PresentationSnapshot {
   bool connected = false;
   double time = 0;
   std::vector<std::string> recentMessages;
+  UiState ui;
 };
 
 struct CameraFrame {

@@ -230,10 +230,12 @@ bounded dynamic world, HUD, and text geometry reuse VAO/VBO resources. The
 built-in font supports the current Latin command/status alphabet and maps
 unsupported characters to `?`; it is intentionally not a Unicode shaping or
 font-layout system. On the verified HD 3000 X11 path, the Batch 8 states take
-about 3.8–4.7 ms per captured 960×600 frame, with four draw calls, 726–819
-world vertices, 78–150 HUD vertices, 43k–56k text vertices, and one texture.
-The GalNet-heavy state reached 735 glyphs. These are bounded diagnostic
-measurements, not performance targets.
+about 0.87–2.25 ms per captured 960×600 frame, with four draw calls, 726–819
+world vertices, 72–144 HUD vertices, one text draw call, and one atlas texture.
+The representative states ranged from 308 to 461 glyphs. Diagnostics also
+report conventional six-vertex glyph counts separately from uploaded bitmap
+pixel vertices, float components, VBO bytes, and CPU/render timing. These are
+bounded diagnostic measurements, not performance targets.
 
 For deterministic core presentation checks, select a fixture state and size:
 
@@ -248,6 +250,31 @@ Available states are `normal`, `mining`, `target`, `combat`, `docked`,
 authentication, mining, mission/reputation, combat, recovery, reconnect, and
 the core context probe; socket gameplay is authoritative while rendering is
 validated at deterministic snapshot checkpoints.
+
+Core mode also provides station and account interfaces through the same text
+and geometric pipelines. `F1` opens station services when docked; `F2` opens
+profile/reputation, `F3` toggles telemetry and opens options, `F4` opens the
+market, `F5` the First Ore mission, `F6` outfitting, `F7` GalNet, and `F8`
+graphics diagnostics. `Up`/`Down` selects, `Enter` confirms, and `Escape`
+returns to the previous station/flight view. Market uses `B`/`S` and `+`/`-`
+for bounded unit quantities. Outfitting uses `B`/`F`/`R` for buy, fit, and
+remove. Account input remains in the existing bounded console; passwords are
+masked in the core presentation and never copied into logs.
+
+The station UI presents existing server data only: station context, credits,
+hull, fuel, cargo, shared station prices, First Ore issuer/jurisdiction and
+state, loadout ownership/fitting, profile progression, GalNet events, and
+graphics diagnostics. It queues the existing `PROFILE`, `MISSION`, `BUY`,
+`SELL`, `OUTFIT`, `REPAIR`, `REFUEL`, and `GALNET` requests and displays their
+responses. It does not calculate or apply economic outcomes.
+
+Deterministic core fixtures cover `account`, `station`, `market`, `mission`,
+`outfit`, `profile`, `galnet`, `options`, `graphics`, and `error` in addition
+to the flight/combat states. The TLS career test checks secure account
+creation, profile and loadout inspection, market buy/sell, mission identity,
+mining, docking, mission reward/reputation, GalNet, combat, recovery, and
+reconnect; graphical rendering is checked independently at those state
+boundaries.
 
 OpenGL 3.3 core requires shaders because fixed-function calls are unavailable.
 On a Linux desktop, inspect the active renderer with:

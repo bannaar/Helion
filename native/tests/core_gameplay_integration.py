@@ -136,8 +136,13 @@ def main():
             assert any(line == "WELCOME Helion/2" for line in greeting), greeting
             peer.request("CREATE corepilot synthetic-password Core Pilot", "OK CREATED")
             peer.request("PROFILE", "PROFILE")
-            peer.request("MISSION", "issuer=corp.orion")
+            mission = peer.request("MISSION", "issuer=corp.orion")
+            assert any("jurisdiction=authority.kepler" in line and "reward=250" in line for line in mission)
             peer.request("ACCEPT", "OK MISSION ACCEPTED")
+            peer.request("BUY food 1", "OK BOUGHT food")
+            peer.request("SELL food 1", "OK SOLD food")
+            loadout = peer.request("OUTFIT LIST", "LOADOUT")
+            assert any("fitted-mining=mining-basic" in line for line in loadout)
             peer.request("OUTFIT BUY pulse-laser", "TRANSACTION MODULE_PURCHASE")
             peer.request("OUTFIT FIT pulse-laser", "OK MODULE FIT")
             peer.request("LAUNCH", "OK LAUNCHED")
@@ -146,6 +151,8 @@ def main():
             fly_to(peer, 0, 35)
             peer.request("DOCK", "TRANSACTION DOCK_SALE")
             peer.request("TURNIN", "OK MISSION COMPLETE")
+            galnet = peer.request("GALNET", "GALNET END")
+            assert any("orion-first-ore" in line for line in galnet)
             profile = "\n".join(peer.request("PROFILE", "PROFILE"))
             assert "corp.orion=10:Neutral" in profile and "authority.kepler=5:Neutral" in profile
 

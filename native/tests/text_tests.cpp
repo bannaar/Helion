@@ -1,5 +1,6 @@
 #include "client/cockpit.h"
 #include "client/font.h"
+#include "client/text_renderer.h"
 
 #include <cmath>
 #include <iostream>
@@ -21,6 +22,9 @@ int main() {
   const auto vertices = buildTextVertices("HELION 330", 10, 20, 2.0f, {1, 1, 1, 1}, 32, 200);
   check(!vertices.empty() && vertices.size() % 6 == 0 && vertices.size() <= kMaxTextVertices,
         "glyph quads are bounded triangles");
+  check(glyphQuadVertexCount(7) == 42 && textComponentCount(3) == 24 &&
+        textBufferBytes(3) == 3 * sizeof(FontVertex),
+        "text telemetry units are stable");
   check(buildTextVertices("THIS LINE IS TOO LONG", 0, 0, 2, {1, 1, 1, 1}, 128, 20).size() <
         buildTextVertices("THIS LINE IS TOO LONG", 0, 0, 2, {1, 1, 1, 1}, 128).size(),
         "maximum width truncates glyph generation");

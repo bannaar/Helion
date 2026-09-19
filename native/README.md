@@ -157,10 +157,12 @@ SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer core \
 Do not use llvmpipe or a forced software/offscreen run as evidence of HD 3000
 hardware support. The fixed-function offscreen check remains a separate
 diagnostic and the Intel X11 check must report the Mesa Intel renderer. A
-Batch 8 960x600 Intel HD 3000 state measured about 3.8–4.7 ms, four draw
-calls, 726–819 world vertices, 78–150 HUD vertices, 43k–56k text vertices,
-and one texture. The exact counts vary with message and target state; these
-are bounded diagnostics rather than a fixed performance target.
+Batch 9 representative 960x600 Intel HD 3000 states measured about 0.87–2.25
+ms, four draw calls, 726–819 world vertices, 72–144 UI vertices, one text draw
+call, and one atlas texture. The exact counts vary with screen and message;
+the diagnostics also separate glyph count, conventional glyph vertices,
+uploaded bitmap-pixel vertices, float components, VBO bytes, and CPU/render
+timing. These are bounded diagnostics rather than a fixed performance target.
 
 For an accelerated X11 validation, omit software-forcing and offscreen
 variables:
@@ -172,6 +174,26 @@ SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --render-check /tmp/heli
 
 The offscreen render check remains a diagnostic only and does not prove GPU
 acceleration.
+
+Core station and account interfaces are selected with F1–F8 after secure
+authentication: station, profile, options/telemetry, market, First Ore,
+outfitting, GalNet, and graphics diagnostics. Up/Down selects, Enter confirms,
+and Escape backs out. Market quantity uses `+`/`-` and buy/sell uses `B`/`S`;
+outfitting uses `B`/`F`/`R`. The account console remains bounded and masks
+passwords. These controls submit the existing server commands and do not make
+prices, rewards, repairs, fuel, mission state, or module ownership client
+authoritative.
+
+The core render check accepts these UI fixtures in addition to flight states:
+`account`, `station`, `market`, `mission`, `outfit`, `profile`, `galnet`,
+`options`, `graphics`, and `error`.
+
+`CORE-PERF` reports units explicitly: `glyphs`, `text-glyph-vertices`
+(six per glyph), actual uploaded `text-vertices`, `text-components` (eight
+floats per uploaded vertex), `text-bytes`, `text-draw-calls`, `textures`,
+`cpu-build-ms`, and `render-ms`. The actual bitmap-pixel vertex count is
+larger than glyph-quad vertices because each lit 5x7 pixel is a six-vertex
+quad. The atlas is uploaded once per context, not rebuilt per frame.
 
 ## Native assets and render check
 
@@ -185,13 +207,16 @@ cockpit letterboxes on differently proportioned windows.
 For a headless renderer check on SDL installations with the offscreen driver:
 
 ```sh
-SDL_VIDEODRIVER=offscreen LIBGL_ALWAYS_SOFTWARE=1 \
+SDL_VIDEODRIVER=offscreen \
   ./build-native/native/helion_client --render-check native-mining.bmp
 ```
 
 This writes flight and console BMP captures, using a rendering fixture without
-connecting to a server. CTest separately exercises actual server flight,
-mining, docking, input validation, and persisted rewards after restart.
+connecting to a server. It is a diagnostic only; do not combine
+`LIBGL_ALWAYS_SOFTWARE=1` with an explicitly selected hardware device on Mesa,
+and use the X11 check above to prove Intel hardware acceleration. CTest
+separately exercises actual server flight, mining, docking, input validation,
+and persisted rewards after restart.
 
 ## Line protocol
 

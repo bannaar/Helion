@@ -85,4 +85,19 @@ to a bounded Latin bitmap alphabet; textures beyond the font atlas, model
 loading, full legacy cockpit parity, and automatic core selection remain
 future work. Batch 8 Intel HD 3000 X11 states measure about 3.8–4.7 ms at
 960x600, four draw calls, one texture, and bounded world/HUD/text geometry.
-`auto` remains legacy until parity and stability are approved.
+`auto` remains legacy until parity and stability are approved. Core mode now
+also exposes bounded account/connection, station, market, mission, outfitting,
+profile, GalNet, options, and graphics-diagnostic screens. These screens are
+renderer-neutral copies of existing client data and queue existing server
+commands; they do not introduce new gameplay rules or client-side authority.
+Keyboard navigation is available with F1–F8, Up/Down, Enter, and Escape.
+
+Batch 9 corrected core telemetry. A glyph count is a character count; a
+conventional glyph has six vertices, while the bitmap implementation uploads
+six vertices for every lit font pixel. Diagnostics therefore report both
+`text-glyph-vertices` and actual uploaded `text-vertices`, plus float
+components, VBO bytes, text draw calls, atlas textures, CPU geometry-build
+time, and GPU/render time. On the Intel HD 3000, representative 960x600
+states measured about 0.87–2.25 ms per captured frame, with one text draw
+call, 726–819 world vertices, 72–144 UI vertices, and 0.36–1.49 ms CPU build
+time. These are bounded diagnostics, not performance targets.

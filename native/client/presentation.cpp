@@ -34,6 +34,11 @@ PresentationSnapshot makePresentationSnapshot(const View& view) {
   snapshot.authenticated = view.authenticated;
   snapshot.connected = view.connected;
   snapshot.time = view.time;
+  snapshot.ui = view.ui;
+  snapshot.ui.consoleOpen = view.console;
+  snapshot.ui.telemetryEnabled = view.showTelemetry;
+  snapshot.ui.typed = maskedCommand(view.typed);
+  populateUiDerived(snapshot.ui, snapshot.player);
   if (view.ship.docked && view.ship.station >= 0 &&
       view.ship.station < static_cast<int>(flight::kStations.size()))
     snapshot.stationContext = flight::kStations[static_cast<std::size_t>(view.ship.station)].name;

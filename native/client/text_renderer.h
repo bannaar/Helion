@@ -13,10 +13,17 @@ struct CoreFunctions;
 
 struct TextRenderStats {
   std::size_t vertices = 0;
+  std::size_t glyphQuadVertices = 0;
+  std::size_t components = 0;
+  std::size_t uploadedBytes = 0;
   std::size_t glyphs = 0;
   int drawCalls = 0;
   std::size_t textures = 0;
 };
+
+inline constexpr std::size_t glyphQuadVertexCount(std::size_t glyphs) { return glyphs * 6; }
+inline constexpr std::size_t textComponentCount(std::size_t vertices) { return vertices * 8; }
+inline constexpr std::size_t textBufferBytes(std::size_t vertices) { return vertices * sizeof(FontVertex); }
 
 class TextRenderer {
  public:

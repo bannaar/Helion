@@ -40,6 +40,24 @@ states through the real 3.3-core client path. This avoids making graphical
 automation depend on uncontrolled gameplay timing while still testing the
 authoritative loop and the renderer separately.
 
+Batch 9 extends the same boundary with `UiState`. The client owns only bounded
+navigation/focus state and presentation-ready copies of server responses:
+connection status, profile fields, market rows derived from the shared station
+catalogue, mission identity/progress, owned/fitted module identifiers, GalNet
+events, options, graphics diagnostics, and recent status messages. The core
+renderer receives that copy through `PresentationSnapshot`; it does not read
+network sockets, send commands, validate prices, or mutate persistence.
+Stable organization identifiers remain separate from their display names.
+Keyboard actions map to the existing authenticated commands, so server
+validation remains authoritative for every transaction.
+
+Core telemetry uses explicit units. `glyphs` is the bounded character count
+passed to the renderer; `text-glyph-vertices` is the conventional six
+vertices per glyph; `text-vertices` is the actual uploaded `FontVertex` count
+from the bitmap's lit-pixel quads; `text-components` is eight floats per
+uploaded vertex; and `text-bytes` is the uploaded VBO byte count. Text and
+atlas resources are created once per context and reused across frames.
+
 ## Current compatibility boundary
 
 `Profile` still physically stores the commander record, active ship state,

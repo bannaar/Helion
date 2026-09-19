@@ -204,6 +204,10 @@ bool TextRenderer::render(const math::Mat4& projection, const std::vector<FontVe
   if (!checkStage("text-draw")) return false;
   if (stats) {
     stats->vertices = vertices.size();
+    stats->glyphQuadVertices = glyphQuadVertexCount(glyphs);
+    stats->glyphQuadVertices = glyphs * 6;
+    stats->components = textComponentCount(vertices.size());
+    stats->uploadedBytes = textBufferBytes(vertices.size());
     stats->glyphs = glyphs;
     stats->drawCalls = 1;
     stats->textures = 1;

@@ -19,18 +19,22 @@ Core gameplay now consumes a renderer-neutral presentation snapshot assembled
 from the existing client `View`; it contains copied player, station, asteroid,
 contact, target, feedback, and HUD state but has no networking, authority, or
 OpenGL ownership. Static and bounded dynamic geometry are separate GPU paths.
-The core path separates world geometry, geometric HUD indicators, bitmap text,
-and recent-message/GalNet presentation. `TextRenderer` owns one bounded font
-atlas and batched glyph buffer; it consumes snapshot/log data but never sends
-commands or creates authoritative events. The core path can be made the
+The core path separates world geometry, geometric HUD indicators, textured
+bitmap text, and recent-message/GalNet presentation. `TextRenderer` owns one
+bounded font atlas and one batched six-vertex quad per visible glyph; the GLSL
+text shader samples the glyph mask and multiplies it by the requested color.
+It consumes snapshot/log data but never sends commands or creates authoritative
+events. The core path can be made the
 automatic renderer only after gameplay-rendering parity, text, cockpit, and
 stability are reached.
 
-Core text is deliberately small: a checked-in 5x7 bitmap alphabet is uploaded
-once as one RGBA texture, unsupported characters become `?`, and generated
-strings are clipped to fixed character/vertex bounds. This is sufficient for
-the current cockpit, mission, reputation, GalNet, and combat feedback, but is
-not a general Unicode, font-download, or text-shaping subsystem.
+Core text is deliberately small: a checked-in 5x7 bitmap alphabet is packed
+once into a 96x48 RGBA atlas with padded six-by-eight cells. Unsupported
+characters become `?`, UTF-8 sequences are bounded to one fallback glyph, and
+generated strings are clipped to fixed character/vertex bounds. This is
+sufficient for the current cockpit, mission, reputation, GalNet, and combat
+feedback, but is not a general Unicode, font-download, or text-shaping
+subsystem.
 
 The Batch 8 core gameplay test keeps two concerns explicit. A TLS socket
 harness drives authoritative account, mission, mining, docking, combat,
@@ -51,12 +55,20 @@ Stable organization identifiers remain separate from their display names.
 Keyboard actions map to the existing authenticated commands, so server
 validation remains authoritative for every transaction.
 
-Core telemetry uses explicit units. `glyphs` is the bounded character count
-passed to the renderer; `text-glyph-vertices` is the conventional six
-vertices per glyph; `text-vertices` is the actual uploaded `FontVertex` count
-from the bitmap's lit-pixel quads; `text-components` is eight floats per
-uploaded vertex; and `text-bytes` is the uploaded VBO byte count. Text and
-atlas resources are created once per context and reused across frames.
+Core telemetry uses explicit units. `glyphs` is the visible glyph-quad count;
+`text-vertices` and `text-glyph-vertices` are both six vertices per glyph for
+the current non-indexed path; `text-indices` is zero; `text-components` is
+eight floats per uploaded vertex; and `text-bytes` is the uploaded VBO byte
+count. Atlas dimensions/bytes, text draw calls, UI/world vertices, CPU build
+times, and render time are reported separately. Text and atlas resources are
+created once per context and reused across frames.
+
+Batch 10 adds renderer-neutral hit regions derived from the same logical
+960x600 layout used by core rendering. SDL mouse coordinates are converted
+through the letterbox scale before hit testing. Hover, focus, disabled state,
+bounded wheel/PageUp/PageDown scrolling, and single-click command mapping stay
+in the client presentation layer; existing server commands still validate
+every transaction.
 
 ## Current compatibility boundary
 

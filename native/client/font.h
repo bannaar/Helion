@@ -38,11 +38,23 @@ struct FontVertex {
   float a = 1.0f;
 };
 
+struct GlyphUv {
+  float u0 = 0;
+  float v0 = 0;
+  float u1 = 0;
+  float v1 = 0;
+  bool visible = false;
+};
+
 GlyphBitmap glyphBitmap(char character);
 bool glyphSupported(char character);
 std::string normalizeText(std::string_view value, std::size_t maxCharacters = kMaxTextCharacters);
 float measureText(std::string_view value, float scale = 1.0f,
                  std::size_t maxCharacters = kMaxTextCharacters);
+GlyphUv glyphUv(char character);
+std::size_t visibleGlyphCount(std::string_view value, float scale = 1.0f,
+                              std::size_t maxCharacters = kMaxTextCharacters,
+                              float maxWidth = 0.0f);
 std::vector<FontVertex> buildTextVertices(std::string_view value, float x, float y,
                                            float scale, FontColor color,
                                            std::size_t maxCharacters = kMaxTextCharacters,

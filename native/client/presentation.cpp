@@ -37,6 +37,8 @@ PresentationSnapshot makePresentationSnapshot(const View& view) {
   snapshot.ui = view.ui;
   snapshot.ui.consoleOpen = view.console;
   snapshot.ui.telemetryEnabled = view.showTelemetry;
+  snapshot.ui.connected = view.connected;
+  snapshot.ui.authenticated = view.authenticated;
   snapshot.ui.typed = maskedCommand(view.typed);
   populateUiDerived(snapshot.ui, snapshot.player);
   if (view.ship.docked && view.ship.station >= 0 &&

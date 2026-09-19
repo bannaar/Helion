@@ -160,9 +160,9 @@ diagnostic and the Intel X11 check must report the Mesa Intel renderer. A
 Batch 9 representative 960x600 Intel HD 3000 states measured about 0.87–2.25
 ms, four draw calls, 726–819 world vertices, 72–144 UI vertices, one text draw
 call, and one atlas texture. The exact counts vary with screen and message;
-the diagnostics also separate glyph count, conventional glyph vertices,
-uploaded bitmap-pixel vertices, float components, VBO bytes, and CPU/render
-timing. These are bounded diagnostics rather than a fixed performance target.
+the diagnostics also separate glyph count, glyph vertices, float components,
+VBO bytes, atlas dimensions/bytes, and CPU/render timing. These are bounded
+diagnostics rather than a fixed performance target.
 
 For an accelerated X11 validation, omit software-forcing and offscreen
 variables:
@@ -180,7 +180,9 @@ authentication: station, profile, options/telemetry, market, First Ore,
 outfitting, GalNet, and graphics diagnostics. Up/Down selects, Enter confirms,
 and Escape backs out. Market quantity uses `+`/`-` and buy/sell uses `B`/`S`;
 outfitting uses `B`/`F`/`R`. The account console remains bounded and masks
-passwords. These controls submit the existing server commands and do not make
+passwords. Mouse movement highlights controls and left-click activates one
+control event at a time; wheel/PageUp/PageDown scroll bounded GalNet content.
+These controls submit the existing server commands and do not make
 prices, rewards, repairs, fuel, mission state, or module ownership client
 authoritative.
 
@@ -188,12 +190,14 @@ The core render check accepts these UI fixtures in addition to flight states:
 `account`, `station`, `market`, `mission`, `outfit`, `profile`, `galnet`,
 `options`, `graphics`, and `error`.
 
-`CORE-PERF` reports units explicitly: `glyphs`, `text-glyph-vertices`
-(six per glyph), actual uploaded `text-vertices`, `text-components` (eight
+`CORE-PERF` reports units explicitly: `glyphs`, `text-vertices`,
+`text-indices`, `text-glyph-vertices` (six per glyph), `text-components` (eight
 floats per uploaded vertex), `text-bytes`, `text-draw-calls`, `textures`,
-`cpu-build-ms`, and `render-ms`. The actual bitmap-pixel vertex count is
-larger than glyph-quad vertices because each lit 5x7 pixel is a six-vertex
-quad. The atlas is uploaded once per context, not rebuilt per frame.
+`atlas=WIDTHxHEIGHT`, `atlas-bytes`, `cpu-build-ms`, `cpu-ui-build-ms`,
+`cpu-text-build-ms`, and `render-ms`. The non-indexed text invariant is
+`text-vertices == glyphs * 6`; indices remain zero. Each glyph samples one
+cell of the single nearest-filtered atlas, which is uploaded once per context
+and not rebuilt per frame.
 
 ## Native assets and render check
 

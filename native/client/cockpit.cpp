@@ -24,7 +24,7 @@ void appendLine(CockpitTextBatch& batch, const HudLayout& layout, float x, float
   const std::size_t available = kMaxTextVertices - batch.vertices.size();
   if (vertices.size() > available) vertices.resize(available - available % 6);
   batch.vertices.insert(batch.vertices.end(), vertices.begin(), vertices.end());
-  batch.glyphs += normalized.size();
+  batch.glyphs += vertices.size() / 6;
 }
 
 void appendUiLine(CockpitTextBatch& batch, const HudLayout& layout, float y,
@@ -82,7 +82,7 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
       " / OWNED " + std::to_string(snapshot.player.parts)};
     for (std::size_t i = 0; i < rows.size(); ++i)
       appendUiLine(batch, layout, 204 + static_cast<float>(i) * 36, static_cast<int>(i) == ui.selected, rows[i]);
-    appendUiLine(batch, layout, 300, false, "QTY " + std::to_string(ui.quantity) + " / B BUY  S SELL  +/- QUANTITY", muted);
+    appendUiLine(batch, layout, 300, false, "QTY " + std::to_string(ui.quantity) + " / B BUY  S SELL", muted, 460);
     appendUiLine(batch, layout, 340, false, "STATION PRICES / KEPLER AND CINDER DIFFER", muted);
   } else if (ui.screen == UiScreen::mission) {
     const std::string stage = ui.missionStage == 0 ? "AVAILABLE" : ui.missionStage == 1 ? "ACCEPTED / ACTIVE" : "COMPLETED";
@@ -92,7 +92,7 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
     appendUiLine(batch, layout, 214, false, "OBJECTIVE / MINE 1 ORE AND RETURN TO STATION");
     appendUiLine(batch, layout, 242, false, "REWARD / 250 CR / 25 XP / ORION +10 / KEPLER +5");
     appendUiLine(batch, layout, 278, false, "PROGRESS / " + std::string(ui.missionOreMined ? "ORE MINED" : "NOT YET COMPLETE"));
-    appendUiLine(batch, layout, 326, false, ui.missionStage == 0 ? "ENTER ACCEPT CONTRACT" : "MISSION STATE IS SERVER-AUTHORITATIVE", muted);
+    appendUiLine(batch, layout, 362, false, "ENTER ACCEPT / TURN IN WHEN READY", muted);
   } else if (ui.screen == UiScreen::outfitting) {
     appendUiLine(batch, layout, 124, false, "MODULE CATALOGUE / OWNERSHIP AND FITTING ARE SERVER-VALIDATED", teal);
     const std::size_t maxRows = std::min<std::size_t>(7, helion::loadout::kCatalogue.size());
@@ -120,11 +120,17 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
     appendUiLine(batch, layout, 124, false, "PERSISTED EVENTS / OPENING THIS VIEW DOES NOT CREATE EVENTS", teal);
     if (ui.galnet.empty()) appendUiLine(batch, layout, 166, false, "NO GALNET EVENTS AVAILABLE", muted);
     else {
-      const std::size_t first = ui.galnet.size() > 10 ? ui.galnet.size() - 10 : 0;
-      for (std::size_t i = first; i < ui.galnet.size(); ++i) {
+      constexpr std::size_t visible = 9;
+      const std::size_t maxOffset = ui.galnet.size() > visible ? ui.galnet.size() - visible : 0;
+      const std::size_t first = std::min<std::size_t>(ui.scrollOffset, maxOffset);
+      const std::size_t last = std::min(ui.galnet.size(), first + visible);
+      for (std::size_t i = first; i < last; ++i) {
         appendUiLine(batch, layout, 164 + static_cast<float>(i - first) * 34,
           static_cast<int>(i - first) == ui.selected, ui.galnet[i].headline);
       }
+      appendUiLine(batch, layout, 478, false,
+        "SCROLL / WHEEL OR PAGE UP DOWN / " + std::to_string(first + 1) + "-" + std::to_string(last) +
+        " OF " + std::to_string(ui.galnet.size()), muted);
     }
   } else if (ui.screen == UiScreen::options) {
     appendUiLine(batch, layout, 124, false, "INPUT / KEYBOARD NAVIGATION", teal);
@@ -137,6 +143,15 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
     appendUiLine(batch, layout, 158, false, ui.graphicsReport.empty() ? "GRAPHICS REPORT / UNAVAILABLE" : ui.graphicsReport, white, 880);
     appendUiLine(batch, layout, 206, false, "OPENGL 3.3 CORE / GLSL 3.30 / FIXED-FUNCTION CALLS DISABLED");
     appendUiLine(batch, layout, 240, false, "AUTO MODE CONTINUES TO SELECT LEGACY", muted);
+  } else if (ui.screen == UiScreen::error) {
+    appendUiLine(batch, layout, 124, false, "ACTION RESULT / NO AUTHORITATIVE STATE CHANGE", amber);
+    appendUiLine(batch, layout, 164, false, ui.statusMessage.empty() ? "NO ERROR DETAILS" : ui.statusMessage, white, 880);
+  }
+  for (const auto& control : buildUiControls(ui)) {
+    const auto label = uiButtonLabel(control.id);
+    if (label.empty()) continue;
+    appendLine(batch, layout, control.rect.x + 8, control.rect.y + 12, 1.35f,
+      control.enabled ? white : muted, label, control.rect.width - 16, 64);
   }
   if (!ui.statusMessage.empty()) appendUiLine(batch, layout, 520, false, ui.statusMessage, amber, 880);
 }

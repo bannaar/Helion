@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace helion::client {
@@ -19,7 +20,67 @@ enum class UiScreen {
   profile,
   galnet,
   options,
-  graphics
+  graphics,
+  error
+};
+
+enum class UiControlId {
+  none,
+  accountInput,
+  stationMarket,
+  stationMission,
+  stationOutfitting,
+  stationProfile,
+  stationGalnet,
+  stationOptions,
+  stationGraphics,
+  stationLaunch,
+  stationRepair,
+  stationRefuel,
+  marketFood,
+  marketParts,
+  marketBuy,
+  marketSell,
+  marketQuantityDown,
+  marketQuantityUp,
+  missionAccept,
+  missionTurnIn,
+  outfitRow,
+  outfitBuy,
+  outfitFit,
+  outfitRemove,
+  galnetEntry,
+  optionsTelemetry,
+  dismiss
+};
+
+struct UiPoint {
+  float x = 0;
+  float y = 0;
+};
+
+struct UiRect {
+  float x = 0;
+  float y = 0;
+  float width = 0;
+  float height = 0;
+
+  bool contains(UiPoint point) const {
+    return point.x >= x && point.y >= y && point.x <= x + width && point.y <= y + height;
+  }
+};
+
+struct UiControl {
+  UiControlId id = UiControlId::none;
+  UiRect rect;
+  int index = 0;
+  bool enabled = false;
+};
+
+struct UiHitResult {
+  UiControlId id = UiControlId::none;
+  int index = -1;
+  bool enabled = false;
 };
 
 struct UiMarketRow {
@@ -48,6 +109,15 @@ struct UiState {
   UiScreen screen = UiScreen::account;
   int selected = 0;
   int quantity = 1;
+  int scrollOffset = 0;
+  int hoveredIndex = -1;
+  UiControlId hoveredControl = UiControlId::none;
+  UiControlId focusedControl = UiControlId::none;
+  bool connected = false;
+  bool authenticated = false;
+  bool docked = false;
+  bool destroyed = false;
+  bool commandPending = false;
   bool consoleOpen = true;
   bool telemetryEnabled = true;
   std::string typed;
@@ -71,8 +141,15 @@ struct UiState {
 };
 
 std::string uiScreenName(UiScreen screen);
+std::string uiControlName(UiControlId control);
+std::string uiButtonLabel(UiControlId control);
 std::string uiStandingLabel(int value);
 std::string maskedCommand(std::string_view command);
+std::vector<UiControl> buildUiControls(const UiState& state);
+UiPoint uiPointFromWindow(float windowX, float windowY, int width, int height);
+UiHitResult hitTestUi(const UiState& state, UiPoint point, int width, int height);
+int uiMaxScroll(const UiState& state);
+std::string uiCommandFor(UiControlId control, int index, const UiState& state);
 void populateUiDerived(UiState& state, const flight::State& ship);
 
 } // namespace helion::client

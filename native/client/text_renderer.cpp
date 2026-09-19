@@ -56,7 +56,7 @@ std::vector<unsigned char> atlasPixels() {
       for (int column = 0; column < 5; ++column) {
         if ((glyph.rows[static_cast<std::size_t>(row)] & (1 << (4 - column))) == 0) continue;
         const int px = cellX * kFontCellWidth + column;
-        const int py = cellY * kFontCellHeight + row;
+        const int py = kAtlasHeight - 1 - (cellY * kFontCellHeight + row);
         const auto offset = static_cast<std::size_t>((py * kAtlasWidth + px) * 4);
         pixels[offset] = 255;
         pixels[offset + 1] = 255;
@@ -100,6 +100,7 @@ void main() {
   GLuint fragmentShader = 0;
   if (!compile(functions, GL_VERTEX_SHADER, vertexSource, vertexShader, error) ||
       !compile(functions, GL_FRAGMENT_SHADER, fragmentSource, fragmentShader, error)) {
+    if (vertexShader) functions.glDeleteShader(vertexShader);
     if (fragmentShader) functions.glDeleteShader(fragmentShader);
     release();
     return false;
@@ -204,13 +205,16 @@ bool TextRenderer::render(const math::Mat4& projection, const std::vector<FontVe
   if (!checkStage("text-draw")) return false;
   if (stats) {
     stats->vertices = vertices.size();
+    stats->indices = 0;
     stats->glyphQuadVertices = glyphQuadVertexCount(glyphs);
-    stats->glyphQuadVertices = glyphs * 6;
     stats->components = textComponentCount(vertices.size());
     stats->uploadedBytes = textBufferBytes(vertices.size());
     stats->glyphs = glyphs;
     stats->drawCalls = 1;
     stats->textures = 1;
+    stats->atlasWidth = kAtlasWidth;
+    stats->atlasHeight = kAtlasHeight;
+    stats->atlasBytes = static_cast<std::size_t>(kAtlasWidth * kAtlasHeight * 4);
   }
   return true;
 }

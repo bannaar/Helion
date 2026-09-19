@@ -3,6 +3,7 @@
 import argparse
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 
@@ -30,6 +31,11 @@ def main():
                 raise AssertionError(f"{state} missing text render stats: {result.stdout}")
             if "text-components=" not in result.stdout or "text-bytes=" not in result.stdout or "cpu-build-ms=" not in result.stdout:
                 raise AssertionError(f"{state} missing telemetry units: {result.stdout}")
+            metrics = dict(re.findall(r"(text-vertices|text-indices|glyphs|atlas|atlas-bytes)=([^ ]+)", result.stdout))
+            if int(metrics["text-vertices"]) != int(metrics["glyphs"]) * 6:
+                raise AssertionError(f"{state} violates one-quad-per-glyph telemetry: {result.stdout}")
+            if metrics["text-indices"] != "0" or metrics["atlas"] != "96x48":
+                raise AssertionError(f"{state} has unexpected atlas/index metrics: {result.stdout}")
             if frame.stat().st_size <= 1024:
                 raise AssertionError(f"{state} produced an empty frame")
     print("core render states: flight, combat, station, account, market, mission, outfitting, profile, GalNet, options, graphics, and error passed")

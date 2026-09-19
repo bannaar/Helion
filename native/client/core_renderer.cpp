@@ -85,6 +85,18 @@ void addLine(Vertices& vertices, float ax, float ay, float bx, float by, float t
   addTriangle(vertices, ax + nx, ay + ny, bx - nx, by - ny, ax - nx, ay - ny, color);
 }
 
+void addHudOutline(Vertices& vertices, const HudLayout& layout, const UiRect& rect,
+                   const PresentationColor& color) {
+  const float x = layout.originX + rect.x * layout.scale;
+  const float y = layout.originY + rect.y * layout.scale;
+  const float width = rect.width * layout.scale;
+  const float height = rect.height * layout.scale;
+  addLine(vertices, x, y, x + width, y, 2.0f, color);
+  addLine(vertices, x + width, y, x + width, y + height, 2.0f, color);
+  addLine(vertices, x + width, y + height, x, y + height, 2.0f, color);
+  addLine(vertices, x, y + height, x, y, 2.0f, color);
+}
+
 void addRing(Vertices& vertices, float cx, float cy, float radius, float thickness,
              const PresentationColor& color, int sides = 12) {
   for (int i = 0; i < sides; ++i) {
@@ -434,6 +446,7 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
   const float uiWidth = static_cast<float>(std::max(width, 1));
   const float uiHeight = static_cast<float>(std::max(height, 1));
   const auto layout = hudLayout(width, height);
+  const auto uiBuildStarted = std::chrono::steady_clock::now();
   if (snapshot.ui.screen != UiScreen::flight) {
     addHudQuad(hud, layout, 8, 8, 944, 584, panel);
     addHudQuad(hud, layout, 8, 8, 944, 86, {0.06f, 0.15f, 0.18f});
@@ -444,6 +457,20 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     addHudQuad(hud, layout, 352, 92, 600, 142, panel);
     addHudQuad(hud, layout, 8, 372, 944, 210, panel);
   }
+  if (snapshot.ui.screen != UiScreen::flight) {
+    for (const auto& control : buildUiControls(snapshot.ui)) {
+      const bool hovered = control.id == snapshot.ui.hoveredControl &&
+        control.index == snapshot.ui.hoveredIndex;
+      const bool selected = control.id != UiControlId::accountInput &&
+        ((control.id == UiControlId::galnetEntry && control.index - snapshot.ui.scrollOffset == snapshot.ui.selected) ||
+         (control.id != UiControlId::galnetEntry && control.index == snapshot.ui.selected));
+      if (hovered || selected) addHudOutline(hud, layout, control.rect,
+        hovered ? PresentationColor{1.0f, 0.67f, 0.29f} : PresentationColor{0.25f, 0.88f, 0.76f});
+      else if (!control.enabled && control.id != UiControlId::accountInput)
+        addHudOutline(hud, layout, control.rect, PresentationColor{0.18f, 0.25f, 0.28f});
+    }
+  }
+  if (snapshot.ui.screen == UiScreen::flight) {
   addHudQuad(hud, layout, 220, 120, 110, 10, grid);
   addHudQuad(hud, layout, 220, 120, 110 * clampHudValue(snapshot.player.hull, snapshot.player.maxHull),
     10, snapshot.player.hull <= snapshot.player.maxHull / 4 ? amber : teal);
@@ -474,7 +501,11 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     addQuad(hud, uiWidth * 0.5f - 90 * layout.scale, 40 * layout.scale,
       180 * layout.scale, 8 * layout.scale, red);
   }
+  }
+  const auto uiBuildFinished = std::chrono::steady_clock::now();
+  const auto textBuildStarted = std::chrono::steady_clock::now();
   const auto cockpitText = buildCockpitText(snapshot, width, height);
+  const auto textBuildFinished = std::chrono::steady_clock::now();
   const auto buildFinished = std::chrono::steady_clock::now();
   const auto gpuStarted = buildFinished;
 
@@ -523,6 +554,7 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     stats->worldVertices = dynamic.size();
     stats->hudVertices = hud.size();
     stats->textVertices = textStats.vertices;
+    stats->textIndices = textStats.indices;
     stats->textGlyphVertices = textStats.glyphQuadVertices;
     stats->textComponents = textStats.components;
     stats->textBytes = textStats.uploadedBytes;
@@ -530,7 +562,12 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     stats->dynamicVertices = dynamic.size() + hud.size();
     stats->glyphs = textStats.glyphs;
     stats->textures = textStats.textures;
+    stats->atlasWidth = textStats.atlasWidth;
+    stats->atlasHeight = textStats.atlasHeight;
+    stats->atlasBytes = textStats.atlasBytes;
     stats->cpuBuildMilliseconds = std::chrono::duration<double, std::milli>(buildFinished - started).count();
+    stats->cpuUiBuildMilliseconds = std::chrono::duration<double, std::milli>(uiBuildFinished - uiBuildStarted).count();
+    stats->cpuTextBuildMilliseconds = std::chrono::duration<double, std::milli>(textBuildFinished - textBuildStarted).count();
     stats->renderMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gpuStarted).count();
     stats->frameMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
   }

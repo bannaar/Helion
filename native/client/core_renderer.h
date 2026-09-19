@@ -102,6 +102,7 @@ struct CoreRenderStats {
   std::size_t worldVertices = 0;
   std::size_t hudVertices = 0;
   std::size_t textVertices = 0;
+  std::size_t textIndices = 0;
   std::size_t textGlyphVertices = 0;
   std::size_t textComponents = 0;
   std::size_t textBytes = 0;
@@ -109,7 +110,12 @@ struct CoreRenderStats {
   std::size_t dynamicVertices = 0;
   std::size_t glyphs = 0;
   std::size_t textures = 0;
+  int atlasWidth = 0;
+  int atlasHeight = 0;
+  std::size_t atlasBytes = 0;
   double cpuBuildMilliseconds = 0;
+  double cpuUiBuildMilliseconds = 0;
+  double cpuTextBuildMilliseconds = 0;
   double renderMilliseconds = 0;
   double frameMilliseconds = 0;
 };

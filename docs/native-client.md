@@ -228,14 +228,15 @@ World geometry, geometric HUD indicators, text, and recent messages are kept
 as separate presentation layers. Static grid geometry is uploaded once;
 bounded dynamic world, HUD, and text geometry reuse VAO/VBO resources. The
 built-in font supports the current Latin command/status alphabet and maps
-unsupported characters to `?`; it is intentionally not a Unicode shaping or
-font-layout system. On the verified HD 3000 X11 path, the Batch 8 states take
-about 0.87–2.25 ms per captured 960×600 frame, with four draw calls, 726–819
-world vertices, 72–144 HUD vertices, one text draw call, and one atlas texture.
-The representative states ranged from 308 to 461 glyphs. Diagnostics also
-report conventional six-vertex glyph counts separately from uploaded bitmap
-pixel vertices, float components, VBO bytes, and CPU/render timing. These are
-bounded diagnostic measurements, not performance targets.
+unsupported characters or bounded UTF-8 sequences to `?`; it is intentionally
+not a Unicode shaping or font-layout system. Batch 10 uses one textured
+six-vertex quad per visible glyph from a single 96x48 padded RGBA atlas. On the
+verified HD 3000 X11 path, representative 960x600 states take about
+0.20–0.38 ms per captured frame, with four draw calls, 726–819 world vertices,
+96–192 UI vertices, 248–364 glyphs, one text draw call, and 18,432 atlas bytes.
+Text VBO uploads are 1,488–2,184 vertices / 47,616–69,888 bytes; CPU build and
+render timings are reported separately in `CORE-PERF`. These are bounded
+diagnostic measurements, not performance targets.
 
 For deterministic core presentation checks, select a fixture state and size:
 
@@ -259,7 +260,24 @@ graphics diagnostics. `Up`/`Down` selects, `Enter` confirms, and `Escape`
 returns to the previous station/flight view. Market uses `B`/`S` and `+`/`-`
 for bounded unit quantities. Outfitting uses `B`/`F`/`R` for buy, fit, and
 remove. Account input remains in the existing bounded console; passwords are
-masked in the core presentation and never copied into logs.
+masked in the core presentation and never copied into logs. Mouse movement
+highlights controls and left-click activates one control event at a time; wheel
+and PageUp/PageDown scroll bounded GalNet content. Hit regions use the same
+letterboxed layout as rendering, so resizing preserves alignment. Disabled or
+pending transaction controls cannot submit commands.
+
+The Batch 10 verification audit corrected live input routing: menu Enter no
+longer opens the console, flight actions remain reachable in core mode, mouse
+actions preserve the selected commodity/module, and input hit testing uses
+fresh connection/ship presentation flags. Flight-only bars no longer cover
+station text. The atlas UVs map complete texels to complete bitmap pixels;
+newlines and spaces never address an atlas cell.
+
+Automatic core selection remains **NOT_READY_FOR_AUTO_TRIAL** until an SDL
+input-driven career test and the remaining account/onboarding interface are
+complete. Render fixtures alone do not prove interactive play. Reported frame
+times measure CPU build and OpenGL submission with diagnostic error checks;
+they do not include swap/vsync or establish GPU completion time.
 
 The station UI presents existing server data only: station context, credits,
 hull, fuel, cargo, shared station prices, First Ore issuer/jurisdiction and

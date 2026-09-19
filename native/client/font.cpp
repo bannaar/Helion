@@ -33,7 +33,9 @@ std::array<unsigned char, 7> rowsFor(char character) {
     case '*': return {0,21,14,31,14,21,0}; case '+': return {0,4,4,31,4,4,0};
     case '%': return {25,25,2,4,8,19,19}; case '(': return {2,4,8,8,8,4,2};
     case ')': return {8,4,2,2,2,4,8}; case '!': return {4,4,4,4,4,0,4};
-    case ',': return {0,0,0,0,0,4,8}; case '?': return {14,17,1,2,4,0,4};
+    case ',': return {0,0,0,0,0,4,8}; case ';': return {0,4,0,0,4,4,8};
+    case '\'': return {4,4,0,0,0,0,0}; case '"': return {10,10,0,0,0,0,0};
+    case '?': return {14,17,1,2,4,0,4};
     case '|': return {4,4,4,4,4,4,4}; case ' ': return {0,0,0,0,0,0,0};
     default: return {14,17,1,2,4,0,4};
   }
@@ -44,7 +46,7 @@ bool isSupported(char character) {
   if (character == ' ' || character == '\n') return true;
   if (upper >= 'A' && upper <= 'Z') return true;
   if (character >= '0' && character <= '9') return true;
-  return std::string_view("/-.:=<>[]_*+%()!,?|").find(character) != std::string_view::npos;
+  return std::string_view("/-.:=<>[]_*+%()!,?|'\";").find(character) != std::string_view::npos;
 }
 }
 
@@ -58,8 +60,16 @@ bool glyphSupported(char character) { return glyphBitmap(character).supported; }
 std::string normalizeText(std::string_view value, std::size_t maxCharacters) {
   std::string result;
   result.reserve(std::min(value.size(), maxCharacters));
-  for (const char character : value) {
+  for (std::size_t i = 0; i < value.size();) {
     if (result.size() >= maxCharacters) break;
+    const auto byte = static_cast<unsigned char>(value[i]);
+    if (byte >= 0x80) {
+      result.push_back('?');
+      ++i;
+      while (i < value.size() && (static_cast<unsigned char>(value[i]) & 0xc0) == 0x80) ++i;
+      continue;
+    }
+    const char character = value[i++];
     result.push_back(glyphSupported(character) ? character : '?');
   }
   return result;
@@ -79,13 +89,44 @@ float measureText(std::string_view value, float scale, std::size_t maxCharacters
   return std::max(width, lineWidth);
 }
 
+GlyphUv glyphUv(char character) {
+  if (character == '\n' || character == ' ') return {};
+  const auto normalized = glyphSupported(character) ? character : '?';
+  const int code = static_cast<unsigned char>(normalized);
+  const int cellX = (code - 32) % kFontAtlasColumns;
+  const int cellY = (code - 32) / kFontAtlasColumns;
+  constexpr float atlasWidth = static_cast<float>(kFontAtlasColumns * kFontCellWidth);
+  constexpr float atlasHeight = static_cast<float>(kFontAtlasRows * kFontCellHeight);
+  const float left = static_cast<float>(cellX * kFontCellWidth);
+  const float top = static_cast<float>(cellY * kFontCellHeight);
+  return {left / atlasWidth, (atlasHeight - top) / atlasHeight,
+          (left + 5.0f) / atlasWidth, (atlasHeight - top - 7.0f) / atlasHeight,
+          glyphBitmap(normalized).rows != std::array<unsigned char, 7>{}};
+}
+
+std::size_t visibleGlyphCount(std::string_view value, float scale, std::size_t maxCharacters,
+                              float maxWidth) {
+  if (scale <= 0) return 0;
+  const auto normalized = normalizeText(value, std::min(maxCharacters, kMaxTextCharacters));
+  const float startX = 0.0f;
+  float x = startX;
+  std::size_t count = 0;
+  for (const char character : normalized) {
+    if (character == '\n') { x = startX; continue; }
+    if (maxWidth > 0 && x + kFontCellWidth * scale > startX + maxWidth) break;
+    if (glyphUv(character).visible) ++count;
+    x += kFontCellWidth * scale;
+  }
+  return count;
+}
+
 std::vector<FontVertex> buildTextVertices(std::string_view value, float x, float y,
                                            float scale, FontColor color,
                                            std::size_t maxCharacters, float maxWidth) {
   std::vector<FontVertex> vertices;
   if (scale <= 0) return vertices;
   const auto normalized = normalizeText(value, std::min(maxCharacters, kMaxTextCharacters));
-  vertices.reserve(std::min(kMaxTextVertices, normalized.size() * 30));
+  vertices.reserve(std::min(kMaxTextVertices, normalized.size() * 6));
   const float startX = x;
   for (const char character : normalized) {
     if (character == '\n') {
@@ -94,29 +135,17 @@ std::vector<FontVertex> buildTextVertices(std::string_view value, float x, float
       continue;
     }
     if (maxWidth > 0 && x + kFontCellWidth * scale > startX + maxWidth) break;
-    const auto glyph = glyphBitmap(character);
-    const int code = static_cast<unsigned char>(character);
-    const int cellX = (code - 32) % kFontAtlasColumns;
-    const int cellY = (code - 32) / kFontAtlasColumns;
-    for (int row = 0; row < 7; ++row) {
-      for (int column = 0; column < 5; ++column) {
-        if ((glyph.rows[static_cast<std::size_t>(row)] & (1 << (4 - column))) == 0) continue;
-        const float px = x + column * scale;
-        const float py = y + row * scale;
-        const float u0 = static_cast<float>(cellX * kFontCellWidth + column + 0.25f) / (kFontAtlasColumns * kFontCellWidth);
-        const float v0 = static_cast<float>(cellY * kFontCellHeight + row + 0.25f) / (kFontAtlasRows * kFontCellHeight);
-        const float u1 = static_cast<float>(cellX * kFontCellWidth + column + 0.75f) / (kFontAtlasColumns * kFontCellWidth);
-        const float v1 = static_cast<float>(cellY * kFontCellHeight + row + 0.75f) / (kFontAtlasRows * kFontCellHeight);
-        vertices.push_back({px, py, u0, v0, color.r, color.g, color.b, color.a});
-        vertices.push_back({px + scale, py, u1, v0, color.r, color.g, color.b, color.a});
-        vertices.push_back({px + scale, py + scale, u1, v1, color.r, color.g, color.b, color.a});
-        vertices.push_back({px, py, u0, v0, color.r, color.g, color.b, color.a});
-        vertices.push_back({px + scale, py + scale, u1, v1, color.r, color.g, color.b, color.a});
-        vertices.push_back({px, py + scale, u0, v1, color.r, color.g, color.b, color.a});
-        if (vertices.size() >= kMaxTextVertices) {
-          vertices.resize(kMaxTextVertices - kMaxTextVertices % 6);
-          return vertices;
-        }
+    const auto uv = glyphUv(character);
+    if (uv.visible) {
+      vertices.push_back({x, y, uv.u0, uv.v0, color.r, color.g, color.b, color.a});
+      vertices.push_back({x + 5 * scale, y, uv.u1, uv.v0, color.r, color.g, color.b, color.a});
+      vertices.push_back({x + 5 * scale, y + 7 * scale, uv.u1, uv.v1, color.r, color.g, color.b, color.a});
+      vertices.push_back({x, y, uv.u0, uv.v0, color.r, color.g, color.b, color.a});
+      vertices.push_back({x + 5 * scale, y + 7 * scale, uv.u1, uv.v1, color.r, color.g, color.b, color.a});
+      vertices.push_back({x, y + 7 * scale, uv.u0, uv.v1, color.r, color.g, color.b, color.a});
+      if (vertices.size() >= kMaxTextVertices) {
+        vertices.resize(kMaxTextVertices - kMaxTextVertices % 6);
+        return vertices;
       }
     }
     x += kFontCellWidth * scale;

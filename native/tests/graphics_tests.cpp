@@ -52,8 +52,8 @@ int main() {
         rendererModeName(RendererMode::legacy) == std::string("legacy") &&
         rendererModeName(RendererMode::core) == std::string("core"), "renderer labels are stable");
   check(!selectRenderer(RendererMode::auto_mode, false).useCore &&
-        !selectRenderer(RendererMode::auto_mode, true).useCore,
-        "auto keeps legacy gameplay while recording core availability");
+        selectRenderer(RendererMode::auto_mode, true).useCore,
+        "auto prefers a qualified core renderer and retains fallback policy");
   check(!selectRenderer(RendererMode::legacy, true).useCore,
         "legacy mode never selects core");
   check(selectRenderer(RendererMode::core, true).useCore &&

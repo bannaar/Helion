@@ -164,12 +164,11 @@ renderer, version, GLSL version, fallback state, and conservative renderer
 classification. Known software renderers such as llvmpipe and softpipe are
 never labeled hardware.
 
-The client still uses double buffering, a resizable 960×600 window, and
-fixed-function projection and colored primitives. It does not require shaders,
-vertex buffer objects, VAOs, or OpenGL 3+ features. OpenGL 2.1 fallback remains
-fully playable.
+The legacy renderer uses double buffering, a resizable 960×600 window, and
+fixed-function projection. Its OpenGL 2.1 fallback remains playable. The core
+renderer has its own OpenGL 3.3 shader, buffer, and glyph-atlas path.
 
-### Experimental core renderer
+### Core and legacy renderers
 
 Renderer selection is explicit:
 
@@ -179,11 +178,14 @@ Renderer selection is explicit:
 SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer core
 ```
 
-`auto` probes for a core context for diagnostics but deliberately keeps normal
-gameplay on the proven legacy path. `legacy` always uses the 3.0 compatibility
-then 2.1 compatibility policy. `core` requests OpenGL 3.3 core, rejects a
+`auto` initializes a hardware OpenGL 3.3 core renderer first. If any stage
+fails, it destroys the partial context and creates a clean legacy context.
+The reason and selected renderer appear in `GRAPHICS SELECT` startup output.
+`legacy` uses the 3.0 compatibility then 2.1 compatibility policy. `core`
+requests OpenGL 3.3 core, rejects a
 compatibility context, loads only the modern functions it needs through SDL,
-and enters the core gameplay renderer. Render-check mode uses a deterministic
+and enters the core gameplay renderer. Explicit core failure exits nonzero;
+it never falls back. Render-check mode uses a deterministic
 ship/station/asteroid/contact fixture; normal mode consumes the live Kepler
 snapshot. It never falls back silently to the legacy renderer. An unknown
 renderer value is rejected.
@@ -219,8 +221,7 @@ jurisdiction, organization standings, target affiliation/range/hull, and
 docked, mining, combat, and recovery states. A bounded recent-message panel
 shows GalNet headlines, mission, mining, combat, reward, docking, and error
 feedback from the existing client log. The same server-authoritative controls
-and commands remain in use. `auto` still selects legacy gameplay until core
-visual parity and stability are demonstrated.
+and commands remain in use.
 
 The renderer-neutral snapshot copies presentation state from `View` without
 owning it, mutating gameplay, sending commands, or retaining OpenGL objects.
@@ -246,11 +247,16 @@ SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer core \
   --render-size 960 600
 ```
 
-Available states are `normal`, `mining`, `target`, `combat`, `docked`,
-`destroyed`, and `galnet`. The real TLS gameplay harness separately exercises
-authentication, mining, mission/reputation, combat, recovery, reconnect, and
-the core context probe; socket gameplay is authoritative while rendering is
-validated at deterministic snapshot checkpoints.
+Available states include `normal`, `mining`, `target`, `combat`, `docked`,
+`destroyed`, `galnet` (flight news feed), `galnet-ui` (docked news panel),
+`account`, `station`, `market`, `mission`, `outfit`,
+`profile`, `options`, `graphics`, `error`, `help`, and `completion`. The TLS
+protocol harness remains a separate authority check. The graphical acceptance
+harness drives one real SDL/core client through account creation, onboarding,
+three contracts, mining, market, outfitting, combat, completion, restart, and
+free play; it captures actual client frames at thirteen checkpoints. Its
+guarded mode accepts only loopback TLS and an explicit test flag, and injects
+ordinary SDL input events through the production UI handler.
 
 Core mode also provides station and account interfaces through the same text
 and geometric pipelines. `F1` opens station services when docked; `F2` opens
@@ -273,11 +279,65 @@ fresh connection/ship presentation flags. Flight-only bars no longer cover
 station text. The atlas UVs map complete texels to complete bitmap pixels;
 newlines and spaces never address an atlas cell.
 
-Automatic core selection remains **NOT_READY_FOR_AUTO_TRIAL** until an SDL
-input-driven career test and the remaining account/onboarding interface are
-complete. Render fixtures alone do not prove interactive play. Reported frame
-times measure CPU build and OpenGL submission with diagnostic error checks;
-they do not include swap/vsync or establish GPU completion time.
+`CORE-PERF` frame times measure CPU build and OpenGL submission with diagnostic
+error checks; they do not include swap/vsync or establish GPU completion time.
+The bounded live soak reports actual client frame counts, average/worst
+renderer time, draw/vertex/upload bounds, and OpenGL errors separately from
+process RSS samples.
+The cockpit's recent-activity feed filters routine protocol framing and
+contact/profile polling; the diagnostic console still retains raw responses.
+On the Intel HD 3000, the corrected packaged client completed a 600.015-second
+X11/core soak with 35,904 frames and 68 full station-to-flight activity cycles.
+Measured renderer time averaged 8.254 ms and peaked at 12.842 ms; this live
+path includes driver synchronization not represented by the short render-check
+fixture. Bounds were four draw calls, 834 world vertices, 276 UI vertices,
+5,364 text vertices, 171,648 uploaded text bytes, and one font atlas. OpenGL,
+render, SDL, and disconnect error counts were all zero. RSS sampled after
+startup rose from 91,616 to 92,228 KiB and then stayed stable; RSS stability
+alone does not prove leak freedom.
+
+Three-frame 960×600 X11 hardware fixtures measured 0.222 ms in normal flight,
+0.346 ms mining, 0.242 ms combat, 0.252 ms station, 0.234 ms market, 0.225 ms
+mission, 0.315 ms docked GalNet, and 0.286 ms completion. All used four draw
+calls and one 96×48, 18,432-byte atlas. Across these states, text used
+1,854–2,760 vertices (59,328–88,320 bytes); world geometry used 726–819
+vertices and UI geometry 42–138 vertices. These are bounded diagnostics, not
+GPU frame-completion or cross-machine performance guarantees.
+
+### Core/legacy vertical-slice parity audit
+
+`PARITY` means the same normal action and feedback are available; `CORE_EQUIVALENT`
+means the core presentation differs but supports the same decision; and
+`LEGACY_ONLY_NONCRITICAL` means a decorative or supplemental legacy view has no
+pixel-for-pixel core counterpart. There are no known
+`CORE_MISSING_CRITICAL` actions in the Kepler career path. This is functional
+parity, not visual identity.
+
+| Area | Classification | Core-mode evidence/qualification |
+| --- | --- | --- |
+| Account/login, TLS status | PARITY | Bounded fields, masked password, real TLS graphical acceptance |
+| Onboarding, help | CORE_EQUIVALENT | Core help overlay and dismissal/reopen controls |
+| Station, contracts, market, cargo | CORE_EQUIVALENT | Mouse/keyboard controls submit existing server commands |
+| Outfitting, repair/refuel | CORE_EQUIVALENT | Docked controls retain server-side validation |
+| Profile, reputation, GalNet | CORE_EQUIVALENT | Bounded core text views and persisted server records |
+| Options, graphics diagnostics | CORE_EQUIVALENT | Core menu plus actual context/renderer report |
+| Flight, contacts, targeting | CORE_EQUIVALENT | Live server snapshot and selected-target reticle |
+| Legacy decorative cockpit/radar styling | LEGACY_ONLY_NONCRITICAL | Core uses geometric HUD and spatial contact indicators |
+| Mining, combat, damage | CORE_EQUIVALENT | Live beam, weapon, hull, and feedback state |
+| Destruction, recovery | CORE_EQUIVALENT | Disabled-state overlay and recover action |
+| Career completion, post-completion free play | CORE_EQUIVALENT | Persistent completion view and resumed flight |
+| Keyboard, mouse, resize | CORE_EQUIVALENT | SDL event path, layout hit regions, bounded fixtures |
+
+The guarded graphical acceptance runs one actual core client process through
+career completion and a restarted client through persisted free play. It is
+not a claim that the Compaq/EliteBook LAN pair or every legacy cosmetic effect
+has been physically tested.
+The recent-activity panel is player-facing, but a low-level combat-status
+response can still appear in the small bottom status line; that is a cosmetic
+diagnostic leak, not a missing action or server-authority bypass.
+
+For two-machine installation and certificate SAN setup, use the
+[Compaq 610 + EliteBook 8460p guide](compaq610-server-elitebook-client.md).
 
 The station UI presents existing server data only: station context, credits,
 hull, fuel, cargo, shared station prices, First Ore issuer/jurisdiction and
@@ -319,8 +379,8 @@ For the actual desktop hardware check, omit both `LIBGL_ALWAYS_SOFTWARE` and
 the offscreen driver:
 
 ```sh
-SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --graphics-info
-SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --render-check /tmp/helion-hardware.bmp
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --graphics-info --renderer legacy
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer legacy --render-check /tmp/helion-hardware.bmp
 ```
 
 The existing offscreen render check remains a useful deterministic diagnostic,
@@ -385,8 +445,8 @@ The 960x600 display letterboxes when the window has a different aspect ratio.
 For a headless render check with SDL's offscreen driver:
 
 ```sh
-SDL_VIDEODRIVER=offscreen LIBGL_ALWAYS_SOFTWARE=1 \
-  ./build-native/native/helion_client --render-check native-mining.bmp
+SDL_VIDEODRIVER=offscreen \
+  ./build-native/native/helion_client --renderer legacy --render-check native-mining.bmp
 ```
 
 This saves the flight display and masked command console as BMP files. It

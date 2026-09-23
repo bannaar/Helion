@@ -132,8 +132,10 @@ RendererSelection selectRenderer(RendererMode requested, bool coreAvailable) {
     else result.useCore = true;
     return result;
   }
-  // Auto deliberately remains legacy until the core renderer reaches gameplay parity.
-  result.useCore = false;
+  // Core has completed the packaged graphical career and HD 3000 stability
+  // gates. Runtime initialization still owns the authoritative decision and
+  // falls back to a freshly-created legacy context if any core stage fails.
+  result.useCore = requested == RendererMode::auto_mode && coreAvailable;
   return result;
 }
 

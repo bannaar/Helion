@@ -1,8 +1,8 @@
 # Install and play Helion (Linux)
 
 Helion 0.2 includes a native SDL2/OpenGL client and a standalone TLS server.
-The combined package includes both, a desktop entry, local certificate setup,
-and a local-play launcher. No browser or Node.js runtime is needed.
+The combined package provides a local-play launcher. Separate server and client
+packages support two machines. No browser or Node.js runtime is needed.
 
 ## Install a built package
 
@@ -25,16 +25,18 @@ must match the target CPU architecture and a compatible Linux libc.
 
 ## First flight
 
-In the command console, enter `/create pilot YOUR_PASSWORD Commander Name`
-(use a new password of 12–128 bytes). On later visits enter
-`/login pilot YOUR_PASSWORD`. Passwords are masked in the graphical console.
+Enter an account name and a 12–128 byte password in the graphical account
+screen, then select **Create Commander**. On later visits select **Log In**.
+Passwords are masked in the graphical fields. The first-run guide introduces
+the Kepler career: First Ore, Cinder supply delivery, and Red Wake response.
 
 - **L** launches; **W** thrusts; **A/D** turn; **S** brakes.
 - Approach an ore asteroid within **85 m** below **35 m/s**, then press **E**.
 - Mine up to **8 units**, waiting **1.25 seconds** between extractions.
 - Follow the amber radar marker back to base; press **F** within **85 m**
   below **35 m/s** to sell. Each unit pays **60 credits and 5 XP**.
-- **Enter** opens the console; **Escape** returns to flight.
+- **F5** opens contracts, **F4** market, **F6** outfitting, **F7** GalNet,
+  and **F9** help. Mouse and keyboard both cover normal progression.
 
 Local saves and logs live in `$XDG_DATA_HOME/helion`, defaulting to
 `~/.local/share/helion`. `HELION_DATA_DIR` overrides this directory and
@@ -46,7 +48,25 @@ the commander's saved flight. Sign out by closing the client.
 `helion-play --check` validates the installed server/client TLS path without
 opening a window. `helion-play --terminal` opens the command-line client.
 
-## Remote or dedicated server
+## Split packages and remote server
+
+For the Compaq 610 server and EliteBook 8460p client, follow the dedicated
+[two-machine guide](compaq610-server-elitebook-client.md). Split packages are:
+
+```text
+helion-server-0.2.0-Linux-x86_64.tar.gz
+helion-client-0.2.0-Linux-x86_64.tar.gz
+helion-server_0.2.0_amd64.deb
+helion-client_0.2.0_amd64.deb
+```
+
+The server package has no SDL/OpenGL/X11 dependency. The client package has a
+desktop launcher, icon, and CA placement guidance, and contains no server key
+or database. Packages built on Linux Mint 22.3 require that generation of
+glibc/libstdc++/OpenSSL; older Linux installations may need a build on their
+own target or a compatible older build environment.
+The split-package checks are local, isolated install and TLS tests; an actual
+Compaq-to-EliteBook LAN or Tailscale deployment still needs on-site verification.
 
 Install/build the server on its own host. Obtain a certificate with a Subject
 Alternative Name matching the DNS name or IP clients will use, then run:
@@ -86,9 +106,19 @@ Build dependencies on Debian/Ubuntu:
 ```sh
 sudo apt install build-essential cmake libssl-dev libsdl2-dev libgl1-mesa-dev python3 openssl dpkg-dev
 cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
-cmake --build build-native --parallel
+cmake --build build-native -j2
 ctest --test-dir build-native --output-on-failure
-cmake --build build-native --target package
+cmake --build build-native --target package -j2
+
+# Separate release builds:
+cmake -S . -B build-server -DHELION_BUILD_CLIENT=OFF -DHELION_BUILD_TESTS=OFF -DHELION_PACKAGE_FLAVOR=server
+cmake --build build-server -j2
+cpack --config build-server/CPackConfig.cmake -G TGZ
+cpack --config build-server/CPackConfig.cmake -G DEB
+cmake -S . -B build-client -DHELION_BUILD_SERVER=OFF -DHELION_BUILD_TESTS=OFF -DHELION_PACKAGE_FLAVOR=client
+cmake --build build-client -j2
+cpack --config build-client/CPackConfig.cmake -G TGZ
+cpack --config build-client/CPackConfig.cmake -G DEB
 ```
 
 For a hardened development build, enable the native sanitizers and run the
@@ -97,17 +127,16 @@ headless server tests:
 ```sh
 cmake -S . -B build-sanitize -DCMAKE_BUILD_TYPE=Debug \
   -DHELION_BUILD_CLIENT=OFF -DHELION_SANITIZERS=ON
-cmake --build build-sanitize --parallel
+cmake --build build-sanitize -j2
 ASAN_OPTIONS=detect_leaks=1 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-The project keeps its renderer on fixed-function OpenGL 2.1 calls and SDL2
-windowing so HD 3000-era Intel drivers remain supported. GLAD, GLM, Dear ImGui,
-and stb_ttf are intentionally not required dependencies: the client uses a
-small original bitmap font and procedural geometry, which keeps the installed
-binary self-contained and avoids pulling a core-profile loader into the legacy
-renderer. A future UI expansion can add Dear ImGui's OpenGL2 backend behind a
-separate optional target without changing the gameplay protocol.
+The client first attempts hardware OpenGL 3.3 core in `auto` mode and recreates
+a clean fixed-function legacy context if core initialization fails. Legacy
+requests OpenGL 3.0 compatibility and falls back to 2.1. The client uses a
+small built-in glyph atlas and procedural geometry; no GLAD, GLM, ImGui, or
+external font runtime is required. Use `--renderer core` to require core or
+`--renderer legacy` to force compatibility rendering.
 
 CMake also supports `cmake --install build-native --prefix /your/prefix`.
 For a server-only build use `-DHELION_BUILD_CLIENT=OFF`; for a client-only

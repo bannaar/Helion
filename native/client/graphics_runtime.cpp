@@ -40,7 +40,7 @@ GraphicsCapabilities queryCapabilities() {
 
 GraphicsCapabilities attempt(SDL_Window*& window, SDL_GLContext& context,
                               const char* title, int width, int height, bool hidden,
-                              const GraphicsRequest& request) {
+                              const GraphicsRequest& request, std::string* failure = nullptr) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, request.major);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, request.minor);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
@@ -48,9 +48,13 @@ GraphicsCapabilities attempt(SDL_Window*& window, SDL_GLContext& context,
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
   const Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (hidden ? SDL_WINDOW_HIDDEN : 0);
   window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, flags);
-  if (!window) return {};
+  if (!window) {
+    if (failure) *failure = std::string("SDL_CreateWindow: ") + SDL_GetError();
+    return {};
+  }
   context = SDL_GL_CreateContext(window);
   if (!context) {
+    if (failure) *failure = std::string("SDL_GL_CreateContext: ") + SDL_GetError();
     SDL_DestroyWindow(window);
     window = nullptr;
     return {};
@@ -94,11 +98,13 @@ GraphicsContext createCoreGraphicsContext(const char* title, int width, int heig
   const GraphicsRequest request{3, 3, Profile::core};
   SDL_Window* window = nullptr;
   SDL_GLContext context = nullptr;
-  const auto capabilities = attempt(window, context, title, width, height, hidden, request);
+  std::string creationError;
+  const auto capabilities = attempt(window, context, title, width, height, hidden, request, &creationError);
   result.result.requested = request;
   result.result.actual = capabilities;
   if (!capabilities.complete) {
-    result.result.error = "OpenGL 3.3 core context returned incomplete capabilities";
+    result.result.error = creationError.empty()
+      ? "OpenGL 3.3 core context returned incomplete capabilities" : creationError;
   } else if (capabilities.profile != Profile::core) {
     result.result.error = "OpenGL 3.3 core request returned a non-core profile";
   } else if (!helion::graphics::usableCoreContext(capabilities)) {

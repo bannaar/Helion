@@ -54,7 +54,8 @@ int main() {
   view.commanderName = "TEST PILOT";
   view.missionSummary = "ACTIVE / FIRST ORE";
   view.reputation["authority.kepler"] = 25;
-  view.log = {"GALNET / TEST EVENT"};
+  view.log = {"GALNET / TEST EVENT", "CONTACT RAIDER-1", "CONTACTS END",
+              "OK MINED ore=1", "GALNET END"};
   view.contacts.resize(kMaxPresentationContacts + 8);
   for (std::size_t i = 0; i < view.contacts.size(); ++i) {
     view.contacts[i].id = "CONTACT-" + std::to_string(i);
@@ -64,7 +65,9 @@ int main() {
   check(bounded.contacts.size() == kMaxPresentationContacts,
         "snapshot bounds maximum contact presentation state");
   check(bounded.commanderName == "TEST PILOT" && bounded.missionSummary == "ACTIVE / FIRST ORE" &&
-        bounded.reputation.at("authority.kepler") == 25 && bounded.recentMessages.size() == 1,
+        bounded.reputation.at("authority.kepler") == 25 && bounded.recentMessages.size() == 2 &&
+        bounded.recentMessages[0] == "GALNET / TEST EVENT" &&
+        bounded.recentMessages[1] == "OK MINED ore=1",
         "snapshot copies cockpit metadata and recent messages");
   std::cout << "presentation snapshot tests passed\n";
   return failures == 0 ? 0 : 1;

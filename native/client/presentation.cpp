@@ -4,9 +4,21 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 namespace helion::client {
 namespace {
+bool playerFacingMessage(std::string_view line) {
+  constexpr std::string_view routinePrefixes[] = {
+    "CONTACT ", "CONTACTS ", "PROFILE ", "CAREER ", "LOADOUT ",
+    "FLIGHT ", "FUEL ", "STATE ", "GALNET id="
+  };
+  if (line == "GALNET END" || line == "WELCOME Helion/2") return false;
+  for (const auto prefix : routinePrefixes)
+    if (line.rfind(prefix, 0) == 0) return false;
+  return !line.empty();
+}
+
 PresentationColor colorFor(PresentationClass classification) {
   switch (classification) {
     case PresentationClass::station: return {0.95f, 0.65f, 0.25f};
@@ -59,10 +71,10 @@ PresentationSnapshot makePresentationSnapshot(const View& view) {
       classification, colorFor(classification), contact.x, contact.y, contact.yaw,
       contact.hull, contact.maxHull, contact.docked, contact.hostile, contact.id == view.targetId});
   }
-  const std::size_t visibleMessages = std::min<std::size_t>(12, view.log.size());
-  snapshot.recentMessages.reserve(visibleMessages);
-  for (std::size_t i = view.log.size() - visibleMessages; i < view.log.size(); ++i)
-    snapshot.recentMessages.push_back(view.log[i]);
+  snapshot.recentMessages.reserve(12);
+  for (auto line = view.log.rbegin(); line != view.log.rend() && snapshot.recentMessages.size() < 12; ++line)
+    if (playerFacingMessage(*line)) snapshot.recentMessages.push_back(*line);
+  std::reverse(snapshot.recentMessages.begin(), snapshot.recentMessages.end());
   return snapshot;
 }
 

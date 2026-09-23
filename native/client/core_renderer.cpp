@@ -323,10 +323,15 @@ bool CoreRenderer::setupBuffer(GLuint vertexArray, GLuint vertexBuffer, std::str
   return true;
 }
 
-bool CoreRenderer::initialize(std::string& error) {
+bool CoreRenderer::initialize(std::string& error, std::string_view testFailureStage) {
   release();
   if (!functions_.load(error) || !functions_.complete()) {
     if (error.empty()) error = "incomplete OpenGL function table";
+    release();
+    return false;
+  }
+  if (testFailureStage == "missing-function") {
+    error = "missing OpenGL function glCreateShader (injected test failure)";
     release();
     return false;
   }
@@ -355,6 +360,13 @@ void main() {
     release();
     return false;
   }
+  if (testFailureStage == "shader") {
+    error = "shader compilation: injected test failure";
+    functions_.glDeleteShader(vertexShader);
+    functions_.glDeleteShader(fragmentShader);
+    release();
+    return false;
+  }
   if (!linkProgram(vertexShader, fragmentShader, error)) {
     functions_.glDeleteShader(vertexShader);
     functions_.glDeleteShader(fragmentShader);
@@ -363,10 +375,20 @@ void main() {
   }
   functions_.glDeleteShader(vertexShader);
   functions_.glDeleteShader(fragmentShader);
+  if (testFailureStage == "program") {
+    error = "program linking: injected test failure";
+    release();
+    return false;
+  }
   functions_.glGenVertexArrays(1, &staticVertexArray_);
   functions_.glGenBuffers(1, &staticVertexBuffer_);
   functions_.glGenVertexArrays(1, &dynamicVertexArray_);
   functions_.glGenBuffers(1, &dynamicVertexBuffer_);
+  if (testFailureStage == "buffer") {
+    error = "buffer/VAO creation: injected test failure";
+    release();
+    return false;
+  }
   if (!setupBuffer(staticVertexArray_, staticVertexBuffer_, error) ||
       !setupBuffer(dynamicVertexArray_, dynamicVertexBuffer_, error)) {
     release();
@@ -387,6 +409,16 @@ void main() {
     return false;
   }
   if (!textRenderer_.initialize(functions_, error)) {
+    release();
+    return false;
+  }
+  if (testFailureStage == "atlas") {
+    error = "font atlas creation: injected test failure";
+    release();
+    return false;
+  }
+  if (testFailureStage == "renderer") {
+    error = "core renderer construction: injected test failure";
     release();
     return false;
   }

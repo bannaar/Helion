@@ -10,7 +10,7 @@ struct PresentationSnapshot;
 struct View {
   flight::State ship;
   int credits = 1500, experience = 0;
-  bool connected = false, authenticated = false, console = true, thrust = false;
+  bool connected = false, commandReady = false, authenticated = false, console = true, thrust = false;
   double time = 0, beamUntil = 0, weaponUntil = 0, damageUntil = 0;
   std::string typed;
   std::string commanderName = "UNREGISTERED";

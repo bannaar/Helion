@@ -5,7 +5,7 @@ part of the native release work. The native runtime is a C++17 SDL2/OpenGL
 client plus a POSIX server under `native/`.
 
 The native client is playable today. A commander can create an account or log
-in through the graphical command console, launch from Kepler, fly with W/S/A/D
+in through bounded graphical fields, launch from Kepler, fly with W/S/A/D
 or arrows, mine ore from asteroid fields, return to station, dock, and receive
 saved credits and experience. The sector contains a second station, moving NPC
 hauler traffic, other logged-in commanders as live contacts, a radar, a
@@ -17,9 +17,9 @@ clients request a refreshed contact stream once per second. A client can use
 Trading is server validated while docked. `/buy food 1` and `/buy parts 1`
 purchase supplies against station prices and hold capacity; `/sell food 1` and
 `/sell parts 1` sell inventory. Station prices differ between Kepler and
-Cinder. The graphical **B** shortcut opens a one-unit food purchase; the
-console is used for other quantities and sales. `F2` opens the account/profile
-view. `F3` toggles telemetry/radar as a game setting. Authentication, chat,
+Cinder. The graphical market supports quantity, buy, and sell controls;
+the diagnostic console remains available. `F2` opens the profile view and
+`F3` opens options. Authentication, chat,
 profile queries, flight, contacts, mining, docking, and trading require login.
 
 Progression is now playable: `/mission` shows the First Ore contract from the
@@ -47,8 +47,14 @@ The combined install includes `helion_server`, `helion_client`,
 `helion-dev-cert`, `helion-play`, a desktop entry, icon, and documentation.
 The launcher creates a private data directory, starts a TLS loopback server,
 opens the client, and shuts the server down when the client exits. `--check`
-validates the install without opening a window. CMake also supports server-only
-and client-only configurations and generates `.deb` and `.tar.gz` packages.
+validates the install without opening a window. Separate server-only and
+client-only `.deb` and `.tar.gz` artifacts provide a two-machine installation.
+The server package has no SDL/OpenGL/X11 dependency; the client package has no
+server private material. The [two-machine guide](compaq610-server-elitebook-client.md)
+covers SAN identities, LAN and Tailscale binding, service setup, and backups.
+Split-package installation, TLS rejection, and server restart have been tested
+in isolated local environments; the actual Compaq operating system and
+two-machine network path remain to be verified on site.
 
 Native automated coverage includes flight/control physics, asteroid collision,
 mining cooldown and capacity, docking rewards, market quantity/price/capacity
@@ -73,19 +79,18 @@ required. The client requests OpenGL 3.0 compatibility first and safely falls
 back to OpenGL 2.1 compatibility. On the verified target, Mesa 25.2.8 with
 Intel HD Graphics 3000 and `crocus` provides accelerated OpenGL 3.3
 compatibility and core contexts. The graphics foundation supports explicit
-`--renderer auto`, `--renderer legacy`, and `--renderer core` selection. Normal
-gameplay remains on the compatibility / 2.1-fallback renderer. Core mode now
+`--renderer auto`, `--renderer legacy`, and `--renderer core` selection. Auto
+initializes hardware OpenGL 3.3 core first and recreates a clean legacy
+context if initialization fails. Explicit core exits on failure. Core mode
 enters the real client loop and renders copied Kepler presentation state with
 GLSL 3.30: stations, asteroids, traffic, commanders, Red Wake contacts,
 targeting, mining/fire feedback, geometric status indicators, a built-in
 bitmap font, and a compact cockpit/HUD. The cockpit presents mission,
 reputation, GalNet/recent-message, combat, mining, docking, and recovery
 feedback without adding a second event system. Text is intentionally limited
-to a bounded Latin bitmap alphabet; textures beyond the font atlas, model
-loading, full legacy cockpit parity, and automatic core selection remain
-future work. Batch 10 Intel HD 3000 X11 states use the optimized glyph atlas
-path with bounded world/HUD/text geometry.
-`auto` remains legacy until parity and stability are approved. Core mode now
+to a bounded Latin bitmap alphabet; textures beyond the font atlas and model
+loading remain future work. Batch 10 Intel HD 3000 X11 states use the optimized
+glyph atlas path with bounded world/HUD/text geometry. Core mode now
 also exposes bounded account/connection, station, market, mission, outfitting,
 profile, GalNet, options, and graphics-diagnostic screens. These screens are
 renderer-neutral copies of existing client data and queue existing server
@@ -100,8 +105,16 @@ encounter. Rewards, standings, parts consumption, salvage, GalNet headlines,
 onboarding dismissal, and the established-pilot completion marker survive
 disconnect and restart through the compatible career extension. After
 completion the commander remains free to mine, trade, refit, patrol, recover,
-and read GalNet. `auto` still selects legacy until the full graphical career
-and stability gates are formally met.
+and read GalNet. Batch 12's guarded client acceptance path exercises the whole
+career through one real SDL/OpenGL window, TLS server, and persistence file;
+it restarts both processes and verifies free play and reward idempotence.
+The corrected packaged client passed a 600.015-second Intel HD 3000 X11/core
+soak: 35,904 frames, 68 activity cycles, 8.254 ms average and 12.842 ms worst
+measured renderer time, no OpenGL/SDL/render errors or disconnects, and
+post-startup RSS remaining near 92 MiB. The same packaged-client acceptance
+captured thirteen actual career checkpoints. This establishes a tested local
+graphical vertical slice; the physical two-machine deployment is still an
+on-site acceptance step.
 
 Batch 10 replaces the earlier lit-pixel text expansion with one textured
 six-vertex quad per visible glyph from a single 96x48 RGBA atlas. Diagnostics
@@ -111,5 +124,4 @@ explicit units. On the Intel HD 3000, representative 960x600 states measured
 about 0.20–0.38 ms per captured frame, with 248–364 glyphs, 1,488–2,184 text
 vertices, 47,616–69,888 text bytes, and one atlas texture. This is a bounded
 diagnostic comparison rather than a performance target. Core UI hit regions now
-share the render layout and support mouse hover, click, and bounded scrolling;
-`auto` remains legacy.
+share the render layout and support mouse hover, click, and bounded scrolling.

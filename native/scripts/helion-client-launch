@@ -1,0 +1,34 @@
+#!/bin/sh
+# Installed remote-client entry point. Configuration contains no password.
+set -eu
+bin_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+config=${HELION_CLIENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/helion/client.conf}
+host=${HELION_HOST:-}
+port=${HELION_PORT:-4242}
+ca=${HELION_CA:-}
+renderer=${HELION_RENDERER:-auto}
+if [ -f "$config" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in
+      host) [ -n "$host" ] || host=$value ;;
+      port) [ "$port" = 4242 ] && port=$value ;;
+      ca) [ -n "$ca" ] || ca=$value ;;
+      renderer) [ "$renderer" = auto ] && renderer=$value ;;
+      ''|'#'*) ;;
+      *) echo "Ignoring unknown Helion client setting: $key" >&2 ;;
+    esac
+  done < "$config"
+fi
+if [ "$#" -gt 0 ] && [ "${1#--}" = "$1" ]; then host=$1; shift; fi
+if [ "$#" -gt 0 ] && [ "${1#--}" = "$1" ]; then port=$1; shift; fi
+[ -n "$host" ] || {
+  echo "Configure $config with host=SERVER_NAME before launching Helion." >&2
+  exit 2
+}
+case "$port" in ''|*[!0-9]*) echo 'Helion port must be numeric.' >&2; exit 2 ;; esac
+case "$renderer" in auto|core|legacy) ;; *) echo 'Renderer must be auto, core, or legacy.' >&2; exit 2 ;; esac
+if [ -n "$ca" ]; then
+  [ -f "$ca" ] || { echo "Helion CA file does not exist: $ca" >&2; exit 2; }
+  exec "$bin_dir/helion_client" "$host" "$port" --ca "$ca" --renderer "$renderer" "$@"
+fi
+exec "$bin_dir/helion_client" "$host" "$port" --renderer "$renderer" "$@"

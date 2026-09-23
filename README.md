@@ -8,10 +8,12 @@ Helion is a low-resource space career game prototype with two runtimes:
   designed for Linux systems with OpenGL 2.1-era hardware, including older
   Intel integrated graphics.
 
-The native runtime now provides a playable mining career loop, procedural
+The native runtime now provides a playable Kepler career arc, procedural
 ship/station/asteroid assets, account creation/login, durable commander
 profiles, shared chat, and mandatory verified TLS transport. Linux packages
-and a desktop local-play launcher are available. See [installation](docs/native-install.md)
+and a desktop local-play launcher are available. Separate server/client packages
+support a [Compaq 610 + EliteBook 8460p setup](docs/compaq610-server-elitebook-client.md).
+See [installation](docs/native-install.md)
 and [project state](docs/PROJECT_STATE.md). It is not yet a complete port of
 the browser simulation.
 
@@ -126,10 +128,10 @@ cross-connection/IP rate limiting remain future work.
 
 ## Graphics compatibility
 
-The client requests an OpenGL 2.1 context and uses fixed-function calls only.
-It avoids shaders, VAOs, and modern OpenGL-only features. A 960×600 window is
-created by default and can be resized. Software rendering may work for
-diagnostics but is not recommended for gameplay.
+The client supports both an OpenGL 3.3 core shader renderer and a fixed-function
+compatibility renderer with an OpenGL 2.1 fallback. A 960×600 window is created
+by default and can be resized. Startup diagnostics identify hardware or
+software rendering and the selected context.
 
 ## Current gameplay scope
 

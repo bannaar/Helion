@@ -8,9 +8,11 @@ path.
 
 Graphics capability negotiation is isolated in the native client boundary. The
 fixed-function renderer requests OpenGL 3.0 compatibility first and falls back
-to OpenGL 2.1 compatibility. OpenGL 3.3 core is deliberately not selected by
-normal gameplay; the experimental core diagnostic renderer requests OpenGL
-3.3 core explicitly and never passes a core context to fixed-function code.
+to OpenGL 2.1 compatibility. Automatic selection attempts hardware OpenGL 3.3
+core initialization and uses core after context, functions, shaders, font
+atlas, and GPU resources succeed. Failure destroys partial core resources and
+creates a clean legacy context. Explicit core never silently falls back, and
+a core context is never passed to fixed-function code.
 Runtime reports distinguish actual vendor, renderer, profile, and
 software/hardware classification from the requested context. Context request,
 modern function loading, shader/program ownership, buffer ownership, transform
@@ -24,9 +26,15 @@ bitmap text, and recent-message/GalNet presentation. `TextRenderer` owns one
 bounded font atlas and one batched six-vertex quad per visible glyph; the GLSL
 text shader samples the glyph mask and multiplies it by the requested color.
 It consumes snapshot/log data but never sends commands or creates authoritative
-events. The core path can be made the
-automatic renderer only after gameplay-rendering parity, text, cockpit, and
-stability are reached.
+events. Batch 12's `auto` path attempts hardware core initialization first,
+including shaders, atlas, and GPU resources, and destroys partial resources
+before recreating a legacy context on failure. Explicit core never falls back.
+Batch 12 drives the complete career with a guarded
+loopback-only client driver whose ordinary SDL events pass through `UiInput`.
+The driver observes presentation copies and cannot change server outcomes.
+The TLS server/persistence path remains authoritative. Source builds separate
+the headless server and SDL/OpenGL client; split packages preserve player data
+outside package-owned paths.
 
 Core text is deliberately small: a checked-in 5x7 bitmap alphabet is packed
 once into a 96x48 RGBA atlas with padded six-by-eight cells. Unsupported

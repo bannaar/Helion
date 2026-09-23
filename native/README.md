@@ -120,15 +120,16 @@ conservative hardware/software classification. The current target is Intel HD
 Graphics 3000 (`8086:0116`) with kernel driver `i915`, Mesa 25.2.8, userspace
 driver `crocus`, direct rendering, and OpenGL 3.3 compatibility. Use
 `--renderer auto`, `--renderer legacy`, or `--renderer core` to select a path.
-`auto` keeps gameplay on legacy while recording whether a 3.3 core probe
-succeeds. `core` requires a true OpenGL 3.3 core profile and fails clearly if
+`auto` fully initializes hardware OpenGL 3.3 core first and recreates a clean
+legacy context if context, functions, shaders, atlas, or GPU resources fail.
+`core` requires a true OpenGL 3.3 core profile and fails clearly if
 the context or a required SDL-loaded function is unavailable; it never falls
 back to fixed-function rendering. It enters the real server/client loop and
 draws the player, stations, asteroids, haulers, commanders, Red Wake contacts,
 target reticles, mining/fire beams, and geometric hull/fuel/cargo/cooldown/
 docking/recovery indicators with `#version 330 core` shaders. Its built-in 5x7
 font and cockpit show commander, mission, standings, target, combat, mining,
-docking, recovery, and recent GalNet/action messages. `auto` remains legacy.
+docking, recovery, and recent GalNet/action messages.
 
 Validate the core hardware path with:
 
@@ -168,8 +169,8 @@ For an accelerated X11 validation, omit software-forcing and offscreen
 variables:
 
 ```sh
-SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --graphics-info
-SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --render-check /tmp/helion-hardware.bmp
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --graphics-info --renderer legacy
+SDL_VIDEODRIVER=x11 ./build-native/native/helion_client --renderer legacy --render-check /tmp/helion-hardware.bmp
 ```
 
 The offscreen render check remains a diagnostic only and does not prove GPU
@@ -180,15 +181,26 @@ authentication: station, profile, options/telemetry, market, contracts,
 outfitting, GalNet, and graphics diagnostics. F9 reopens the onboarding guide.
 Up/Down selects, Enter confirms,
 and Escape backs out. Market quantity uses `+`/`-` and buy/sell uses `B`/`S`;
-outfitting uses `B`/`F`/`R`. The account console remains bounded and masks
+outfitting uses `B`/`F`/`R`. Core account fields are bounded and mask
 passwords. Mouse movement highlights controls and left-click activates one
 control event at a time; wheel/PageUp/PageDown scroll bounded GalNet content.
 These controls submit the existing server commands and do not make
 prices, rewards, repairs, fuel, mission state, or module ownership client
 authoritative.
 
+The release acceptance harness runs one guarded loopback-only SDL/core client
+through all three career stages and reconnects after a server restart. It
+captures onboarding, mining, supply, combat, completion, and restored-profile
+frames. The dedicated [Compaq 610 + EliteBook 8460p deployment guide](../docs/compaq610-server-elitebook-client.md)
+covers split packages, TLS identities, service setup, and LAN/Tailscale.
+Local package and verified-TLS tests do not substitute for installing and
+testing the service on the actual Compaq and connecting over the intended LAN.
+The corrected packaged Intel HD 3000 core client passed a 600.015-second
+graphical activity soak (35,904 frames, 68 cycles, no OpenGL/SDL/render errors
+or disconnects) after completing and reconnecting the full Kepler career.
+
 The core render check accepts these UI fixtures in addition to flight states:
-`account`, `station`, `market`, `mission`, `outfit`, `profile`, `galnet`,
+`account`, `station`, `market`, `mission`, `outfit`, `profile`, `galnet-ui`,
 `options`, `graphics`, and `error`.
 
 `CORE-PERF` reports units explicitly: `glyphs`, `text-vertices`,
@@ -213,7 +225,7 @@ For a headless renderer check on SDL installations with the offscreen driver:
 
 ```sh
 SDL_VIDEODRIVER=offscreen \
-  ./build-native/native/helion_client --render-check native-mining.bmp
+  ./build-native/native/helion_client --renderer legacy --render-check native-mining.bmp
 ```
 
 This writes flight and console BMP captures, using a rendering fixture without

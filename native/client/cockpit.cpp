@@ -155,9 +155,22 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
     appendUiLine(batch, layout, 260, false, "AUDIO / EXISTING NATIVE AUDIO SETTINGS UNCHANGED", muted);
   } else if (ui.screen == UiScreen::graphics) {
     appendUiLine(batch, layout, 124, false, "RENDERER MODE / CORE (RESTART TO CHANGE)", teal);
-    appendUiLine(batch, layout, 158, false, ui.graphicsReport.empty() ? "GRAPHICS REPORT / UNAVAILABLE" : ui.graphicsReport, white, 880);
-    appendUiLine(batch, layout, 206, false, "OPENGL 3.3 CORE / GLSL 3.30 / FIXED-FUNCTION CALLS DISABLED");
-    appendUiLine(batch, layout, 240, false, "AUTO MODE CONTINUES TO SELECT LEGACY", muted);
+    if (ui.graphicsReport.empty()) appendUiLine(batch, layout, 158, false, "GRAPHICS REPORT / UNAVAILABLE");
+    else {
+      std::string_view remaining(ui.graphicsReport);
+      for (int line = 0; line < 4 && !remaining.empty(); ++line) {
+        std::size_t count = std::min<std::size_t>(remaining.size(), 68);
+        if (count < remaining.size()) {
+          const auto space = remaining.rfind(' ', count);
+          if (space != std::string_view::npos && space > 0) count = space;
+        }
+        appendUiLine(batch, layout, 158 + line * 30.0f, false, remaining.substr(0, count), white, 880);
+        remaining.remove_prefix(count);
+        while (!remaining.empty() && remaining.front() == ' ') remaining.remove_prefix(1);
+      }
+    }
+    appendUiLine(batch, layout, 294, false, "OPENGL 3.3 CORE / FIXED-FUNCTION CALLS DISABLED");
+    appendUiLine(batch, layout, 328, false, "AUTO PREFERS HARDWARE CORE / FALLS BACK TO LEGACY", muted);
   } else if (ui.screen == UiScreen::help) {
     const std::array<const char*, 10> guide{{
       "KEPLER NEEDS PILOTS. ORION NEEDS ORE. RED WAKE THREATENS THE SUPPLY ROUTE.",
@@ -270,7 +283,7 @@ CockpitTextBatch buildCockpitText(const PresentationSnapshot& snapshot, int widt
   appendLine(batch, layout, 24, 198, 1.25f, snapshot.player.weaponCooldown > 0 ? amber : teal,
     std::string("LASER ") + (snapshot.player.weaponCooldown > 0 ? "RECHARGING" : "READY"), 300, 32);
 
-  appendLine(batch, layout, 368, 108, 1.35f, teal, "MISSION / FIRST ORE", 568, 54);
+  appendLine(batch, layout, 368, 108, 1.35f, teal, "MISSION / KEPLER CAREER", 568, 54);
   appendLine(batch, layout, 368, 132, 1.15f, white,
     snapshot.ui.career.complete ? "ESTABLISHED PILOT / FREE PLAY" :
     snapshot.ui.missionStage < 2 ? "FIRST ORE / MINE AT (0,280), RETURN TO KEPLER" :

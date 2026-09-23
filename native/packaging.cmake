@@ -1,13 +1,34 @@
 include(GNUInstallDirs)
+if(HELION_PACKAGE_FLAVOR STREQUAL "server")
+  set(HELION_DOC_PACKAGE_NAME helion-server)
+elseif(HELION_PACKAGE_FLAVOR STREQUAL "client")
+  set(HELION_DOC_PACKAGE_NAME helion-client)
+else()
+  set(HELION_DOC_PACKAGE_NAME helion)
+endif()
 if(HELION_BUILD_SERVER)
   install(PROGRAMS scripts/helion-dev-cert DESTINATION ${CMAKE_INSTALL_BINDIR})
+  install(FILES assets/helion-server.service
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/helion-server/examples)
 endif()
 if(HELION_BUILD_CLIENT AND HELION_BUILD_SERVER)
   install(PROGRAMS scripts/helion-play DESTINATION ${CMAKE_INSTALL_BINDIR})
   install(FILES assets/helion.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
   install(FILES assets/helion.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+elseif(HELION_BUILD_CLIENT)
+  install(PROGRAMS scripts/helion-client-launch DESTINATION ${CMAKE_INSTALL_BINDIR})
+  install(FILES assets/helion-client.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications RENAME helion.desktop)
+  install(FILES assets/helion.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 endif()
-install(FILES README.md ${PROJECT_SOURCE_DIR}/docs/native-install.md
-  ${PROJECT_SOURCE_DIR}/docs/native-server.md ${PROJECT_SOURCE_DIR}/docs/native-client.md
+set(HELION_PACKAGE_DOCS README.md ${PROJECT_SOURCE_DIR}/docs/native-install.md
   ${PROJECT_SOURCE_DIR}/docs/PROJECT_STATE.md
-  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/helion)
+  ${PROJECT_SOURCE_DIR}/docs/compaq610-server-elitebook-client.md)
+if(HELION_BUILD_SERVER)
+  list(APPEND HELION_PACKAGE_DOCS ${PROJECT_SOURCE_DIR}/docs/native-server.md)
+endif()
+if(HELION_BUILD_CLIENT)
+  list(APPEND HELION_PACKAGE_DOCS ${PROJECT_SOURCE_DIR}/docs/native-client.md)
+endif()
+install(FILES ${HELION_PACKAGE_DOCS}
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${HELION_DOC_PACKAGE_NAME})

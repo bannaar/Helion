@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <csignal>
 #include <memory>
@@ -20,6 +21,7 @@
 #include "shared/organizations.h"
 #include "shared/loadout.h"
 #include "client/ui_input.h"
+#include "client/acceptance_driver.h"
 #include "client/render.h"
 #include "client/core_renderer.h"
 #include "client/graphics_runtime.h"
@@ -186,13 +188,7 @@ void updateUiFromLine(helion::client::View& view, std::string_view line) {
     ui.careerKnown = true;
     if (first && !ui.career.introDismissed) ui.screen = helion::client::UiScreen::help;
     if (!first && !wasComplete && ui.career.complete) ui.screen = helion::client::UiScreen::completion;
-    ui.commandPending = false;
   }
-  if (line.rfind("FLIGHT ", 0) == 0 || line.rfind("PROFILE ", 0) == 0 ||
-      line.rfind("MISSION ", 0) == 0 || line.rfind("OUTFIT ", 0) == 0 ||
-      line.rfind("GALNET ", 0) == 0 || line.rfind("OK ", 0) == 0 ||
-      line.rfind("ERR ", 0) == 0 || line.rfind("TRANSACTION ", 0) == 0)
-    ui.commandPending = false;
   if (line.rfind("PROFILE ", 0) == 0) {
     ui.engineLevel = std::clamp(integerField(line, "engine-level="), 1, 5);
     ui.hullLevel = std::clamp(integerField(line, "hull-level="), 1, 5);
@@ -233,13 +229,13 @@ void updateUiFromLine(helion::client::View& view, std::string_view line) {
   }
   if (line.rfind("ERR ", 0) == 0 || line.rfind("OK ", 0) == 0 ||
       line.rfind("TRANSACTION ", 0) == 0 || line.rfind("COMBAT ", 0) == 0 ||
-      line.rfind("REPUTATION CHANGE ", 0) == 0 || line.rfind("GALNET ", 0) == 0)
+      line.rfind("REPUTATION CHANGE ", 0) == 0)
     ui.statusMessage = boundedUiText(line);
 }
 
 bool validRenderState(std::string_view state) {
   return state == "normal" || state == "mining" || state == "target" || state == "combat" ||
-    state == "docked" || state == "destroyed" || state == "galnet" || state == "account" ||
+    state == "docked" || state == "destroyed" || state == "galnet" || state == "galnet-ui" || state == "account" ||
     state == "station" || state == "market" || state == "mission" || state == "outfit" ||
     state == "profile" || state == "options" || state == "graphics" || state == "error" ||
     state == "help" || state == "completion";
@@ -253,7 +249,9 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
   view.missionSummary = "ACTIVE / MINE ORE AND RETURN TO STATION";
   view.reputation = {{"authority.kepler", 25}, {"corp.orion", 35}, {"criminal.red_wake", -25}};
   view.ui.connectionStatus = "TLS VERIFIED / COMMAND LINK ONLINE";
-  view.ui.graphicsReport = "GRAPHICS requested=3.3-core actual=3.3-core renderer-class=hardware Intel HD 3000";
+  view.ui.graphicsReport = "GRAPHICS requested=3.3-core actual=3.3-core first-compat=no fallback-21=no "
+    "renderer-class=hardware vendor=Intel renderer=Mesa Intel(R) HD Graphics 3000 (SNB GT2) "
+    "version=3.3 (Core Profile) Mesa 25.2.8 glsl=3.30";
   view.ui.ownedModules = {"mining-basic", "engine-basic", "hull-standard", "pulse-laser"};
   view.ui.fittedModules = {"mining-basic", "engine-basic", "hull-standard", "pulse-laser"};
   view.ui.missionStage = 1;
@@ -281,7 +279,7 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
     view.log.push_back("TLS VERIFIED / SERVER CERTIFICATE ACCEPTED");
     return;
   }
-  if (state == "station" || state == "market" || state == "mission" || state == "outfit" ||
+  if (state == "station" || state == "market" || state == "mission" || state == "outfit" || state == "galnet-ui" ||
       state == "profile" || state == "options" || state == "graphics" || state == "error" ||
       state == "help" || state == "completion") {
     view.ui.screen = state == "station" ? helion::client::UiScreen::station :
@@ -289,6 +287,7 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
       state == "mission" ? helion::client::UiScreen::mission :
       state == "outfit" ? helion::client::UiScreen::outfitting :
       state == "profile" ? helion::client::UiScreen::profile :
+      state == "galnet-ui" ? helion::client::UiScreen::galnet :
       state == "options" ? helion::client::UiScreen::options :
       state == "graphics" ? helion::client::UiScreen::graphics :
       state == "error" ? helion::client::UiScreen::error :
@@ -296,6 +295,10 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
       state == "completion" ? helion::client::UiScreen::completion : helion::client::UiScreen::station;
     view.ui.selected = state == "market" ? 0 : state == "outfit" ? 6 : 0;
     if (state == "error") view.ui.statusMessage = "ERR insufficient-credits / TRANSACTION REJECTED / NO STATE CHANGED";
+    if (state == "galnet-ui") view.ui.galnet = {
+      {"first-ore-available", "Orion Extraction Group requests first ore in Kepler"},
+      {"supply-complete", "Kepler Authority confirms delivery from Cinder"},
+      {"red-wake-defeated", "Red Wake raider defeated near Kepler"}};
     view.ship.docked = true;
     view.ship.station = 0;
     return;
@@ -333,9 +336,11 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
 
 int main(int argc,char** argv) {
   std::signal(SIGPIPE, SIG_IGN);
-  bool renderCheck=false, graphicsInfo=false, terminal=false;
+  bool renderCheck=false, graphicsInfo=false, terminal=false, acceptanceRun=false;
   helion::graphics::RendererMode rendererMode = helion::graphics::RendererMode::auto_mode;
   std::string host="127.0.0.1", port="4242", caFile, renderPath, renderState="combat";
+  std::string acceptanceDirectory, acceptancePhase="journey", coreFault;
+  double acceptanceSeconds = 600.0;
   int renderWidth = 960, renderHeight = 600;
   int positional=0;
   try {
@@ -349,6 +354,19 @@ int main(int argc,char** argv) {
       }
       else if(arg=="--ca" && i+1<argc) caFile=argv[++i];
       else if(arg=="--render-check" && i+1<argc) { renderCheck=true; renderPath=argv[++i]; }
+      else if(arg=="--acceptance-run" && i+1<argc) { acceptanceRun=true; acceptanceDirectory=argv[++i]; }
+      else if(arg=="--acceptance-phase" && i+1<argc) {
+        acceptancePhase=argv[++i];
+        if(acceptancePhase!="journey" && acceptancePhase!="reconnect" && acceptancePhase!="soak")
+          throw std::runtime_error("acceptance phase must be journey, reconnect, or soak");
+      }
+      else if(arg=="--acceptance-seconds" && i+1<argc) {
+        try { acceptanceSeconds = std::stod(argv[++i]); }
+        catch (...) { throw std::runtime_error("invalid acceptance duration"); }
+        if (!std::isfinite(acceptanceSeconds) || acceptanceSeconds < 1 || acceptanceSeconds > 3600)
+          throw std::runtime_error("acceptance duration must be 1..3600 seconds");
+      }
+      else if(arg=="--test-core-failure" && i+1<argc) coreFault=argv[++i];
       else if(arg=="--render-state" && i+1<argc) {
         renderState=argv[++i];
         if (!validRenderState(renderState)) throw std::runtime_error("unknown render state");
@@ -366,6 +384,25 @@ int main(int argc,char** argv) {
     }
   } catch(const std::exception& error) {
     std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info] [--renderer auto|legacy|core] [--render-check path --render-state state --render-size width height]\n"; return 2;
+  }
+  if (acceptanceRun) {
+    const char* enabled = std::getenv("HELION_ACCEPTANCE");
+    if (!enabled || std::string_view(enabled) != "1" ||
+        (host != "127.0.0.1" && host != "localhost" && host != "::1") ||
+        rendererMode != helion::graphics::RendererMode::core || terminal || renderCheck || graphicsInfo) {
+      std::cerr << "--acceptance-run requires HELION_ACCEPTANCE=1, loopback TLS, and --renderer core\n";
+      return 2;
+    }
+  }
+  if (!coreFault.empty()) {
+    static const std::array<std::string_view, 10> faults{{"context", "version", "profile", "missing-function",
+      "shader", "program", "atlas", "buffer", "renderer", "software"}};
+    const char* enabled = std::getenv("HELION_GRAPHICS_TEST_FAULTS");
+    if (!enabled || std::string_view(enabled) != "1" || !graphicsInfo ||
+        std::find(faults.begin(), faults.end(), coreFault) == faults.end()) {
+      std::cerr << "--test-core-failure is restricted to guarded --graphics-info validation\n";
+      return 2;
+    }
   }
   if (terminal && rendererMode == helion::graphics::RendererMode::core) {
     std::cerr << "--terminal cannot be used with the core renderer\n";
@@ -391,25 +428,45 @@ int main(int argc,char** argv) {
     connection->closeNotify(); shutdown(fd,SHUT_RDWR); close(fd); return result;
   }
   if(SDL_Init(SDL_INIT_VIDEO)!=0) { std::cerr<<SDL_GetError()<<'\n'; if(fd>=0) close(fd); return 1; }
-  bool coreProbeAvailable = false;
-  if (rendererMode == helion::graphics::RendererMode::auto_mode) {
-    auto coreProbe = helion::client::createCoreGraphicsContext("Helion core capability probe", 16, 16, true);
-    coreProbeAvailable = coreProbe.result.selected;
-    if (coreProbeAvailable) helion::client::destroyGraphicsContext(coreProbe);
-    std::cout << "GRAPHICS CORE-PROBE available=" << (coreProbeAvailable ? "yes" : "no")
-              << (coreProbe.result.error.empty() ? "" : " error=" + coreProbe.result.error) << '\n';
+  helion::client::GraphicsContext graphics;
+  std::unique_ptr<helion::client::CoreRenderer> coreRenderer;
+  bool coreMode = false;
+  std::string coreFailure;
+  if (rendererMode != helion::graphics::RendererMode::legacy) {
+    if (coreFault == "context") coreFailure = "context: injected test failure";
+    else graphics = helion::client::createCoreGraphicsContext(
+      "Helion / Kepler Reach / Core", renderWidth, renderHeight, renderCheck || graphicsInfo);
+    if (coreFailure.empty() && !graphics.result.selected) coreFailure = "context: " + graphics.result.error;
+    else if (coreFailure.empty() && (coreFault == "version" || coreFault == "profile"))
+      coreFailure = coreFault + ": injected test failure";
+    else if (coreFailure.empty() && rendererMode == helion::graphics::RendererMode::auto_mode &&
+             helion::graphics::classifyRenderer(graphics.result.actual.vendor,
+                                                graphics.result.actual.renderer) !=
+             helion::graphics::RendererClass::hardware) {
+      coreFailure = "renderer-policy: automatic core requires a recognized hardware renderer";
+    } else if (coreFailure.empty() && coreFault == "software") {
+      coreFailure = "renderer-policy: injected software renderer";
+    } else if (coreFailure.empty()) {
+      coreRenderer = std::make_unique<helion::client::CoreRenderer>();
+      std::string error;
+      if (!coreRenderer->initialize(error, coreFault)) coreFailure = coreFault.empty() ? "resources: " + error : coreFault + ": " + error;
+      else coreMode = true;
+    }
+    if (!coreMode) {
+      coreRenderer.reset();
+      helion::client::destroyGraphicsContext(graphics);
+      if (rendererMode == helion::graphics::RendererMode::core) {
+        std::cerr << "CORE-RENDERER initialization failed at " << coreFailure << '\n';
+        SDL_Quit();
+        if(fd>=0) close(fd);
+        return 1;
+      }
+      std::cerr << "GRAPHICS AUTO core-failed=" << coreFailure << "; falling back to legacy\n";
+    }
   }
-  const auto selection = helion::graphics::selectRenderer(
-    rendererMode, rendererMode == helion::graphics::RendererMode::core ? true : coreProbeAvailable);
-  if (!selection.error.empty()) {
-    std::cerr << selection.error << '\n';
-    SDL_Quit();
-    if(fd>=0) close(fd);
-    return 1;
-  }
-  auto graphics = rendererMode == helion::graphics::RendererMode::core
-    ? helion::client::createCoreGraphicsContext("Helion / Core diagnostic", renderWidth, renderHeight, renderCheck || graphicsInfo)
-    : helion::client::createGraphicsContext("Helion / Kepler Reach", renderWidth, renderHeight, renderCheck || graphicsInfo);
+  if (!coreMode)
+    graphics = helion::client::createGraphicsContext("Helion / Kepler Reach", renderWidth, renderHeight,
+                                                      renderCheck || graphicsInfo);
   if(!graphics.result.selected) {
     std::cerr << helion::graphics::diagnosticLine(graphics.result) << '\n';
     helion::client::destroyGraphicsContext(graphics);
@@ -418,19 +475,12 @@ int main(int argc,char** argv) {
     return 1;
   }
   std::cout << helion::graphics::diagnosticLine(graphics.result) << '\n';
+  std::cout << "GRAPHICS SELECT requested=" << helion::graphics::rendererModeName(rendererMode)
+            << " selected=" << (coreMode ? "core" : "legacy")
+            << (rendererMode == helion::graphics::RendererMode::auto_mode && !coreMode ? " fallback=yes" : " fallback=no")
+            << '\n';
   SDL_Window* window=graphics.window;
-  const bool coreMode = rendererMode == helion::graphics::RendererMode::core;
-  std::unique_ptr<helion::client::CoreRenderer> coreRenderer;
   if (coreMode) {
-    coreRenderer = std::make_unique<helion::client::CoreRenderer>();
-    std::string coreError;
-    if (!coreRenderer->initialize(coreError)) {
-      std::cerr << "CORE-RENDERER initialization failed: " << coreError << '\n';
-      coreRenderer.reset();
-      helion::client::destroyGraphicsContext(graphics);
-      SDL_Quit();
-      return 1;
-    }
     std::cout << "CORE-RENDERER shader=#version " << helion::client::kCoreShaderVersion
               << " scene=ship-station-grid\n";
   }
@@ -474,7 +524,7 @@ int main(int argc,char** argv) {
       const auto snapshot = helion::client::makePresentationSnapshot(view);
       helion::client::render(renderWidth,renderHeight,view,snapshot);
       saved=saveFrame(renderPath,renderWidth,renderHeight);
-      view.console=true; view.authenticated=false; view.typed="/login explorer synthetic-password";
+      view.console=true; view.authenticated=false; view.typed="/login explorer ********";
       const auto consoleSnapshot = helion::client::makePresentationSnapshot(view);
       helion::client::render(renderWidth,renderHeight,view,consoleSnapshot);
       saved=saveFrame(renderPath+".console.bmp",renderWidth,renderHeight)&&saved;
@@ -485,6 +535,7 @@ int main(int argc,char** argv) {
   bool running=true,greetingSeen=false,focused=true;
   helion::protocol::LineDecoder decoder;
   std::string outgoing;
+  std::string pendingUiAction;
   auto queue=[&](const std::string& request) {
     if(!view.connected || !greetingSeen) { view.log.push_back("Command link not ready"); return; }
     if(!helion::protocol::validWireLine(request) || outgoing.size()+request.size()>65536) {
@@ -493,33 +544,92 @@ int main(int argc,char** argv) {
     outgoing+=request+"\n";
   };
   auto queueUi=[&](const std::string& request) {
-    if (!outgoing.empty() || view.ui.commandPending) {
+    // Background INPUT/CONTACTS traffic is expected during flight and may
+    // share the bounded output queue with one UI action. Only another pending
+    // transactional UI action should suppress activation.
+    if (view.ui.commandPending) {
       view.ui.statusMessage = "WAIT / COMMAND IN PROGRESS";
       return false;
     }
     if (!view.connected || !greetingSeen || !helion::protocol::validWireLine(request)) return false;
     queue(request);
     view.ui.commandPending = true;
+    const auto firstSpace = request.find(' ');
+    pendingUiAction = request.substr(0, firstSpace);
+    if (pendingUiAction == "CAREER" || pendingUiAction == "OUTFIT") {
+      const auto secondEnd = request.find(' ', firstSpace + 1);
+      pendingUiAction = request.substr(0, secondEnd);
+    }
     return true;
   };
   helion::client::UiInput uiInput;
+  helion::client::AcceptanceDriver acceptance(
+    acceptancePhase == "reconnect" ? helion::client::AcceptanceDriver::Phase::reconnect :
+    acceptancePhase == "soak" ? helion::client::AcceptanceDriver::Phase::soak :
+                                 helion::client::AcceptanceDriver::Phase::journey,
+    acceptanceRun ? acceptanceDirectory : std::string{}, acceptanceSeconds);
+  const bool soakMode = acceptanceRun && acceptancePhase == "soak";
+  bool soakFailed = false;
+  int soakGlErrors = 0, soakRenderErrors = 0, soakSdlErrors = 0, soakDisconnects = 0;
+  double soakStart = -1, soakFrameSum = 0, soakWorst = 0;
+  std::uint64_t soakFrames = 0;
+  int soakMaxDrawCalls = 0;
+  std::size_t soakMaxWorldVertices = 0, soakMaxUiVertices = 0, soakMaxTextVertices = 0;
+  std::size_t soakMaxTextBytes = 0, soakMaxAtlases = 0;
+  int soakResizeStep = -1;
   if (coreMode) view.console = false;
   double lastTime=SDL_GetTicks64()/1000.0,lastInput=0,lastReply=lastTime;
   helion::flight::State visual=view.ship;
+  bool heldForward=false, heldLeft=false, heldRight=false, heldBrake=false;
   SDL_StartTextInput();
   while(running) {
     const double now=SDL_GetTicks64()/1000.0,dt=std::min(now-lastTime,0.1); lastTime=now; view.time=now;
     view.ui.connected = view.connected;
     view.ui.authenticated = view.authenticated;
     helion::client::populateUiDerived(view.ui, view.ship);
+    if (soakMode && soakStart < 0 && view.authenticated && view.ui.career.complete) soakStart = now;
+    if (soakMode && soakStart >= 0) {
+      if (!view.connected) {
+        std::cerr << "SOAK FAIL unexpected-disconnect\n";
+        ++soakDisconnects;
+        soakFailed = true; running = false;
+      }
+      const int resizeStep = static_cast<int>((now - soakStart) / 30.0);
+      if (resizeStep != soakResizeStep) {
+        SDL_ClearError();
+        SDL_SetWindowSize(window, resizeStep % 2 == 0 ? 960 : 1280,
+                          resizeStep % 2 == 0 ? 600 : 720);
+        if (const char* sdlError = SDL_GetError(); *sdlError) {
+          std::cerr << "SOAK FAIL resize SDL error=" << sdlError << '\n';
+          ++soakSdlErrors; soakFailed = true; running = false;
+        }
+        soakResizeStep = resizeStep;
+      }
+    }
+    if (acceptance.enabled()) {
+      int windowWidth = 0, windowHeight = 0;
+      SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+      acceptance.tick(view, windowWidth, windowHeight, now);
+    }
     SDL_Event event{};
     while(SDL_PollEvent(&event)) {
       if(event.type==SDL_QUIT) running=false;
       if(event.type==SDL_WINDOWEVENT) {
-        if(event.window.event==SDL_WINDOWEVENT_FOCUS_LOST) { focused=false; if(view.authenticated) queue("INPUT 0 0 1"); }
+        if(event.window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
+          focused=false; heldForward=heldLeft=heldRight=heldBrake=false;
+          if(view.authenticated) queue("INPUT 0 0 1");
+        }
         if(event.window.event==SDL_WINDOWEVENT_FOCUS_GAINED) focused=true;
       }
       if (coreMode) {
+        if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !event.key.repeat) {
+          const bool down = event.type == SDL_KEYDOWN;
+          const SDL_Keycode key = event.key.keysym.sym;
+          if (key == SDLK_w || key == SDLK_UP) heldForward = down;
+          if (key == SDLK_a || key == SDLK_LEFT) heldLeft = down;
+          if (key == SDLK_d || key == SDLK_RIGHT) heldRight = down;
+          if (key == SDLK_s || key == SDLK_DOWN) heldBrake = down;
+        }
         int ww = 0, wh = 0; SDL_GetWindowSize(window, &ww, &wh);
         const auto request = uiInput.handle(view, event, ww, wh);
         if (request == "QUIT") running = false;
@@ -583,9 +693,10 @@ int main(int argc,char** argv) {
     const Uint8* keys=SDL_GetKeyboardState(nullptr);
     const bool controls=focused && !view.console && view.authenticated && view.connected && !view.ship.destroyed &&
       (!coreMode || view.ui.screen == helion::client::UiScreen::flight);
-    const auto input=helion::flight::controls(keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP],
-      keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT], keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT],
-      keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN],controls);
+    const auto input=helion::flight::controls(coreMode ? heldForward : keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP],
+      coreMode ? heldLeft : keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT],
+      coreMode ? heldRight : keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT],
+      coreMode ? heldBrake : keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN],controls);
     view.thrust=input.thrust;
     if(view.connected && greetingSeen && now-lastInput>=0.1) {
       if(view.authenticated) queue("INPUT "+std::to_string(input.thrust)+" "+std::to_string(input.turn)+" "+std::to_string(input.brake));
@@ -612,10 +723,25 @@ int main(int argc,char** argv) {
             view.log.push_back("ERR incompatible server protocol"); view.connected=false; break;
           }
           greetingSeen=true;
+          view.commandReady=true;
         }
         if(frame.kind!=helion::protocol::FrameKind::line) { view.connected=false; view.log.push_back("ERR malformed response"); break; }
         updatePresentationMetadata(view, frame.line);
         updateUiFromLine(view, frame.line);
+        const auto& response = frame.line;
+        const bool genericResult = response.rfind("OK ", 0) == 0 || response.rfind("ERR ", 0) == 0;
+        const bool uiComplete = genericResult ||
+          (pendingUiAction == "PROFILE" && response.rfind("PROFILE ", 0) == 0) ||
+          (pendingUiAction == "FLIGHT" && response.rfind("FLIGHT ", 0) == 0) ||
+          (pendingUiAction == "GALNET" && response == "GALNET END") ||
+          (pendingUiAction == "CAREER" && response.rfind("CAREER ", 0) == 0) ||
+          (pendingUiAction == "OUTFIT LIST" && response.rfind("LOADOUT ", 0) == 0) ||
+          (pendingUiAction == "CONTACTS" && response == "CONTACTS END") ||
+          (pendingUiAction == "FIRE" && response.rfind("COMBAT HIT ", 0) == 0);
+        if (view.ui.commandPending && uiComplete) {
+          view.ui.commandPending = false;
+          pendingUiAction.clear();
+        }
         if(frame.line.rfind("FLIGHT ",0)==0) {
           if(!helion::flight::readSnapshot(frame.line,view.ship,view.credits,view.experience)) {
             view.connected=false; view.log.push_back("ERR malformed flight state"); break;
@@ -694,16 +820,34 @@ int main(int argc,char** argv) {
       }
     }
     if(view.connected && now-lastReply>10) { view.connected=false; view.log.push_back("ERR command link timed out"); }
-    if(!view.connected) { outgoing.clear(); view.thrust=false; }
+    if(!view.connected) { outgoing.clear(); view.thrust=false; view.ui.commandPending=false; pendingUiAction.clear(); }
     if(view.log.size()>64) view.log.erase(view.log.begin(),view.log.end()-64);
     int width,height; SDL_GL_GetDrawableSize(window,&width,&height);
     if(width>0 && height>0) {
       if (coreRenderer) {
         std::string coreError;
         const auto snapshot = helion::client::makePresentationSnapshot(view);
-        if (!coreRenderer->render(width, height, snapshot, false, nullptr, coreError)) {
+        helion::client::CoreRenderStats soakStats;
+        if (!coreRenderer->render(width, height, snapshot, soakMode,
+                                  soakMode ? &soakStats : nullptr, coreError)) {
           view.log.push_back("CORE RENDER ERROR / " + coreError);
+          if (soakMode) {
+            std::cerr << "SOAK FAIL renderer=" << coreError << '\n';
+            ++soakRenderErrors;
+            if (coreError.find("OpenGL error") != std::string::npos) ++soakGlErrors;
+            soakFailed = true;
+          }
           running = false;
+        } else if (soakMode && soakStart >= 0) {
+          ++soakFrames;
+          soakFrameSum += soakStats.frameMilliseconds;
+          soakWorst = std::max(soakWorst, soakStats.frameMilliseconds);
+          soakMaxDrawCalls = std::max(soakMaxDrawCalls, soakStats.drawCalls);
+          soakMaxWorldVertices = std::max(soakMaxWorldVertices, soakStats.worldVertices);
+          soakMaxUiVertices = std::max(soakMaxUiVertices, soakStats.hudVertices);
+          soakMaxTextVertices = std::max(soakMaxTextVertices, soakStats.textVertices);
+          soakMaxTextBytes = std::max(soakMaxTextBytes, soakStats.textBytes);
+          soakMaxAtlases = std::max(soakMaxAtlases, soakStats.textures);
         }
       } else {
         const double alpha=1-std::exp(-18*dt);
@@ -715,12 +859,43 @@ int main(int argc,char** argv) {
         helion::client::render(width,height,view,snapshot);
         view.ship=authoritative;
       }
+      if (acceptance.enabled()) {
+        const std::string capturePath = acceptance.consumeCapture();
+        if (!capturePath.empty() && !saveFrame(capturePath, width, height)) {
+          std::cerr << "ACCEPTANCE FAIL screenshot=" << capturePath << '\n';
+          running = false;
+        }
+      }
+      if (soakMode) SDL_ClearError();
       SDL_GL_SwapWindow(window);
+      if (soakMode) {
+        if (const char* sdlError = SDL_GetError(); *sdlError) {
+          std::cerr << "SOAK FAIL swap SDL error=" << sdlError << '\n';
+          ++soakSdlErrors; soakFailed = true; running = false;
+        }
+      }
     }
+    if (acceptance.done() || acceptance.failed()) running=false;
     SDL_Delay(8);
+  }
+  if (soakMode) {
+    std::cout << "SOAK duration-sec=" << (soakStart < 0 ? 0 : lastTime - soakStart)
+              << " frames=" << soakFrames
+              << " avg-frame-ms=" << (soakFrames ? soakFrameSum / static_cast<double>(soakFrames) : 0)
+              << " worst-frame-ms=" << soakWorst
+              << " max-draw-calls=" << soakMaxDrawCalls
+              << " max-world-vertices=" << soakMaxWorldVertices
+              << " max-ui-vertices=" << soakMaxUiVertices
+              << " max-text-vertices=" << soakMaxTextVertices
+              << " max-text-bytes=" << soakMaxTextBytes
+              << " max-atlases=" << soakMaxAtlases
+              << " gl-errors=" << soakGlErrors
+              << " render-errors=" << soakRenderErrors
+              << " sdl-errors=" << soakSdlErrors
+              << " disconnects=" << soakDisconnects << '\n';
   }
   SDL_StopTextInput(); connection->sendAll("QUIT\n",500); connection->closeNotify();
   shutdown(fd,SHUT_RDWR); close(fd);
   coreRenderer.reset();
-  helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return 0;
+  helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return acceptance.failed() || soakFailed ? 1 : 0;
 }

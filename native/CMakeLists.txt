@@ -33,7 +33,7 @@ endif()
 if(HELION_BUILD_CLIENT)
   find_package(OpenGL REQUIRED)
   find_package(SDL2 2.0 REQUIRED CONFIG)
-  add_executable(helion_client client/main.cpp client/ui_input.cpp client/render.cpp client/graphics_runtime.cpp client/core_renderer.cpp client/text_renderer.cpp)
+  add_executable(helion_client client/main.cpp client/ui_input.cpp client/acceptance_driver.cpp client/render.cpp client/graphics_runtime.cpp client/core_renderer.cpp client/text_renderer.cpp)
   target_compile_options(helion_client PRIVATE -Wall -Wextra -Wpedantic)
   target_link_libraries(helion_client PRIVATE helion_protocol helion_graphics helion_tls SDL2::SDL2 OpenGL::GL)
   install(TARGETS helion_client RUNTIME DESTINATION bin)
@@ -120,12 +120,20 @@ if(HELION_BUILD_TESTS AND HELION_BUILD_SERVER AND HELION_BUILD_CLIENT)
   add_test(NAME helion_core_gameplay COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core_gameplay_integration.py
     --server $<TARGET_FILE:helion_server> --client $<TARGET_FILE:helion_client>)
-  set_tests_properties(helion_core_gameplay PROPERTIES TIMEOUT 120)
+  set_tests_properties(helion_core_gameplay PROPERTIES TIMEOUT 120 RESOURCE_LOCK helion_graphics_display)
+  add_test(NAME helion_graphical_acceptance COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/graphical_acceptance.py
+    --server $<TARGET_FILE:helion_server> --client $<TARGET_FILE:helion_client>
+    --cert-helper ${CMAKE_CURRENT_SOURCE_DIR}/scripts/helion-dev-cert)
+  set_tests_properties(helion_graphical_acceptance PROPERTIES TIMEOUT 240 RESOURCE_LOCK helion_graphics_display)
 endif()
 
 if(HELION_BUILD_TESTS AND HELION_BUILD_CLIENT)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   add_test(NAME helion_core_render_states COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core_render_states.py --client $<TARGET_FILE:helion_client>)
-  set_tests_properties(helion_core_render_states PROPERTIES TIMEOUT 120)
+  set_tests_properties(helion_core_render_states PROPERTIES TIMEOUT 120 RESOURCE_LOCK helion_graphics_display)
+  add_test(NAME helion_renderer_fallback COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/renderer_fallback.py --client $<TARGET_FILE:helion_client>)
+  set_tests_properties(helion_renderer_fallback PROPERTIES TIMEOUT 120 RESOURCE_LOCK helion_graphics_display)
 endif()

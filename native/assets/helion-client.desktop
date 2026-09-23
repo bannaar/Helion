@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Helion
+Comment=Connect to a Helion server and fly the Kepler career
+Exec=helion-client-launch
+Icon=helion
+Terminal=false
+Categories=Game;Simulation;
+StartupNotify=false

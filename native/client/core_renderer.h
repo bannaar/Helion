@@ -128,7 +128,7 @@ class CoreRenderer {
   CoreRenderer(const CoreRenderer&) = delete;
   CoreRenderer& operator=(const CoreRenderer&) = delete;
 
-  bool initialize(std::string& error);
+  bool initialize(std::string& error, std::string_view testFailureStage = {});
   bool render(int width, int height, const PresentationSnapshot& snapshot,
               bool checkErrors, CoreRenderStats* stats, std::string& error);
   void release();

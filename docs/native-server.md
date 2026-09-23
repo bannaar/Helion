@@ -20,8 +20,10 @@ sudo apt update
 sudo apt install build-essential cmake libssl-dev
 ```
 
-The server does not require SDL2 or an X11/Wayland session. Those are client
-dependencies only.
+The server does not require SDL2, OpenGL, or an X11/Wayland session. Those are
+client dependencies only. The `helion-server` split package is headless; see
+the [Compaq 610 + EliteBook 8460p guide](compaq610-server-elitebook-client.md)
+for package and tarball installation.
 
 ## 2. Build
 
@@ -29,14 +31,14 @@ From the repository root:
 
 ```sh
 cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
-cmake --build build-native --target helion_server --parallel
+cmake --build build-native --target helion_server -j2
 ```
 
 For a server-only host without SDL2 or OpenGL, configure an isolated build:
 
 ```sh
 cmake -S . -B build-native-server -DHELION_BUILD_CLIENT=OFF
-cmake --build build-native-server --parallel
+cmake --build build-native-server -j2
 ctest --test-dir build-native-server --output-on-failure
 ```
 
@@ -52,8 +54,8 @@ The executable is written to:
 build-native/native/helion_server
 ```
 
-To build both server and client together, use `cmake --build build-native
---parallel`.
+To build both server and client together on the older target machines, use
+`cmake --build build-native -j2`.
 
 ## 3. Start and configure
 
@@ -114,7 +116,6 @@ Create the data directory before startup and restrict it to the service user:
 
 ```sh
 sudo install -d -o helion -g helion -m 750 /var/lib/helion
-sudo chown helion:helion ./build-native/native/helion_server
 ```
 
 The server writes updates to a uniquely named temporary file with mode `0600`
@@ -139,7 +140,15 @@ before restoring or manually editing a save.
 
 ## 4. systemd example
 
-Create `/etc/systemd/system/helion-server.service`:
+The split server package includes a hardened example at
+`/usr/share/doc/helion-server/examples/helion-server.service`. Copy it to
+`/etc/systemd/system/helion-server.service`, edit `--bind` to the intended
+LAN/Tailscale address, and verify the certificate and key paths before
+enabling it. A source-install example is:
+
+The automated release check restarts the packaged server process headlessly
+and verifies saved progression. It does not start systemd on the physical
+Compaq; inspect and test the unit on that host before enabling it permanently.
 
 ```ini
 [Unit]
@@ -151,7 +160,8 @@ Type=simple
 User=helion
 Group=helion
 WorkingDirectory=/opt/helion
-ExecStart=/opt/helion/build-native/native/helion_server 4242 /var/lib/helion/helion-server.db --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem
+UMask=0077
+ExecStart=/opt/helion/build-native/native/helion_server 4242 /var/lib/helion/helion-server.db --bind 127.0.0.1 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -159,6 +169,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/helion
+LimitNOFILE=4096
 
 [Install]
 WantedBy=multi-user.target

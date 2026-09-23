@@ -34,6 +34,7 @@
 #include "server/data_lock.h"
 #include "shared/flight.h"
 #include "shared/combat.h"
+#include "shared/career.h"
 #include "shared/loadout.h"
 #include "shared/organizations.h"
 #include "shared/tls.h"
@@ -62,6 +63,7 @@ struct Profile {
   bool legacyCredential = false;
   helion::flight::State flight{};
   int missionStage = 0;
+  helion::career::State career;
   int hullLevel = 1;
   int engineLevel = 1;
   bool missionOreMined = false;
@@ -220,7 +222,8 @@ void saveStateLocked() {
     snapshot << '\t' << profile.salvage << '\t' << profile.combatTargetGeneration
              << '\t' << profile.combatTargetDefeated << '\t' << profile.flight.destroyed
              << '\t' << profile.flight.weaponCooldown << '\t'
-             << encode(helion::organizations::reputationSummary(profile.reputation));
+             << encode(helion::organizations::reputationSummary(profile.reputation)) << '\t'
+             << helion::career::serialize(profile.career);
     snapshot << '\n';
   }
   for (const auto& event : galnetEvents)
@@ -338,7 +341,7 @@ void loadState() {
         std::getline(input, value, '\t'); profile.flight.maxHull = parseNumber(value, 100);
         std::vector<std::string> extensions;
         while (std::getline(input, value, '\t')) extensions.push_back(value);
-        if (extensions.size() > 13) throw std::runtime_error("unexpected persistence fields");
+        if (extensions.size() > 14) throw std::runtime_error("unexpected persistence fields");
         if (!extensions.empty()) {
           if (extensions[0] != "0" && extensions[0] != "1")
             throw std::runtime_error("malformed mission objective");
@@ -388,6 +391,10 @@ void loadState() {
         if (extensions.size() >= 13 &&
             !helion::organizations::parseReputationSummary(decode(extensions[12]), profile.reputation))
           throw std::runtime_error("malformed persisted reputation");
+        profile.career.introDismissed = profile.missionStage != 0;
+        if ((extensions.size() >= 14 && !helion::career::parse(extensions[13], profile.missionStage, profile.career)) ||
+            !helion::career::valid(profile.career, profile.missionStage))
+          throw std::runtime_error("malformed persisted career state");
         if (profile.missionStage == 2) profile.missionOreMined = false;
         if (profile.flight.cargo < 0 || profile.flight.food < 0 || profile.flight.parts < 0 ||
             profile.flight.cargo + profile.flight.food + profile.flight.parts > helion::flight::kCargoCapacity ||
@@ -547,7 +554,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR REFUEL OUTFIT FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -703,6 +710,45 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           responses.push_back("GALNET END");
         }
         for (const auto& response : responses) sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::career) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          if (!request.first.empty()) {
+            const auto before = profile;
+            const bool dirtyBefore = flightStateDirty;
+            const auto galnetBefore = galnetEvents;
+            const auto result = helion::career::act(profile.career, profile.missionStage, profile.flight,
+              profile.credits, profile.experience, fittedModule(profile, helion::loadout::Slot::weapon) != nullptr,
+              request.first, request.second);
+            if (result.line.rfind("OK", 0) == 0) {
+              try {
+                if (result.keplerDelta) changeStanding(profile, "authority.kepler", result.keplerDelta);
+                if (request.first == "ACCEPT" && request.second == helion::career::kSupply)
+                  addGalNetEvent("kepler-supply-request", "Kepler Authority requests two industrial parts from Cinder after Red Wake disruption.");
+                else if (request.first == "TURNIN" && request.second == helion::career::kSupply)
+                {
+                  addGalNetEvent("kepler-supply-completed", "Your Cinder supplies reached Kepler; local repair crews resume work.");
+                  addGalNetEvent("red-wake-response-available", "Kepler Authority authorizes a Red Wake response; fit a pulse laser before accepting.");
+                }
+                else if (request.first == "ACCEPT" && request.second == helion::career::kResponse)
+                  addGalNetEvent("red-wake-response-authorized", "Kepler Authority authorizes a Red Wake response in the local sector.");
+                persistStateLocked();
+                responses.push_back(result.line);
+                if (result.keplerDelta) responses.push_back(reputationLine(profile, "authority.kepler", result.keplerDelta));
+              } catch (const std::exception& error) {
+                profile = before; flightStateDirty = dirtyBefore; galnetEvents = galnetBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
+            } else responses.push_back(result.line);
+          }
+          responses.push_back(helion::career::status(profile.career, profile.missionStage));
+          appendFlightState(responses, profile);
+        }
+        for (const auto& line : responses) sendLine(fd, line);
       } else if (request.command == helion::protocol::Command::mission || request.command == helion::protocol::Command::accept || request.command == helion::protocol::Command::turnin) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
         std::string response;
@@ -828,6 +874,11 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                     " experience=" + std::to_string(kExperience) + " salvage=1 affiliation=criminal.red_wake");
                   changeStanding(profile, "authority.kepler", 5);
                   changeStanding(profile, "criminal.red_wake", -10);
+                  if (helion::career::defeated(profile.career)) {
+                    responses.push_back("OK CAREER COMPLETE id=career.red_wake_response recognition=established-kepler-pilot");
+                    responses.push_back(helion::career::status(profile.career, profile.missionStage));
+                    addGalNetEvent("career-established-pilot", "Your Red Wake response is complete; Kepler recognizes an established pilot.");
+                  }
                   addGalNetEvent("red-wake-raider-defeated", "A Red Wake raider was defeated in Kepler; local security credits the response.");
                   addGalNetEvent("kepler-security-response", "Kepler Authority security forces report a response to Red Wake activity.");
                   responses.push_back(reputationLine(profile, "authority.kepler", 5));
@@ -1036,6 +1087,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             const auto result = helion::flight::trade(profile.flight, profile.credits,
               request.command == helion::protocol::Command::buy, request.first, quantity);
             if (result.rfind("OK", 0) == 0) {
+              if (request.command == helion::protocol::Command::buy)
+                helion::career::purchased(profile.career, profile.flight.station, request.first, quantity);
               try { persistStateLocked(); }
               catch (const std::exception& error) {
                 profile = before;

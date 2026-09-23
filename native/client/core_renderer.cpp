@@ -457,7 +457,7 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     addHudQuad(hud, layout, 352, 92, 600, 142, panel);
     addHudQuad(hud, layout, 8, 372, 944, 210, panel);
   }
-  if (snapshot.ui.screen != UiScreen::flight) {
+  {
     for (const auto& control : buildUiControls(snapshot.ui)) {
       const bool hovered = control.id == snapshot.ui.hoveredControl &&
         control.index == snapshot.ui.hoveredIndex;

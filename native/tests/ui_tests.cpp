@@ -67,6 +67,17 @@ int main() {
   const auto graphicsBack = hitTestUi(state, {30, 455}, 960, 600);
   check(graphicsBack.id == UiControlId::dismiss && graphicsBack.enabled,
         "graphics screen exposes a layout-aligned mouse back control");
+  state.screen = UiScreen::mission;
+  state.missionSelected = 1;
+  state.missionStage = 2;
+  state.career.supply = 0;
+  const auto supplyControls = buildUiControls(state);
+  check(uiCommandFor(UiControlId::missionAccept, 0, state) == "CAREER ACCEPT career.kepler_supply",
+        "supply contract maps to the stable career identifier");
+  state.career.supply = 1;
+  check(uiCommandFor(UiControlId::missionTurnIn, 0, state) == "CAREER TURNIN career.kepler_supply",
+        "supply delivery maps to the stable career identifier");
+  check(!supplyControls.empty(), "career screen has bounded controls");
   std::cout << "UI model tests passed\n";
   return failures == 0 ? 0 : 1;
 }

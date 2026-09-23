@@ -63,6 +63,18 @@ Request parseRequest(std::string_view line) {
       return request;
     }
     request.command = command == "CREATE" ? Command::create : Command::login;
+  } else if (command == "CAREER") {
+    std::string extra;
+    if (input >> request.first) {
+      if (request.first == "DISMISS") {
+        if (input >> extra) { request.error = "malformed-message"; return request; }
+      } else if ((request.first != "ACCEPT" && request.first != "TURNIN") ||
+                 !(input >> request.second) || (input >> extra) ||
+                 (request.second != "career.kepler_supply" && request.second != "career.red_wake_response")) {
+        request.error = "invalid-career-request"; return request;
+      }
+    }
+    request.command = Command::career;
   } else if (command == "CHAT") {
     std::getline(input, request.payload);
     if (!request.payload.empty() && request.payload.front() == ' ') request.payload.erase(0, 1);

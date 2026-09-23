@@ -29,7 +29,7 @@ inline constexpr std::array<ModuleDefinition, 7> kCatalogue{{
   {"engine-efficient", "Efficient Drive", Slot::engine, 700, 1.0, 0.65, 0, 0, 0, 0},
   {"hull-standard", "Standard Plating", Slot::defense, 0, 1.0, 1.0, 0, 0, 0, 0},
   {"hull-plating", "Reinforced Plating", Slot::defense, 900, 1.0, 1.0, 25, 0, 0, 0},
-  {"pulse-laser", "Pulse Laser (Combat Preview)", Slot::weapon, 650, 1.0, 1.0, 0, 240, 25, 1.0}
+  {"pulse-laser", "Pulse Laser", Slot::weapon, 650, 1.0, 1.0, 0, 240, 25, 1.0}
 }};
 
 inline const ModuleDefinition* find(std::string_view id) {

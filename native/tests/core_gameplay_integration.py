@@ -81,20 +81,25 @@ def flight(lines):
 
 
 def fly_to(peer, x, y):
-    for _ in range(220):
+    for _ in range(500):
         state = flight(peer.request("FLIGHT", "FLIGHT "))
         distance = ((x - state["x"]) ** 2 + (y - state["y"]) ** 2) ** 0.5
         speed = (state["vx"] ** 2 + state["vy"] ** 2) ** 0.5
         if distance < 30 and speed < 12:
             peer.request("INPUT 0 0 1", "FLIGHT ")
             return
-        delta = ((-math.atan2(-(x - state["x"]), y - state["y"]) - state["yaw"] + math.pi) %
+        # Flight uses vx=-sin(yaw), vy=cos(yaw), so the desired yaw is
+        # atan2(-dx, dy).  Keeping this convention explicit also guards the
+        # A/D direction contract when the career test visits Cinder.
+        desired_yaw = math.atan2(-(x - state["x"]), y - state["y"])
+        delta = ((desired_yaw - state["yaw"] + math.pi) %
                  (2 * math.pi)) - math.pi
         turn = 0 if abs(delta) < 0.08 else (1 if delta > 0 else -1)
         brake = distance < 45 or abs(delta) > 0.35
         peer.request(f"INPUT {0 if brake else 1} {turn} {1 if brake else 0}", "FLIGHT ")
         time.sleep(0.05)
-    raise AssertionError(f"flight did not reach ({x}, {y})")
+    final = flight(peer.request("FLIGHT", "FLIGHT "))
+    raise AssertionError(f"flight did not reach ({x}, {y}); final={final}")
 
 
 def check_core_context(client):
@@ -156,21 +161,44 @@ def main():
             profile = "\n".join(peer.request("PROFILE", "PROFILE"))
             assert "corp.orion=10:Neutral" in profile and "authority.kepler=5:Neutral" in profile
 
+            career = peer.request("CAREER", "CAREER first=2")
+            assert any("supply=0" in line and "response=0" in line for line in career)
+            peer.request("CAREER ACCEPT career.kepler_supply", "OK CAREER ACCEPTED")
+            peer.request("LAUNCH", "OK LAUNCHED")
+            fly_to(peer, 650, 35)
+            peer.request("DOCK", "TRANSACTION DOCK_SALE")
+            peer.request("BUY parts 2", "OK BOUGHT parts")
+            peer.request("LAUNCH", "OK LAUNCHED")
+            # Return below the asteroid lane, then approach Kepler from the
+            # south so the test validates travel without relying on collisions.
+            fly_to(peer, 650, -100)
+            fly_to(peer, 0, -100)
+            fly_to(peer, 0, 35)
+            peer.request("DOCK", "TRANSACTION DOCK_SALE")
+            supply = peer.request("CAREER TURNIN career.kepler_supply", "OK CAREER COMPLETE")
+            assert any("parts-consumed=2" in line for line in supply)
+            supply_profile = "\n".join(peer.request("PROFILE", "PROFILE"))
+            assert "authority.kepler=15" in supply_profile
+            peer.request("CAREER ACCEPT career.red_wake_response", "OK CAREER ACCEPTED")
+
             peer.request("LAUNCH", "OK LAUNCHED")
             contacts = peer.request("CONTACTS", "CONTACTS END")
             hostile = next(line for line in contacts if line.startswith("CONTACT RAIDER-1 hostile"))
             target = hostile.split()
             target_x, target_y = float(target[3]), float(target[4])
-            for _ in range(4):
+            destroyed_target = False
+            for _ in range(12):
                 state = flight(peer.request("FLIGHT", "FLIGHT "))
                 if ((target_x - state["x"]) ** 2 + (target_y - state["y"]) ** 2) ** 0.5 > 210:
                     peer.request("INPUT 1 0 0", "FLIGHT ")
                     time.sleep(.5)
                 result = peer.request("FIRE RAIDER-1", timeout=1.0)
-                if any(line.startswith("COMBAT HIT") for line in result):
+                destroyed_target = any(line.startswith("COMBAT DESTROYED") for line in result)
+                if destroyed_target:
                     break
                 time.sleep(1.05)
             assert any(line.startswith("COMBAT HIT") for line in result), result
+            assert destroyed_target, result
             damaged = flight(peer.request("FLIGHT", "FLIGHT "))
             assert damaged["hull"] < damaged["max_hull"] or any(
                 line.startswith("COMBAT DAMAGE") for line in peer.request("FLIGHT", "FLIGHT "))
@@ -191,6 +219,10 @@ def main():
                 # The hostile damage assertion above remains the deterministic
                 # combat check when the collision assist prevents destruction.
                 assert state["hull"] > 0
+            completion = peer.request("CAREER", "CAREER first=2")
+            assert any("supply=2" in line and "response=2" in line and "complete=1" in line for line in completion)
+            final_galnet = peer.request("GALNET", "GALNET END")
+            assert any("career-established-pilot" in line for line in final_galnet)
             peer.sock.close()
 
             raw = socket.create_connection(("127.0.0.1", port), timeout=3)
@@ -200,6 +232,8 @@ def main():
             reconnect.request("LOGIN corepilot synthetic-password", "OK LOGIN")
             restored = "\n".join(reconnect.request("PROFILE", "PROFILE"))
             assert "corp.orion=10:Neutral" in restored and "salvage=" in restored
+            restored_career = reconnect.request("CAREER", "CAREER first=2")
+            assert any("supply=2" in line and "response=2" in line and "complete=1" in line for line in restored_career)
             reconnect.request("QUIT", "OK BYE")
             reconnect.sock.close()
             check_core_context(args.client)

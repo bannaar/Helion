@@ -405,3 +405,16 @@ The server stores salted scrypt password hashes. The graphical console masks
 credentials, but terminal input is echoed by the terminal. Use the graphical
 client for normal play. See `docs/native-install.md` for installation,
 local-play certificate setup, and dedicated-server instructions.
+
+## Kepler career arc and controls
+
+Core mode presents First Ore from Orion Extraction Group, Kepler Supply (buy
+two parts at Cinder and deliver them to Kepler), and Red Wake Response (fit and
+use the pulse laser) without raw commands. Progress, rewards, standings,
+salvage, completion, and GalNet headlines are server-owned and saved
+atomically. Completion recognizes an established Kepler pilot and leaves free
+play open. The first-run guide is skippable with Enter, dismissible with
+Escape, and reopenable with F9; F1–F8 open station, profile, options, market,
+contracts, outfitting, GalNet, and graphics. Menus support keyboard focus,
+one-shot mouse clicks, and bounded wheel scrolling. Passwords are masked and
+never enter snapshots or diagnostics. Native audio remains a later polish item.

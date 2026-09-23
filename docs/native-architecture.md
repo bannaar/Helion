@@ -70,6 +70,23 @@ bounded wheel/PageUp/PageDown scrolling, and single-click command mapping stay
 in the client presentation layer; existing server commands still validate
 every transaction.
 
+Batch 11 adds a deliberately small `career::State`, not a general quest
+engine. Stable IDs `career.first_ore`, `career.kepler_supply`, and
+`career.red_wake_response` encode prerequisites, bounded progress, idempotent
+completion, and the persisted vertical-slice completion marker. First Ore
+continues using its original mission fields for compatibility; the appended
+career record owns the later stages and onboarding dismissal. The server alone
+changes stages, delivery cargo, rewards, reputation, combat completion, and
+GalNet state. The client displays copies through `UiState` and the core
+cockpit.
+
+Career persistence is `career-v1 supply response purchased intro complete`,
+appended after existing profile extensions. Missing records default safely;
+invalid ranges, prerequisites, and extra fields are rejected. Supply delivery
+consumes exactly two server-purchased parts at Kepler, and the Red Wake stage
+reuses the deterministic hostile and reward transaction. Completion unlocks
+continued free play rather than changing simulation mode.
+
 ## Current compatibility boundary
 
 `Profile` still physically stores the commander record, active ship state,

@@ -90,7 +90,18 @@ also exposes bounded account/connection, station, market, mission, outfitting,
 profile, GalNet, options, and graphics-diagnostic screens. These screens are
 renderer-neutral copies of existing client data and queue existing server
 commands; they do not introduce new gameplay rules or client-side authority.
-Keyboard navigation is available with F1–F8, Up/Down, Enter, and Escape.
+Keyboard navigation is available with F1–F9, Up/Down, Enter, and Escape.
+
+The native core client now presents a short replayable Kepler career arc:
+First Ore → Kepler Supply → Red Wake Response. Orion Extraction Group issues
+First Ore under Kepler Authority; the supply stage teaches Cinder purchasing
+and delivery; the response stage uses the existing Red Wake pulse-laser
+encounter. Rewards, standings, parts consumption, salvage, GalNet headlines,
+onboarding dismissal, and the established-pilot completion marker survive
+disconnect and restart through the compatible career extension. After
+completion the commander remains free to mine, trade, refit, patrol, recover,
+and read GalNet. `auto` still selects legacy until the full graphical career
+and stability gates are formally met.
 
 Batch 10 replaces the earlier lit-pixel text expansion with one textured
 six-vertex quad per visible glyph from a single 96x48 RGBA atlas. Diagnostics

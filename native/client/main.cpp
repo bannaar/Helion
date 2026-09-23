@@ -19,6 +19,7 @@
 #include "shared/protocol.h"
 #include "shared/organizations.h"
 #include "shared/loadout.h"
+#include "client/ui_input.h"
 #include "client/render.h"
 #include "client/core_renderer.h"
 #include "client/graphics_runtime.h"
@@ -173,6 +174,20 @@ void parseLoadout(helion::client::View& view, std::string_view line) {
 
 void updateUiFromLine(helion::client::View& view, std::string_view line) {
   auto& ui = view.ui;
+  if (line.rfind("CAREER ", 0) == 0) {
+    const bool first = !ui.careerKnown;
+    const bool wasComplete = ui.career.complete;
+    ui.missionStage = std::clamp(integerField(line, "first="), 0, 2);
+    ui.career.supply = std::clamp(integerField(line, "supply="), 0, 2);
+    ui.career.response = std::clamp(integerField(line, "response="), 0, 2);
+    ui.career.purchased = std::clamp(integerField(line, "purchased="), 0, 2);
+    ui.career.introDismissed = integerField(line, "intro=") != 0;
+    ui.career.complete = integerField(line, "complete=") != 0;
+    ui.careerKnown = true;
+    if (first && !ui.career.introDismissed) ui.screen = helion::client::UiScreen::help;
+    if (!first && !wasComplete && ui.career.complete) ui.screen = helion::client::UiScreen::completion;
+    ui.commandPending = false;
+  }
   if (line.rfind("FLIGHT ", 0) == 0 || line.rfind("PROFILE ", 0) == 0 ||
       line.rfind("MISSION ", 0) == 0 || line.rfind("OUTFIT ", 0) == 0 ||
       line.rfind("GALNET ", 0) == 0 || line.rfind("OK ", 0) == 0 ||
@@ -226,7 +241,8 @@ bool validRenderState(std::string_view state) {
   return state == "normal" || state == "mining" || state == "target" || state == "combat" ||
     state == "docked" || state == "destroyed" || state == "galnet" || state == "account" ||
     state == "station" || state == "market" || state == "mission" || state == "outfit" ||
-    state == "profile" || state == "options" || state == "graphics" || state == "error";
+    state == "profile" || state == "options" || state == "graphics" || state == "error" ||
+    state == "help" || state == "completion";
 }
 
 void configureRenderFixture(helion::client::View& view, std::string_view state) {
@@ -242,6 +258,11 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
   view.ui.fittedModules = {"mining-basic", "engine-basic", "hull-standard", "pulse-laser"};
   view.ui.missionStage = 1;
   view.ui.missionOreMined = state == "mission";
+  view.ui.careerKnown = true;
+  view.ui.career.supply = state == "completion" ? 2 : 1;
+  view.ui.career.response = state == "completion" ? 2 : 0;
+  view.ui.career.complete = state == "completion";
+  view.ui.career.introDismissed = state != "help";
   view.time = 2;
   view.log = {"GALNET / Kepler Authority security watch active"};
   if (state == "docked") {
@@ -261,7 +282,8 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
     return;
   }
   if (state == "station" || state == "market" || state == "mission" || state == "outfit" ||
-      state == "profile" || state == "options" || state == "graphics" || state == "error") {
+      state == "profile" || state == "options" || state == "graphics" || state == "error" ||
+      state == "help" || state == "completion") {
     view.ui.screen = state == "station" ? helion::client::UiScreen::station :
       state == "market" ? helion::client::UiScreen::market :
       state == "mission" ? helion::client::UiScreen::mission :
@@ -269,7 +291,9 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
       state == "profile" ? helion::client::UiScreen::profile :
       state == "options" ? helion::client::UiScreen::options :
       state == "graphics" ? helion::client::UiScreen::graphics :
-      state == "error" ? helion::client::UiScreen::error : helion::client::UiScreen::station;
+      state == "error" ? helion::client::UiScreen::error :
+      state == "help" ? helion::client::UiScreen::help :
+      state == "completion" ? helion::client::UiScreen::completion : helion::client::UiScreen::station;
     view.ui.selected = state == "market" ? 0 : state == "outfit" ? 6 : 0;
     if (state == "error") view.ui.statusMessage = "ERR insufficient-credits / TRANSACTION REJECTED / NO STATE CHANGED";
     view.ship.docked = true;
@@ -478,87 +502,8 @@ int main(int argc,char** argv) {
     view.ui.commandPending = true;
     return true;
   };
-  int mouseX = -1, mouseY = -1;
-  const auto updateMouseHover = [&](int x, int y) {
-    if (!coreMode) return;
-    int windowWidth = 0, windowHeight = 0, drawableWidth = 0, drawableHeight = 0;
-    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
-    SDL_GL_GetDrawableSize(window, &drawableWidth, &drawableHeight);
-    if (windowWidth <= 0 || windowHeight <= 0 || drawableWidth <= 0 || drawableHeight <= 0) return;
-    const auto point = helion::client::UiPoint{
-      static_cast<float>(x) * drawableWidth / static_cast<float>(windowWidth),
-      static_cast<float>(y) * drawableHeight / static_cast<float>(windowHeight)};
-    const auto hit = helion::client::hitTestUi(view.ui, point, drawableWidth, drawableHeight);
-    view.ui.hoveredControl = hit.id;
-    view.ui.hoveredIndex = hit.index;
-  };
-  const auto activateMouseControl = [&](const helion::client::UiHitResult& hit) {
-    if (hit.id == helion::client::UiControlId::none) return;
-    view.ui.focusedControl = hit.id;
-    if (!hit.enabled) {
-      view.ui.statusMessage = "CONTROL DISABLED / WAIT OR MEET STATION REQUIREMENTS";
-      return;
-    }
-    using helion::client::UiControlId;
-    using helion::client::UiScreen;
-    switch (hit.id) {
-      case UiControlId::accountInput:
-        view.console = true;
-        view.ui.consoleOpen = true;
-        return;
-      case UiControlId::stationMarket: view.ui.selected = 0; view.ui.screen = UiScreen::market; queueUi("FLIGHT"); return;
-      case UiControlId::stationMission: view.ui.screen = UiScreen::mission; queueUi("MISSION"); return;
-      case UiControlId::stationOutfitting: view.ui.selected = 0; view.ui.screen = UiScreen::outfitting; queueUi("OUTFIT LIST"); return;
-      case UiControlId::stationProfile: view.ui.screen = UiScreen::profile; queueUi("PROFILE"); return;
-      case UiControlId::stationGalnet: view.ui.screen = UiScreen::galnet; queueUi("GALNET"); return;
-      case UiControlId::stationOptions: view.ui.screen = UiScreen::options; return;
-      case UiControlId::stationGraphics: view.ui.screen = UiScreen::graphics; return;
-      case UiControlId::stationLaunch:
-        if (queueUi("LAUNCH")) view.ui.screen = UiScreen::flight;
-        return;
-      case UiControlId::stationRepair: queueUi("REPAIR"); return;
-      case UiControlId::stationRefuel: queueUi("REFUEL"); return;
-      case UiControlId::marketFood:
-      case UiControlId::marketParts:
-        view.ui.selected = hit.index;
-        return;
-      case UiControlId::marketQuantityDown:
-        view.ui.quantity = std::max(1, view.ui.quantity - 1);
-        return;
-      case UiControlId::marketQuantityUp:
-        view.ui.quantity = std::min(helion::flight::kCargoCapacity, view.ui.quantity + 1);
-        return;
-      case UiControlId::marketBuy:
-      case UiControlId::marketSell:
-        queueUi(helion::client::uiCommandFor(hit.id, hit.index, view.ui));
-        return;
-      case UiControlId::missionAccept:
-      case UiControlId::missionTurnIn:
-        queueUi(helion::client::uiCommandFor(hit.id, hit.index, view.ui));
-        return;
-      case UiControlId::outfitRow:
-        view.ui.selected = hit.index;
-        return;
-      case UiControlId::outfitBuy:
-      case UiControlId::outfitFit:
-      case UiControlId::outfitRemove:
-        queueUi(helion::client::uiCommandFor(hit.id, view.ui.selected, view.ui));
-        return;
-      case UiControlId::galnetEntry:
-        view.ui.selected = hit.index - view.ui.scrollOffset;
-        return;
-      case UiControlId::optionsTelemetry:
-        view.showTelemetry = !view.showTelemetry;
-        view.ui.telemetryEnabled = view.showTelemetry;
-        view.ui.statusMessage = std::string("TELEMETRY / ") + (view.showTelemetry ? "ON" : "OFF");
-        return;
-      case UiControlId::dismiss:
-        view.ui.screen = view.ship.docked ? UiScreen::station : UiScreen::flight;
-        view.ui.selected = 0;
-        return;
-      case UiControlId::none: return;
-    }
-  };
+  helion::client::UiInput uiInput;
+  if (coreMode) view.console = false;
   double lastTime=SDL_GetTicks64()/1000.0,lastInput=0,lastReply=lastTime;
   helion::flight::State visual=view.ship;
   SDL_StartTextInput();
@@ -573,34 +518,13 @@ int main(int argc,char** argv) {
       if(event.type==SDL_WINDOWEVENT) {
         if(event.window.event==SDL_WINDOWEVENT_FOCUS_LOST) { focused=false; if(view.authenticated) queue("INPUT 0 0 1"); }
         if(event.window.event==SDL_WINDOWEVENT_FOCUS_GAINED) focused=true;
-        if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && mouseX >= 0)
-          updateMouseHover(mouseX, mouseY);
       }
-      if (coreMode && event.type == SDL_MOUSEMOTION) {
-        mouseX = event.motion.x;
-        mouseY = event.motion.y;
-        updateMouseHover(mouseX, mouseY);
-      }
-      if (coreMode && event.type == SDL_MOUSEWHEEL && view.ui.screen != helion::client::UiScreen::flight) {
-        view.ui.scrollOffset = std::clamp(view.ui.scrollOffset - event.wheel.y, 0,
-          helion::client::uiMaxScroll(view.ui));
-        if (view.ui.screen == helion::client::UiScreen::galnet)
-          view.ui.selected = std::clamp(view.ui.selected, 0, 8);
-      }
-      if (coreMode && event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
-        mouseX = event.button.x;
-        mouseY = event.button.y;
-        int windowWidth = 0, windowHeight = 0, drawableWidth = 0, drawableHeight = 0;
-        SDL_GetWindowSize(window, &windowWidth, &windowHeight);
-        SDL_GL_GetDrawableSize(window, &drawableWidth, &drawableHeight);
-        if (windowWidth > 0 && windowHeight > 0 && drawableWidth > 0 && drawableHeight > 0) {
-          const auto point = helion::client::UiPoint{
-            static_cast<float>(mouseX) * drawableWidth / static_cast<float>(windowWidth),
-            static_cast<float>(mouseY) * drawableHeight / static_cast<float>(windowHeight)};
-          const auto hit = helion::client::hitTestUi(view.ui, point, drawableWidth, drawableHeight);
-          activateMouseControl(hit);
-          updateMouseHover(mouseX, mouseY);
-        }
+      if (coreMode) {
+        int ww = 0, wh = 0; SDL_GetWindowSize(window, &ww, &wh);
+        const auto request = uiInput.handle(view, event, ww, wh);
+        if (request == "QUIT") running = false;
+        else if (!request.empty()) queueUi(request);
+        continue;
       }
       if(view.console && event.type==SDL_TEXTINPUT && view.typed.size()+std::strlen(event.text.text)<=helion::protocol::kMaxLine)
         view.typed+=event.text.text;
@@ -631,92 +555,6 @@ int main(int argc,char** argv) {
           auto at=view.typed.size()-1;
           while(at>0 && (static_cast<unsigned char>(view.typed[at])&0xc0)==0x80) --at;
           view.typed.erase(at);
-        }
-      } else if(coreMode && view.authenticated && (view.ui.screen != helion::client::UiScreen::flight ||
-                (key >= SDLK_F1 && key <= SDLK_F8) || key == SDLK_o)) {
-        const auto open = [&](helion::client::UiScreen screen, const std::string& request = std::string()) {
-          view.ui.screen = screen;
-          view.ui.selected = 0;
-          view.ui.scrollOffset = 0;
-          view.ui.focusedControl = helion::client::UiControlId::none;
-          if (!request.empty()) queueUi(request);
-        };
-        if (key==SDLK_F1 && view.ship.docked) open(helion::client::UiScreen::station);
-        else if (key==SDLK_F2) open(helion::client::UiScreen::profile, "PROFILE");
-        else if (key==SDLK_F3) {
-          view.showTelemetry = !view.showTelemetry;
-          view.ui.statusMessage = std::string("TELEMETRY / ") + (view.showTelemetry ? "ON" : "OFF");
-          view.ui.screen = helion::client::UiScreen::options;
-        }
-        else if (key==SDLK_F4) open(helion::client::UiScreen::market, "FLIGHT");
-        else if (key==SDLK_F5) open(helion::client::UiScreen::mission, "MISSION");
-        else if (key==SDLK_F6) open(helion::client::UiScreen::outfitting, "OUTFIT LIST");
-        else if (key==SDLK_F7) open(helion::client::UiScreen::galnet, "GALNET");
-        else if (key==SDLK_F8) open(helion::client::UiScreen::graphics);
-        else if (key==SDLK_o) open(helion::client::UiScreen::options);
-        else if (key==SDLK_UP || key==SDLK_DOWN) {
-          int maximum = 0;
-          if (view.ui.screen == helion::client::UiScreen::station) maximum = 9;
-          else if (view.ui.screen == helion::client::UiScreen::market) maximum = 1;
-          else if (view.ui.screen == helion::client::UiScreen::outfitting) maximum = static_cast<int>(helion::loadout::kCatalogue.size()) - 1;
-          else if (view.ui.screen == helion::client::UiScreen::galnet)
-            maximum = std::max(0, std::min(9, static_cast<int>(view.ui.galnet.size()) - view.ui.scrollOffset) - 1);
-          view.ui.selected = std::clamp(view.ui.selected + (key==SDLK_DOWN ? 1 : -1), 0, maximum);
-        }
-        else if ((key==SDLK_PAGEUP || key==SDLK_PAGEDOWN) && view.ui.screen == helion::client::UiScreen::galnet) {
-          view.ui.scrollOffset = std::clamp(view.ui.scrollOffset + (key==SDLK_PAGEDOWN ? 1 : -1), 0,
-            helion::client::uiMaxScroll(view.ui));
-          view.ui.selected = std::clamp(view.ui.selected, 0, 8);
-        }
-        else if ((key==SDLK_EQUALS || key==SDLK_KP_PLUS) && view.ui.screen == helion::client::UiScreen::market)
-          view.ui.quantity = std::min(helion::flight::kCargoCapacity, view.ui.quantity + 1);
-        else if ((key==SDLK_MINUS || key==SDLK_KP_MINUS) && view.ui.screen == helion::client::UiScreen::market)
-          view.ui.quantity = std::max(1, view.ui.quantity - 1);
-        else if (key==SDLK_RETURN) {
-          if (view.ui.screen == helion::client::UiScreen::station) {
-            switch (view.ui.selected) {
-              case 0: open(helion::client::UiScreen::market, "FLIGHT"); break;
-              case 1: open(helion::client::UiScreen::mission, "MISSION"); break;
-              case 2: open(helion::client::UiScreen::outfitting, "OUTFIT LIST"); break;
-              case 3: open(helion::client::UiScreen::profile, "PROFILE"); break;
-              case 4: open(helion::client::UiScreen::galnet, "GALNET"); break;
-              case 5: open(helion::client::UiScreen::options); break;
-              case 6: open(helion::client::UiScreen::graphics); break;
-              case 7: if (queueUi("LAUNCH")) view.ui.screen = helion::client::UiScreen::flight; break;
-              case 8: queueUi("REPAIR"); break;
-              case 9: queueUi("REFUEL"); break;
-            }
-          } else if (view.ui.screen == helion::client::UiScreen::market) {
-            const char* commodity = view.ui.selected == 0 ? "food" : "parts";
-            queueUi("BUY " + std::string(commodity) + " " + std::to_string(view.ui.quantity));
-          } else if (view.ui.screen == helion::client::UiScreen::mission) {
-            if (view.ui.missionStage == 0) queueUi("ACCEPT");
-            else if (view.ui.missionStage == 1 && view.ui.missionOreMined) queueUi("TURNIN");
-            else view.ui.statusMessage = view.ui.missionStage == 1 ? "MISSION ACTIVE / COMPLETE THE ORE OBJECTIVE" : "MISSION COMPLETE / REWARD ALREADY PAID";
-          } else if (view.ui.screen == helion::client::UiScreen::error ||
-                     view.ui.screen == helion::client::UiScreen::profile ||
-                     view.ui.screen == helion::client::UiScreen::graphics) {
-            open(view.ship.docked ? helion::client::UiScreen::station : helion::client::UiScreen::flight);
-          } else if (view.ui.screen == helion::client::UiScreen::outfitting) {
-            const auto& module = helion::loadout::kCatalogue[static_cast<std::size_t>(view.ui.selected)];
-            queueUi((std::find(view.ui.ownedModules.begin(), view.ui.ownedModules.end(), module.id) == view.ui.ownedModules.end() ?
-              "OUTFIT BUY " : "OUTFIT FIT ") + std::string(module.id));
-          }
-        }
-        else if (key==SDLK_b && view.ui.screen == helion::client::UiScreen::market) {
-          queueUi("BUY " + std::string(view.ui.selected == 0 ? "food" : "parts") + " " + std::to_string(view.ui.quantity));
-        }
-        else if (key==SDLK_s && view.ui.screen == helion::client::UiScreen::market) {
-          queueUi("SELL " + std::string(view.ui.selected == 0 ? "food" : "parts") + " " + std::to_string(view.ui.quantity));
-        }
-        else if (key==SDLK_b && view.ui.screen == helion::client::UiScreen::outfitting) {
-          queueUi("OUTFIT BUY " + std::string(helion::loadout::kCatalogue[static_cast<std::size_t>(view.ui.selected)].id));
-        }
-        else if (key==SDLK_f && view.ui.screen == helion::client::UiScreen::outfitting) {
-          queueUi("OUTFIT FIT " + std::string(helion::loadout::kCatalogue[static_cast<std::size_t>(view.ui.selected)].id));
-        }
-        else if (key==SDLK_r && view.ui.screen == helion::client::UiScreen::outfitting) {
-          queueUi("OUTFIT REMOVE " + std::string(helion::loadout::slotName(helion::loadout::kCatalogue[static_cast<std::size_t>(view.ui.selected)].slot)));
         }
       } else if(view.authenticated) {
         if(key==SDLK_l) queue("LAUNCH");
@@ -816,11 +654,19 @@ int main(int argc,char** argv) {
             view.log.push_back("CONTACTS / "+std::to_string(view.contacts.size())+" IN SECTOR");
           }
           if(frame.line.rfind("OK LOGIN",0)==0 || frame.line.rfind("OK CREATED",0)==0) {
+            uiInput.clearCredentials();
             view.authenticated=true; view.console=false; view.ui.consoleOpen=false;
             view.ui.screen = view.ship.docked ? helion::client::UiScreen::station : helion::client::UiScreen::flight;
             view.ui.connectionStatus = "TLS VERIFIED / COMMANDER AUTHENTICATED";
-            queue("FLIGHT"); queue("PROFILE"); queue("GALNET"); queue("OUTFIT LIST");
+            queue("FLIGHT"); queue("PROFILE"); queue("GALNET"); queue("OUTFIT LIST"); queue("CAREER");
           }
+          if (frame.line.rfind("OK ", 0) == 0 && frame.line.rfind("OK LOGIN",0) != 0 &&
+              frame.line.rfind("OK CREATED",0) != 0 && frame.line.rfind("OK BYE",0) != 0) {
+            queue("PROFILE"); queue("CAREER"); queue("GALNET"); queue("OUTFIT LIST");
+          }
+          if (coreMode && (frame.line.rfind("OK LAUNCHED",0) == 0)) view.ui.screen = helion::client::UiScreen::flight;
+          if (coreMode && (frame.line.rfind("OK DOCKED",0) == 0 || frame.line.rfind("OK RECOVERED",0) == 0))
+            view.ui.screen = helion::client::UiScreen::station;
           if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
           if(frame.line.rfind("COMBAT HIT",0)==0 || frame.line.rfind("COMBAT DESTROYED target",0)==0)
             view.weaponUntil=now+0.28;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "shared/flight.h"
+#include "shared/career.h"
 
 #include <array>
 #include <cstddef>
@@ -21,7 +22,7 @@ enum class UiScreen {
   galnet,
   options,
   graphics,
-  error
+  error, help, completion
 };
 
 enum class UiControlId {
@@ -51,7 +52,9 @@ enum class UiControlId {
   outfitRemove,
   galnetEntry,
   optionsTelemetry,
-  dismiss
+  dismiss, help, introDismiss, accountName, accountPassword, accountDisplay,
+  accountLogin, accountCreate, missionRow, mine, dock, target, fire, recover,
+  upgradeEngine, upgradeHull, quit
 };
 
 struct UiPoint {
@@ -118,6 +121,10 @@ struct UiState {
   bool docked = false;
   bool destroyed = false;
   bool commandPending = false;
+  int missionSelected = 0;
+  helion::career::State career;
+  bool careerKnown = false;
+  std::string accountName, accountDisplay, passwordMask;
   bool consoleOpen = true;
   bool telemetryEnabled = true;
   std::string typed;

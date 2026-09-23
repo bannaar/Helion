@@ -20,6 +20,8 @@ std::string uiScreenName(UiScreen screen) {
     case UiScreen::options: return "OPTIONS / CONTROLS";
     case UiScreen::graphics: return "GRAPHICS / DIAGNOSTICS";
     case UiScreen::error: return "STATUS / CONFIRMATION";
+    case UiScreen::help: return "KEPLER / PILOT GUIDE";
+    case UiScreen::completion: return "KEPLER / ESTABLISHED PILOT";
   }
   return "HELION";
 }
@@ -53,6 +55,22 @@ std::string uiControlName(UiControlId control) {
     case UiControlId::galnetEntry: return "galnet-entry";
     case UiControlId::optionsTelemetry: return "options-telemetry";
     case UiControlId::dismiss: return "dismiss";
+    case UiControlId::help: return "help";
+    case UiControlId::introDismiss: return "intro-dismiss";
+    case UiControlId::accountName: return "account-name";
+    case UiControlId::accountPassword: return "account-password";
+    case UiControlId::accountDisplay: return "account-display";
+    case UiControlId::accountLogin: return "account-login";
+    case UiControlId::accountCreate: return "account-create";
+    case UiControlId::missionRow: return "mission-row";
+    case UiControlId::mine: return "mine";
+    case UiControlId::dock: return "dock";
+    case UiControlId::target: return "target";
+    case UiControlId::fire: return "fire";
+    case UiControlId::recover: return "recover";
+    case UiControlId::upgradeEngine: return "upgrade-engine";
+    case UiControlId::upgradeHull: return "upgrade-hull";
+    case UiControlId::quit: return "quit";
   }
   return "none";
 }
@@ -73,6 +91,18 @@ std::string uiButtonLabel(UiControlId control) {
     case UiControlId::outfitFit: return "FIT";
     case UiControlId::outfitRemove: return "REMOVE";
     case UiControlId::dismiss: return "BACK / ENTER OR ESC";
+    case UiControlId::help: return "HELP / F9";
+    case UiControlId::introDismiss: return "CONTINUE / SKIP INTRO";
+    case UiControlId::accountLogin: return "LOG IN";
+    case UiControlId::accountCreate: return "CREATE COMMANDER";
+    case UiControlId::mine: return "MINE / E";
+    case UiControlId::dock: return "DOCK / F";
+    case UiControlId::target: return "TARGET / TAB";
+    case UiControlId::fire: return "FIRE / SPACE";
+    case UiControlId::recover: return "RECOVER / R";
+    case UiControlId::upgradeEngine: return "ENGINE +";
+    case UiControlId::upgradeHull: return "HULL +";
+    case UiControlId::quit: return "EXIT / SAVED";
     default: return {};
   }
 }
@@ -122,8 +152,11 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
   const bool active = actionEnabled(state);
   switch (state.screen) {
     case UiScreen::account:
-      addControl(controls, UiControlId::accountInput, 20, 210, 920, 54, 0,
-        state.connected && !state.commandPending);
+      addControl(controls, UiControlId::accountName, 24, 146, 890, 36, 0, true);
+      addControl(controls, UiControlId::accountPassword, 24, 196, 890, 36, 1, true);
+      addControl(controls, UiControlId::accountDisplay, 24, 246, 890, 36, 2, true);
+      addControl(controls, UiControlId::accountLogin, 24, 330, 260, 38, 3, state.connected && !state.commandPending);
+      addControl(controls, UiControlId::accountCreate, 310, 330, 300, 38, 4, state.connected && !state.commandPending);
       break;
     case UiScreen::station: {
       const std::array<UiControlId, 10> ids = {
@@ -146,10 +179,16 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::marketSell, 800, 286, 130, 32, 0, active);
       break;
     case UiScreen::mission:
-      addControl(controls, UiControlId::missionAccept, 20, 302, 450, 34, 0,
-        active && state.missionStage == 0);
-      addControl(controls, UiControlId::missionTurnIn, 480, 302, 450, 34, 0,
-        active && state.missionStage == 1 && state.missionOreMined);
+      for (int i = 0; i < 3; ++i)
+        addControl(controls, UiControlId::missionRow, 20 + i * 310, 116, 300, 36, i, state.authenticated);
+      {
+        const int stage = state.missionSelected == 0 ? state.missionStage :
+          state.missionSelected == 1 ? state.career.supply : state.career.response;
+        const bool unlocked = state.missionSelected == 0 || (state.missionStage == 2 &&
+          (state.missionSelected == 1 || state.career.supply == 2));
+        addControl(controls, UiControlId::missionAccept, 20, 400, 300, 34, 0, active && unlocked && stage == 0);
+        addControl(controls, UiControlId::missionTurnIn, 330, 400, 300, 34, 0, active && stage == 1 && state.missionSelected != 2);
+      }
       break;
     case UiScreen::outfitting: {
       const std::size_t maxRows = std::min<std::size_t>(7, loadout::kCatalogue.size());
@@ -159,6 +198,8 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::outfitBuy, 20, 442, 180, 34, 0, active);
       addControl(controls, UiControlId::outfitFit, 215, 442, 180, 34, 0, active);
       addControl(controls, UiControlId::outfitRemove, 410, 442, 220, 34, 0, active);
+      addControl(controls, UiControlId::upgradeEngine, 650, 442, 130, 34, 0, active);
+      addControl(controls, UiControlId::upgradeHull, 800, 442, 130, 34, 0, active);
       break;
     }
     case UiScreen::galnet: {
@@ -181,8 +222,28 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::dismiss, 20, 442, 920, 34, 0, state.authenticated);
       break;
     case UiScreen::flight:
+      if (state.authenticated) {
+        addControl(controls, UiControlId::mine, 365, 346, 125, 26, 0, !state.docked && !state.destroyed && !state.commandPending);
+        addControl(controls, UiControlId::dock, 505, 346, 125, 26, 0, !state.docked && !state.destroyed && !state.commandPending);
+        addControl(controls, UiControlId::target, 645, 346, 125, 26, 0, !state.destroyed);
+        addControl(controls, UiControlId::fire, 785, 346, 145, 26, 0, !state.docked && !state.destroyed && !state.commandPending);
+        if (state.destroyed) addControl(controls, UiControlId::recover, 365, 544, 230, 30, 0, !state.commandPending);
+        if (state.docked) addControl(controls, UiControlId::stationLaunch, 365, 544, 230, 30, 0, active);
+      }
+      break;
+    case UiScreen::help:
+      addControl(controls, UiControlId::introDismiss, 24, 470, 340, 34, 0, state.authenticated && !state.commandPending);
+      break;
+    case UiScreen::completion:
+      addControl(controls, UiControlId::dismiss, 24, 440, 420, 34, 0, state.authenticated);
       break;
   }
+  if (state.screen != UiScreen::account && state.screen != UiScreen::help && state.screen != UiScreen::flight)
+    addControl(controls, UiControlId::help, 640, 480, 130, 28, -1, true);
+  if (state.screen != UiScreen::account && state.screen != UiScreen::flight && state.screen != UiScreen::completion)
+    addControl(controls, UiControlId::dismiss, 780, 480, 150, 28, -1, true);
+  if (state.screen == UiScreen::options)
+    addControl(controls, UiControlId::quit, 24, 400, 230, 34, 0, true);
   return controls;
 }
 
@@ -212,8 +273,16 @@ std::string uiCommandFor(UiControlId control, int index, const UiState& state) {
       return "BUY " + std::string(state.selected == 0 ? "food" : "parts") + " " + std::to_string(state.quantity);
     case UiControlId::marketSell:
       return "SELL " + std::string(state.selected == 0 ? "food" : "parts") + " " + std::to_string(state.quantity);
-    case UiControlId::missionAccept: return "ACCEPT";
-    case UiControlId::missionTurnIn: return "TURNIN";
+    case UiControlId::missionAccept: return state.missionSelected == 0 ? "ACCEPT" :
+      "CAREER ACCEPT " + std::string(state.missionSelected == 1 ? career::kSupply : career::kResponse);
+    case UiControlId::missionTurnIn: return state.missionSelected == 0 ? "TURNIN" :
+      "CAREER TURNIN " + std::string(career::kSupply);
+    case UiControlId::introDismiss: return "CAREER DISMISS";
+    case UiControlId::mine: return "MINE";
+    case UiControlId::dock: return "DOCK";
+    case UiControlId::recover: return "RECOVER";
+    case UiControlId::upgradeEngine: return "UPGRADE engine";
+    case UiControlId::upgradeHull: return "UPGRADE hull";
     case UiControlId::outfitBuy:
     case UiControlId::outfitFit:
       if (index >= 0 && index < static_cast<int>(loadout::kCatalogue.size()))

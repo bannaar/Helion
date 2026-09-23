@@ -57,6 +57,13 @@ int main() {
   const auto fire = helion::protocol::parseRequest("FIRE RAIDER-1");
   check(fire.command == Command::fire && fire.first == "RAIDER-1", "FIRE target accepted");
   check(helion::protocol::parseRequest("RECOVER").command == Command::recover, "RECOVER preserved");
+  const auto career = helion::protocol::parseRequest("CAREER ACCEPT career.kepler_supply");
+  check(career.command == Command::career && career.first == "ACCEPT" &&
+    career.second == "career.kepler_supply", "CAREER action accepted");
+  check(helion::protocol::parseRequest("CAREER ACCEPT career.unknown").command == Command::invalid,
+    "unknown career identifier rejected");
+  check(helion::protocol::parseRequest("CAREER TURNIN career.red_wake_response").command == Command::career,
+    "career action remains domain-validated");
   check(helion::protocol::parseRequest("OUTFIT LIST").command == Command::outfit, "OUTFIT LIST accepted");
   check(helion::protocol::parseRequest("OUTFIT BUY mining-mk2").command == Command::outfit, "OUTFIT BUY accepted");
   const auto engineUpgrade = helion::protocol::parseRequest("UPGRADE engine");

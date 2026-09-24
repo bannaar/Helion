@@ -1,21 +1,20 @@
 # Helion
 
-Helion is a low-resource space career game prototype with two runtimes:
-
-- **Browser reference game** — a playable Three.js/TanStack application used for
-  rapid gameplay and UI development.
-- **Standalone native foundation** — a C++17 TCP server and SDL2/OpenGL client
-  designed for Linux systems with OpenGL 2.1-era hardware, including older
-  Intel integrated graphics.
+Helion is a native, server-authoritative, persistent online science-fiction
+game. Its implementation and release baseline is the C++17 TLS server and
+SDL2/OpenGL client under `native/`, designed for Linux systems with OpenGL
+2.1-era hardware, including older Intel integrated graphics. The Three.js /
+TanStack application under `src/` is retained as a legacy design reference; it
+is not a peer authority path or the production game architecture.
 
 The native runtime now provides a playable Kepler career arc, procedural
 ship/station/asteroid assets, account creation/login, durable commander
 profiles, shared chat, and mandatory verified TLS transport. Linux packages
 and a desktop local-play launcher are available. Separate server/client packages
 support a [Compaq 610 + EliteBook 8460p setup](docs/compaq610-server-elitebook-client.md).
-See [installation](docs/native-install.md)
-and [project state](docs/PROJECT_STATE.md). It is not yet a complete port of
-the browser simulation.
+See [installation](docs/native-install.md) and
+[project state](docs/PROJECT_STATE.md). Native development follows World Bible
+v0.10 and grows incrementally from the validated server-authoritative slice.
 
 ## Gameplay concept renders
 
@@ -31,7 +30,7 @@ screenshots of the SDL/OpenGL client.
 
 | Path | Purpose |
 | --- | --- |
-| `src/` | Browser game, simulation, UI, audio, and persistence adapters |
+| `src/` | Legacy browser reference; not the authoritative release runtime |
 | `native/server/` | Standalone POSIX TCP server |
 | `native/client/` | Standalone SDL2/OpenGL client |
 | `native/README.md` | Native quick start and protocol reference |
@@ -42,7 +41,7 @@ screenshots of the SDL/OpenGL client.
 | `CMakeLists.txt` | Native build entry point |
 | `startup.sh` | Browser preview startup contract |
 
-## Quick start: browser game
+## Legacy browser-reference development
 
 Requirements: Node.js 22 or newer and npm.
 
@@ -59,9 +58,9 @@ npm run test
 npm run build
 ```
 
-The browser version uses local save storage by default. Authenticated profile,
-market, news, and GalNet persistence use the existing database adapters when
-configured.
+This path exists for historical reference and isolated UI experimentation.
+Its local or database-backed state is not part of the canonical native
+universe.
 
 ## Quick start: standalone native runtime
 
@@ -112,10 +111,14 @@ LOGIN username password
 CHAT message
 PROFILE
 STATE
+SHIPYARD LIST
+SHIPYARD OWNED
+SHIPYARD BUY TITAN_MULE
 LAUNCH
 INPUT 1 0 0
 FLIGHT
 MINE
+FIRE
 DOCK
 QUIT
 ```
@@ -135,14 +138,16 @@ software rendering and the selected context.
 
 ## Current gameplay scope
 
-The browser reference currently includes low-poly ships and stations, multiple
-ship classes and factions, outfitting, trading, cargo, missions, mining,
-salvage, scanning, combat, police/pirate/alien contacts, GalNet news/chat,
-procedural audio, TTS, and local commander saves. Native gameplay is being
-implemented incrementally against the same concepts.
+The native game currently provides account persistence, the Kepler career
+slice, mining, station markets, missions, upgrades and modules, combat and
+recovery, reputation, GalNet, live contacts, persistent owned ships, distinct
+hull performance, and authoritative Kepler/Cinder shipyards. Later World Bible
+systems remain future native work unless the project-state documentation says
+otherwise.
 
 ## License and contribution
 
-This repository is an evolving prototype. Keep changes focused, preserve the
-OpenGL 2.1 compatibility target for native client work, and run the relevant
-browser type checks or native CMake build before submitting changes.
+This repository is evolving incrementally. Keep changes focused, preserve the
+OpenGL 2.1 compatibility target, and run the native CMake validation relevant
+to every native change. Run browser checks when modifying the legacy `src/`
+reference, but do not use browser behavior as evidence of native completion.

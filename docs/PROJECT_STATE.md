@@ -1,8 +1,9 @@
 # Helion project state
 
-Helion has two runtimes. The browser prototype remains in `src/` and is not
-part of the native release work. The native runtime is a C++17 SDL2/OpenGL
-client plus a POSIX server under `native/`.
+Helion's authoritative implementation and release path is the native C++17
+SDL2/OpenGL client plus POSIX TLS server under `native/`. The browser prototype
+remains in `src/` as legacy reference material and is not a peer authority
+path, production universe, or part of the native release.
 
 The native client is playable today. A commander can create an account or log
 in through bounded graphical fields, launch from Kepler, fly with W/S/A/D

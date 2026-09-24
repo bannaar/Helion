@@ -567,4 +567,10 @@ LIBGL_ALWAYS_SOFTWARE=1 \
 
 ## 16. Current development limits
 
-The native client/server now forms a playable career slice with secure transport, mining, trading, missions, upgrades, persistent flight, and live contacts. Remaining major systems include combat, broader mission chains, functional hull damage and repair, deeper economy simulation, shared asteroid depletion, and richer exploration.
+The native client/server now forms a playable career slice with secure
+transport, mining, trading, missions, upgrades, combat and recovery, functional
+hull damage and repair, reputation, GalNet, persistent flight, live contacts,
+owned ships, and authoritative shipyards. Remaining major systems include
+broader mission chains, deeper regional economy simulation, shared asteroid
+depletion, player collision, multi-system travel, complete outfitting and
+shields, and richer exploration.

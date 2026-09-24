@@ -486,6 +486,8 @@ int main(int argc, char** argv) {
   const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   check(content.find("H\tpilot\t$scrypt$") != std::string::npos &&
         content.find("H\twingman\t$scrypt$") != std::string::npos, "all legacy profiles migrated");
+  check(content.rfind("E\tdevelopment\n", 0) == 0,
+        "legacy persistence migrates to an explicit development environment");
   check(content.find("legacy-pass-one") == std::string::npos &&
         content.find("$legacy-pass-two") == std::string::npos, "plaintext removed from current data file");
   check(occurrences(content, "S\tpilot\t") == 1 && occurrences(content, "S\texplorer\t") == 1 &&

@@ -82,6 +82,7 @@ Start the server:
 ```sh
 native/scripts/helion-dev-cert /tmp/helion-local-tls
 ./build-native/native/helion_server 4242 helion-server.db \
+  --environment development \
   --cert /tmp/helion-local-tls/server.crt --key /tmp/helion-local-tls/server.key
 ```
 

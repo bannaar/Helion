@@ -41,9 +41,22 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def start_server(binary, root, cert, key):
+def receive_until(connection, marker):
+    received = b''
+    for _ in range(20):
+        received += connection.recv(4096)
+        if marker in received:
+            return received
+    raise AssertionError(f'missing TLS response marker {marker!r}: {received!r}')
+
+
+def start_server(binary, root, cert, key, database='tls.db', extra=None):
     port = free_port()
-    process = subprocess.Popen([binary, str(port), str(root / 'tls.db'), '--cert', str(cert), '--key', str(key)],
+    command = [binary, str(port), str(root / database)]
+    if extra:
+        command += extra
+    command += ['--cert', str(cert), '--key', str(key)]
+    process = subprocess.Popen(command,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(100):
         if process.poll() is not None:
@@ -104,6 +117,13 @@ def main():
                 except ConnectionResetError:
                     response = b''
                 assert b'WELCOME' not in response and b'CREATED' not in response
+            environment_context = ssl.create_default_context(cafile=str(cert))
+            with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
+                with environment_context.wrap_socket(raw, server_hostname='localhost') as secure:
+                    assert b'WELCOME Helion/2' in secure.recv(4096)
+                    secure.sendall(b'CREATE environmentpilot synthetic-password Environment Pilot\n')
+                    receive_until(secure, b'OK CREATED user=environmentpilot')
+                    secure.sendall(b'QUIT\n')
             if args.client:
                 commands = '/create tls_pilot synthetic-password TLS Pilot\n/profile\n/quit\n'
                 good = run([args.client, '127.0.0.1', str(port), '--ca', str(cert), '--terminal'], input=commands)
@@ -118,6 +138,39 @@ def main():
                 print('native terminal client: encrypted account/profile flow and untrusted certificates passed')
         finally:
             stop(process)
+        assert (root / 'tls.db').read_text().startswith('E\tdevelopment\n')
+        crossed = subprocess.run(
+            [args.server, str(free_port()), str(root / 'tls.db'), '--environment', 'test',
+             '--cert', str(cert), '--key', str(key)], capture_output=True, text=True, timeout=8)
+        assert crossed.returncode != 0 and 'persistence environment mismatch' in crossed.stderr
+        legacy = root / 'untagged.db'
+        legacy.write_text('M\tlegacy\tnot-production-state\n')
+        untagged = subprocess.run(
+            [args.server, str(free_port()), str(legacy), '--environment', 'production',
+             '--cert', str(cert), '--key', str(key)], capture_output=True, text=True, timeout=8)
+        assert untagged.returncode != 0 and 'untagged legacy persistence is development-only' in untagged.stderr
+        malformed_environment = root / 'malformed-environment.db'
+        malformed_environment.write_text('E\tdevelopment\textra\n')
+        malformed = subprocess.run(
+            [args.server, str(free_port()), str(malformed_environment), '--environment', 'development',
+             '--cert', str(cert), '--key', str(key)], capture_output=True, text=True, timeout=8)
+        assert malformed.returncode != 0 and 'malformed persistence environment' in malformed.stderr
+        unknown = subprocess.run(
+            [args.server, '--environment', 'staging', '--cert', str(cert), '--key', str(key)],
+            capture_output=True, text=True, timeout=8)
+        assert unknown.returncode == 2 and 'usage: helion_server' in unknown.stderr
+        process, test_port = start_server(args.server, root, cert, key, 'test.db', ['--environment', 'test'])
+        try:
+            test_context = ssl.create_default_context(cafile=str(cert))
+            with socket.create_connection(('127.0.0.1', test_port), timeout=3) as raw:
+                with test_context.wrap_socket(raw, server_hostname='localhost') as secure:
+                    assert b'WELCOME Helion/2' in secure.recv(4096)
+                    secure.sendall(b'CREATE testidentity synthetic-password Test Identity\n')
+                    receive_until(secure, b'OK CREATED user=testidentity')
+                    secure.sendall(b'QUIT\n')
+        finally:
+            stop(process)
+        assert (root / 'test.db').read_text().startswith('E\ttest\n')
         process, port = start_server(args.server, root, cert, key)
         stalled = socket.create_connection(('127.0.0.1', port), timeout=3)
         time.sleep(.1)

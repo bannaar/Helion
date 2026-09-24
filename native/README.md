@@ -41,6 +41,7 @@ For manual development, first generate a local certificate:
 ```sh
 native/scripts/helion-dev-cert /tmp/helion-local-tls
 ./build-native/native/helion_server 4242 helion-server.db \
+  --environment development \
   --cert /tmp/helion-local-tls/server.crt --key /tmp/helion-local-tls/server.key
 # In a separate terminal:
 ./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt

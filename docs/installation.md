@@ -194,6 +194,7 @@ Start the server in the first terminal:
 ./build-native/native/helion_server \
   4242 \
   "$HOME/.local/share/helion-server/commander.db" \
+  --environment development \
   --cert /tmp/helion-local-tls/server.crt \
   --key /tmp/helion-local-tls/server.key
 ```
@@ -326,6 +327,7 @@ Start a remotely reachable server:
 ./helion_server \
   4242 \
   /var/lib/helion/commander.db \
+  --environment development \
   --bind 0.0.0.0 \
   --cert /etc/helion/fullchain.pem \
   --key /etc/helion/private-key.pem \
@@ -389,7 +391,7 @@ Type=simple
 User=helion
 Group=helion
 WorkingDirectory=/var/lib/helion
-ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/commander.db --bind 0.0.0.0 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem --max-clients 32
+ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/commander.db --environment development --bind 0.0.0.0 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem --max-clients 32
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true

@@ -52,6 +52,11 @@ expiration, and DNS/IP Subject Alternative Name before sending commands. Local
 play generates a private loopback certificate automatically. The server uses
 scrypt password hashes, owner-only save files, a stable save lock, bounded
 line decoding, connection limits, timeouts, and atomic persistence.
+Persistence files now carry a server-validated `development`, `test`, or
+`production` environment identity. A mismatched process refuses the file;
+untagged legacy state is accepted and atomically migrated only by the
+backward-compatible development environment. This establishes state isolation,
+not the deferred TEST administration or production operations control planes.
 
 The combined install includes `helion_server`, `helion_client`,
 `helion-dev-cert`, `helion-play`, a desktop entry, icon, and documentation.

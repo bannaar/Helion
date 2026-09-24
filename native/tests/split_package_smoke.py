@@ -43,7 +43,7 @@ def wait_listening(process, port):
 
 def start(server, port, database, cert, key):
     process = subprocess.Popen([
-        str(server), str(port), str(database), "--bind", "127.0.0.1",
+        str(server), str(port), str(database), "--environment", "development", "--bind", "127.0.0.1",
         "--cert", str(cert), "--key", str(key),
     ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     wait_listening(process, port)
@@ -136,7 +136,8 @@ def main():
         service = next(server_prefix.rglob("helion-server.service"))
         service_text = service.read_text()
         for directive in ("NoNewPrivileges=true", "UMask=0077", "ProtectSystem=strict",
-                          "ReadWritePaths=/var/lib/helion", "Restart=on-failure"):
+                          "ReadWritePaths=/var/lib/helion", "Restart=on-failure",
+                          "--environment development"):
             assert directive in service_text
 
         cert, key = certificate(root, "tls")

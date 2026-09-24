@@ -34,6 +34,7 @@
 #include "server/security.h"
 #include "server/connection_limit.h"
 #include "server/data_lock.h"
+#include "server/environment.h"
 #include "shared/flight.h"
 #include "shared/combat.h"
 #include "shared/career.h"
@@ -53,6 +54,7 @@ constexpr int kMaxAuthFailures = 5;
 constexpr int kMaxAuthRequests = 10;
 constexpr double kFlightCheckpointSeconds = 1.0;
 std::string dataPath = "helion-server.db";
+helion::server::RuntimeEnvironment runtimeEnvironment = helion::server::RuntimeEnvironment::development;
 std::string dummyPasswordHash;
 volatile std::sig_atomic_t stopping = 0;
 
@@ -99,6 +101,7 @@ std::vector<GalNetEvent> galnetEvents;
 std::vector<int> clients;
 bool flightStateDirty = false;
 bool ownershipMigrationPending = false;
+bool environmentMigrationPending = false;
 std::mutex transportMutex;
 struct Transport {
   explicit Transport(std::shared_ptr<helion::tls::Connection> value) : connection(std::move(value)) {}
@@ -308,6 +311,7 @@ std::string decode(const std::string& value) {
 void saveStateLocked() {
   std::ostringstream snapshot;
   snapshot << std::setprecision(17);
+  snapshot << "E\t" << helion::server::runtimeEnvironmentName(runtimeEnvironment) << '\n';
   for (const auto& [name, profile] : profiles) {
     const auto& ship = activeShip(profile);
     const auto& flight = ship.flight;
@@ -395,6 +399,7 @@ void loadState() {
   std::size_t capacity = 0;
   std::set<std::string> profilesWithShipRecords;
   std::set<std::string> instanceIds;
+  bool firstRecord = true;
   try {
     ssize_t length;
     while ((length = ::getline(&buffer, &capacity, file)) >= 0) {
@@ -407,6 +412,24 @@ void loadState() {
       std::getline(input, first, '\t');
       std::getline(input, second, '\t');
       std::getline(input, third, '\t');
+      if (firstRecord) {
+        firstRecord = false;
+        if (kind == "E") {
+          const auto persistedEnvironment = helion::server::parseRuntimeEnvironment(first);
+          if (!persistedEnvironment || line != "E\t" + first)
+            throw std::runtime_error("malformed persistence environment");
+          if (*persistedEnvironment != runtimeEnvironment)
+            throw std::runtime_error("persistence environment mismatch: expected " +
+              std::string(helion::server::runtimeEnvironmentName(runtimeEnvironment)) + ", found " +
+              std::string(helion::server::runtimeEnvironmentName(*persistedEnvironment)));
+          continue;
+        }
+        if (runtimeEnvironment != helion::server::RuntimeEnvironment::development)
+          throw std::runtime_error("untagged legacy persistence is development-only");
+        environmentMigrationPending = true;
+      } else if (kind == "E") {
+        throw std::runtime_error("persistence environment record must be first and unique");
+      }
       if ((kind == "P" || kind == "H") && !first.empty() && !second.empty() && !third.empty()) {
         std::string faction, ship, creditsText, experienceText;
         std::getline(input, faction, '\t');
@@ -674,7 +697,7 @@ void loadState() {
 
 void migrateLegacyProfiles() {
   auto migrated = profiles;
-  bool changed = ownershipMigrationPending;
+  bool changed = ownershipMigrationPending || environmentMigrationPending;
   for (auto& [name, profile] : migrated) {
     (void)name;
     if (helion::security::migrateLegacyCredential(profile.passwordHash, profile.legacyCredential)) {
@@ -684,7 +707,11 @@ void migrateLegacyProfiles() {
   }
   if (!changed) return;
   profiles.swap(migrated);
-  try { saveStateLocked(); ownershipMigrationPending = false; }
+  try {
+    saveStateLocked();
+    ownershipMigrationPending = false;
+    environmentMigrationPending = false;
+  }
   catch (...) { profiles.swap(migrated); throw; }
   for (auto& [name, profile] : migrated) {
     (void)name;
@@ -1532,13 +1559,18 @@ int main(int argc, char** argv) {
       else if (arg == "--cert" && i + 1 < argc) certificate = argv[++i];
       else if (arg == "--key" && i + 1 < argc) privateKey = argv[++i];
       else if (arg == "--max-clients" && i + 1 < argc) maxClients = number(argv[++i], 1024);
+      else if (arg == "--environment" && i + 1 < argc) {
+        const auto parsed = helion::server::parseRuntimeEnvironment(argv[++i]);
+        if (!parsed) throw std::invalid_argument("unknown environment");
+        runtimeEnvironment = *parsed;
+      }
       else if (arg.rfind("--", 0) == 0) throw std::invalid_argument("unknown option");
       else if (positional++ == 0) port = static_cast<int>(number(arg, 65535));
       else if (positional == 2) dataPath = arg;
       else throw std::invalid_argument("too many arguments");
     }
   } catch (const std::exception&) {
-    std::cerr << "usage: helion_server [port] [data-file] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem\n";
+    std::cerr << "usage: helion_server [port] [data-file] [--environment development|test|production] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem\n";
     return 2;
   }
   sockaddr_in address{};
@@ -1573,7 +1605,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cout << "Helion server listening on " << bindAddress << ':' << port
-            << " TLS enabled; max-clients=" << maxClients << '\n';
+            << " TLS enabled; environment=" << helion::server::runtimeEnvironmentName(runtimeEnvironment)
+            << "; max-clients=" << maxClients << '\n';
   helion::server::ConnectionLimit limit(maxClients);
   struct Worker { std::thread thread; std::shared_ptr<std::atomic<bool>> done; };
   std::vector<Worker> workers;

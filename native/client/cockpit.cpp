@@ -2,9 +2,13 @@
 
 #include "shared/organizations.h"
 #include "shared/loadout.h"
+#include "shared/ships.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 
 namespace helion::client {
 namespace {
@@ -42,6 +46,24 @@ bool fittedModule(const UiState& state, helion::loadout::Slot slot, std::string_
   return state.fittedModules[helion::loadout::slotIndex(slot)] == id;
 }
 
+std::string shipyardHardpoints(std::string_view hullId) {
+  const auto* hull = ships::find(hullId);
+  if (!hull || hull->hardpoints.empty()) return "HARDPOINTS NONE";
+  std::array<int, 4> counts{};
+  for (const auto& hardpoint : hull->hardpoints)
+    ++counts[static_cast<std::size_t>(hardpoint.size) - 1];
+  std::string result = "HARDPOINTS";
+  for (std::size_t i = 0; i < counts.size(); ++i)
+    if (counts[i]) result += " " + std::to_string(counts[i]) + "xS" + std::to_string(i + 1);
+  return result;
+}
+
+std::string oneDecimal(double value) {
+  std::ostringstream stream;
+  stream << std::fixed << std::setprecision(1) << value;
+  return stream.str();
+}
+
 void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
                        const PresentationSnapshot& snapshot) {
   const auto& ui = snapshot.ui;
@@ -60,9 +82,9 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
     appendUiLine(batch, layout, 392, false, "TAB CHANGE FIELD / ENTER LOGIN / SHIFT+ENTER CREATE", muted);
     appendUiLine(batch, layout, 426, false, "NEW PILOT? CREATE A COMMANDER TO BEGIN YOUR KEPLER CAREER.", teal);
   } else if (ui.screen == UiScreen::station) {
-    const int selected = std::clamp(ui.selected, 0, 9);
-    const std::array<std::string_view, 10> items = {"MARKET / BUY OR SELL", "CAREER / KEPLER", "OUTFITTING / MODULES",
-      "PROFILE / REPUTATION", "GALNET / NEWS", "OPTIONS / CONTROLS", "GRAPHICS / DIAGNOSTICS",
+    const int selected = std::clamp(ui.selected, 0, 10);
+    const std::array<std::string_view, 11> items = {"MARKET / BUY OR SELL", "CAREER / KEPLER", "OUTFITTING / MODULES",
+      "SHIPYARD / HULLS AND OWNED FLEET", "PROFILE / REPUTATION", "GALNET / NEWS", "OPTIONS / CONTROLS", "GRAPHICS / DIAGNOSTICS",
       "LAUNCH INTO KEPLER", "REPAIR SHIP", "REFUEL SHIP"};
     appendUiLine(batch, layout, 124, false, snapshot.stationContext + " / DOCKED SERVICES", teal);
     appendUiLine(batch, layout, 150, false, std::to_string(snapshot.credits) + " CR / HULL " +
@@ -70,14 +92,14 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
       std::to_string(static_cast<int>(std::ceil(snapshot.player.fuel))) + "/" +
       std::to_string(static_cast<int>(std::ceil(snapshot.player.maxFuel))));
     for (std::size_t i = 0; i < items.size(); ++i)
-      appendUiLine(batch, layout, 190 + static_cast<float>(i) * 27, selected == static_cast<int>(i), items[i]);
+      appendUiLine(batch, layout, 184 + static_cast<float>(i) * 25, selected == static_cast<int>(i), items[i]);
     appendUiLine(batch, layout, 478, false, "UP/DOWN SELECT  ENTER CONFIRM  ESC BACK", muted);
   } else if (ui.screen == UiScreen::market) {
     const int station = std::clamp(snapshot.player.station, 0, static_cast<int>(flight::kStations.size()) - 1);
     const auto& prices = flight::kStations[static_cast<std::size_t>(station)];
     appendUiLine(batch, layout, 124, false, snapshot.stationContext + " / PRICES ARE SERVER-VALIDATED", teal);
     appendUiLine(batch, layout, 154, false, "CREDITS " + std::to_string(snapshot.credits) + " / HOLD " +
-      std::to_string(flight::cargoUsed(snapshot.player)) + "/" + std::to_string(flight::kCargoCapacity));
+      std::to_string(flight::cargoUsed(snapshot.player)) + "/" + std::to_string(ui.cargoCapacity));
     const std::array<std::string, 2> rows = {"FOOD / BUY " + std::to_string(prices.foodBuy) + " / SELL " +
       std::to_string(prices.foodSell) + " / OWNED " + std::to_string(snapshot.player.food),
       "PARTS / BUY " + std::to_string(prices.partsBuy) + " / SELL " + std::to_string(prices.partsSell) +
@@ -120,12 +142,36 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
       appendUiLine(batch, layout, 158 + static_cast<float>(i) * 35, static_cast<int>(i) == ui.selected, row);
     }
     appendUiLine(batch, layout, 430, false, "B BUY  F FIT  R REMOVE SLOT  ENTER FIT/BUY", muted);
+  } else if (ui.screen == UiScreen::shipyard) {
+    appendUiLine(batch, layout, 112, false, snapshot.stationContext + " / SERVER-AUTHORIZED INVENTORY", teal);
+    if (ui.shipyardRows.empty()) appendUiLine(batch, layout, 160, false, "NO HULLS OR OWNED SHIPS REPORTED", muted);
+    else {
+      constexpr int visible = 6;
+      const int first = std::clamp(ui.scrollOffset, 0, std::max(0, static_cast<int>(ui.shipyardRows.size()) - visible));
+      const int last = std::min(static_cast<int>(ui.shipyardRows.size()), first + visible);
+      for (int i = first; i < last; ++i) {
+        const auto& row = ui.shipyardRows[static_cast<std::size_t>(i)];
+        const std::string summary = (row.owned ? "OWNED / " + row.state : std::to_string(row.price) + " CR") +
+          " / " + row.displayName + " / " + row.shipClass + " / " + row.padSize;
+        appendUiLine(batch, layout, 148 + static_cast<float>(i - first) * 38, i == ui.selected, summary);
+      }
+      const auto& selectedRow = ui.shipyardRows[static_cast<std::size_t>(std::clamp(ui.selected, 0,
+        static_cast<int>(ui.shipyardRows.size()) - 1))];
+      appendUiLine(batch, layout, 362, false, selectedRow.manufacturer + " / " + selectedRow.operatorName +
+        " / " + selectedRow.role, teal);
+      appendUiLine(batch, layout, 388, false, "SPD " + std::to_string(selectedRow.speed) + " / BOOST " +
+        std::to_string(selectedRow.boost) + " / HANDLING " + std::to_string(selectedRow.handling) + "/10 / HULL " +
+        std::to_string(selectedRow.hull) + " / SHIELDS " + std::to_string(selectedRow.shields) + " / CARGO " +
+        std::to_string(selectedRow.cargo) + " T / RANGE " + oneDecimal(selectedRow.jumpRange) + " LY", muted);
+      appendUiLine(batch, layout, 414, false, shipyardHardpoints(selectedRow.hullId) +
+        " / " + selectedRow.padSize + " PAD", muted);
+    }
   } else if (ui.screen == UiScreen::profile) {
     appendUiLine(batch, layout, 124, false, "COMMANDER / " + snapshot.commanderName, teal);
     appendUiLine(batch, layout, 154, false, std::to_string(snapshot.credits) + " CR / " + std::to_string(snapshot.experience) + " XP");
     appendUiLine(batch, layout, 184, false, "SALVAGE " + std::to_string(ui.salvage) + " / ENGINE LEVEL " + std::to_string(ui.engineLevel));
     appendUiLine(batch, layout, 214, false, "HULL LEVEL " + std::to_string(ui.hullLevel) + " / CARGO " +
-      std::to_string(flight::cargoUsed(snapshot.player)) + "/" + std::to_string(flight::kCargoCapacity));
+      std::to_string(flight::cargoUsed(snapshot.player)) + "/" + std::to_string(ui.cargoCapacity));
     appendUiLine(batch, layout, 262, false, standingText(snapshot, "authority.kepler"));
     appendUiLine(batch, layout, 292, false, standingText(snapshot, "corp.orion"));
     appendUiLine(batch, layout, 322, false, standingText(snapshot, "criminal.red_wake"));
@@ -179,7 +225,7 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
       "3 / W THRUST / A LEFT / D RIGHT / S BRAKE. RELEASE THRUST TO SAVE FUEL.",
       "4 / ORE FIELD AT (0,280). BRAKE WITHIN 85 M AND PRESS E TO MINE.",
       "5 / RETURN WITHIN 85 M OF A STATION, SPEED BELOW 35. F TO DOCK.",
-      "6 / F4 MARKET: BUY/SELL FOOD OR PARTS. YOUR HOLD CARRIES 8 UNITS.",
+      "6 / F4 MARKET: BUY/SELL FOOD OR PARTS. HOLD CAPACITY DEPENDS ON YOUR ACTIVE HULL.",
       "7 / F6 OUTFIT: BUY THEN FIT PULSE LASER. TAB TARGET / SPACE FIRE.",
       "8 / DESTROYED? R RECOVERS AT YOUR LAST STATION. CARRIED ORE IS LOST.",
       "9 / F7 GALNET / F2 PROFILE / F8 GRAPHICS / F9 REOPEN THIS GUIDE."
@@ -271,6 +317,7 @@ CockpitTextBatch buildCockpitText(const PresentationSnapshot& snapshot, int widt
     std::to_string(snapshot.experience) + " XP", 270, 24);
 
   appendLine(batch, layout, 24, 108, 1.35f, teal, "SHIP STATUS", 300, 32);
+  appendLine(batch, layout, 116, 108, 1.15f, muted, snapshot.ui.activeHullName, 210, 32);
   appendLine(batch, layout, 24, 132, 1.25f, white,
     "HULL " + std::to_string(std::max(0, snapshot.player.hull)) + " / " +
       std::to_string(std::max(1, snapshot.player.maxHull)), 300, 40);
@@ -279,7 +326,7 @@ CockpitTextBatch buildCockpitText(const PresentationSnapshot& snapshot, int widt
       " / " + std::to_string(static_cast<int>(std::ceil(std::max(1.0, snapshot.player.maxFuel)))), 300, 40);
   appendLine(batch, layout, 24, 176, 1.25f, amber,
     "HOLD " + std::to_string(flight::cargoUsed(snapshot.player)) + " / " +
-      std::to_string(flight::kCargoCapacity), 300, 32);
+      std::to_string(snapshot.ui.cargoCapacity), 300, 32);
   appendLine(batch, layout, 24, 198, 1.25f, snapshot.player.weaponCooldown > 0 ? amber : teal,
     std::string("LASER ") + (snapshot.player.weaponCooldown > 0 ? "RECHARGING" : "READY"), 300, 32);
 

@@ -25,7 +25,8 @@ def main():
     normal = invoke(args.client, "auto")
     assert normal.returncode == 0, normal.stderr
     assert "GRAPHICS SELECT requested=auto selected=core fallback=no" in normal.stdout, normal.stdout
-    assert "actual=3.3-core" in normal.stdout and "renderer-class=hardware" in normal.stdout
+    expected_renderer = "software" if os.environ.get("HELION_HEADLESS_SOFTWARE_GL") == "1" else "hardware"
+    assert "actual=3.3-core" in normal.stdout and f"renderer-class={expected_renderer}" in normal.stdout
 
     for stage in STAGES:
         automatic = invoke(args.client, "auto", stage)

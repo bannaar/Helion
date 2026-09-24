@@ -146,7 +146,8 @@ LAN-only bind (replace the address):
 
 ```sh
 sudo -u helion /usr/bin/helion_server 4242 /var/lib/helion/commander.db \
-  --bind 192.168.1.50 --cert /etc/helion/server.crt --key /etc/helion/server.key
+  --environment development --bind 192.168.1.50 \
+  --cert /etc/helion/server.crt --key /etc/helion/server.key
 ```
 
 Safe bind patterns:

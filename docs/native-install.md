@@ -37,6 +37,9 @@ the Kepler career: First Ore, Cinder supply delivery, and Red Wake response.
   below **35 m/s** to sell. Each unit pays **60 credits and 5 XP**.
 - **F5** opens contracts, **F4** market, **F6** outfitting, **F7** GalNet,
   and **F9** help. Mouse and keyboard both cover normal progression.
+- Select **Shipyard / Hulls and Owned Fleet** while docked to inspect local
+  inventory, purchase an affordable hull, or activate a stored ship at the
+  same station. Up/Down and Enter work alongside mouse controls.
 
 Local saves and logs live in `$XDG_DATA_HOME/helion`, defaulting to
 `~/.local/share/helion`. `HELION_DATA_DIR` overrides this directory and
@@ -72,7 +75,7 @@ Install/build the server on its own host. Obtain a certificate with a Subject
 Alternative Name matching the DNS name or IP clients will use, then run:
 
 ```sh
-helion_server 4242 /path/to/commander.db --bind 0.0.0.0 \
+helion_server 4242 /path/to/commander.db --environment development --bind 0.0.0.0 \
   --cert /path/to/fullchain.pem --key /path/to/private-key.pem
 helion_client game.example.org 4242
 ```
@@ -88,7 +91,7 @@ For local manual development only:
 
 ```sh
 helion-dev-cert /path/to/local-tls
-helion_server 4242 /path/to/commander.db \
+helion_server 4242 /path/to/commander.db --environment development \
   --cert /path/to/local-tls/server.crt --key /path/to/local-tls/server.key
 helion_client 127.0.0.1 4242 --ca /path/to/local-tls/server.crt
 ```

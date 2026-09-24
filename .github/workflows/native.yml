@@ -12,13 +12,15 @@ jobs:
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libssl-dev libsdl2-dev libgl1-mesa-dev python3 openssl
+          sudo apt-get install -y build-essential cmake ninja-build libssl-dev libsdl2-dev libgl1-mesa-dev python3 openssl xvfb xauth
       - name: Configure
         run: cmake -S . -B build-native -G Ninja -DCMAKE_BUILD_TYPE=Debug -DHELION_BUILD_CLIENT=ON -DHELION_BUILD_TESTS=ON
       - name: Build
         run: cmake --build build-native --parallel
       - name: Test
-        run: ctest --test-dir build-native --output-on-failure
+        env:
+          HELION_HEADLESS_SOFTWARE_GL: "1"
+        run: xvfb-run -a --server-args="-screen 0 1280x720x24" ctest --test-dir build-native --output-on-failure
       - name: Package
         run: cmake --build build-native --target package
 

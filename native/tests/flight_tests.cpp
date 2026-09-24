@@ -148,6 +148,16 @@ int main() {
   int restoredCredits=0,restoredXp=0;
   check(readSnapshot(snapshot(ship,credits,xp),restored,restoredCredits,restoredXp) &&
     restored.docked && restoredCredits==1806 && restoredXp==40,"snapshot roundtrip");
+  State capitalHull;
+  capitalHull.maxHull = 1200; capitalHull.hull = 975;
+  capitalHull.vx = 370; capitalHull.vy = 120;
+  capitalHull.food = 75; capitalHull.parts = 45;
+  check(readSnapshot(snapshot(capitalHull, credits, xp), restored, restoredCredits, restoredXp) &&
+        restored.maxHull == 1200 && restored.hull == 975 && restored.vx == 370 &&
+        cargoUsed(restored) == 120, "v0.10 frigate hull, speed and cargo snapshot roundtrip");
+  capitalHull.maxHull = kMaximumSupportedHull + 1;
+  check(!readSnapshot(snapshot(capitalHull, credits, xp), restored, restoredCredits, restoredXp),
+        "snapshot rejects excessive hull capacity");
   check(!readSnapshot("FLIGHT nan 0 0 0 0 1 0 0 0 0",restored,restoredCredits,restoredXp),"reject nonfinite state");
   check(!readSnapshot("FLIGHT 0 0 0 0 0 1 999 0 0 0",restored,restoredCredits,restoredXp),"reject invalid cargo");
   State restoredFuel;

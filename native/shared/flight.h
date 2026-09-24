@@ -1,11 +1,16 @@
 #pragma once
 
+#include "shared/ships.h"
+
 #include <array>
 #include <string>
 
 namespace helion::flight {
 constexpr double kPi = 3.141592653589793;
 constexpr int kCargoCapacity = 8;
+constexpr int kMaximumSupportedCargo = 512;
+constexpr int kMaximumSupportedHull = 2048;
+constexpr double kMaximumSupportedSpeed = 1024.0;
 constexpr int kOrePrice = 60;
 constexpr double kStartingFuel = 100.0;
 constexpr double kFuelBurnPerSecond = 0.8;
@@ -17,9 +22,15 @@ inline constexpr std::array<Rock, 7> kRocks{{
   {0, 280, 30}, {170, 340, 38}, {-190, 380, 24},
   {330, 140, 42}, {-330, 80, 36}, {150, -300, 32}, {-230, -270, 28}
 }};
-struct Station { const char* name; double x, y; int foodBuy, foodSell, partsBuy, partsSell, oreSell, fuelPrice; };
+struct Station {
+  const char* name;
+  double x, y;
+  int foodBuy, foodSell, partsBuy, partsSell, oreSell, fuelPrice;
+  ships::PadSize maximumPad;
+};
 inline constexpr std::array<Station,2> kStations{{
-  {"KEPLER",0,0,20,16,65,52,60,2}, {"CINDER",650,0,40,32,40,32,75,3}
+  {"KEPLER",0,0,20,16,65,52,60,2,ships::PadSize::medium},
+  {"CINDER",650,0,40,32,40,32,75,3,ships::PadSize::medium}
 }};
 struct Contact {
   std::string id, kind;
@@ -61,14 +72,20 @@ struct FuelTransaction {
   double maxFuel = 0;
 };
 void step(State& state, double dt, int engineLevel = 1, double fuelConsumptionMultiplier = 1.0);
+void step(State& state, double dt, const ships::Definition& hull, int engineLevel = 1,
+          double fuelConsumptionMultiplier = 1.0);
 double speed(const State& state);
 int nearestRock(const State& state);
 int nearestStation(const State& state);
 int cargoUsed(const State& state);
 std::string trade(State& state, int& credits, bool buying, const std::string& commodity, int quantity);
+std::string trade(State& state, int& credits, bool buying, const std::string& commodity, int quantity,
+                  int cargoCapacity);
 std::string launch(State& state);
 std::string recover(State& state);
 std::string mine(State& state, bool miningEnabled = true, double cooldownMultiplier = 1.0);
+std::string mine(State& state, int cargoCapacity, bool miningEnabled = true,
+                 double cooldownMultiplier = 1.0);
 std::string dock(State& state, int& credits, int& experience, DockTransaction* transaction = nullptr);
 std::string dockTransactionLine(const DockTransaction& transaction);
 bool readDockTransaction(const std::string& line, DockTransaction& transaction);
@@ -82,6 +99,7 @@ bool readCombatStatus(const std::string& line, State& state);
 int fuelCapacity(int engineLevel);
 int hullCapacity(int hullLevel);
 std::string repair(State& state, int& credits, int hullLevel = 1);
+std::string repairToCapacity(State& state, int& credits, int maximumHull);
 std::string snapshot(const State& state, int credits, int experience);
 bool readSnapshot(const std::string& line, State& state, int& credits, int& experience);
 } // namespace helion::flight

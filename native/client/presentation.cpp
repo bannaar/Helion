@@ -10,8 +10,8 @@ namespace helion::client {
 namespace {
 bool playerFacingMessage(std::string_view line) {
   constexpr std::string_view routinePrefixes[] = {
-    "CONTACT ", "CONTACTS ", "PROFILE ", "CAREER ", "LOADOUT ",
-    "FLIGHT ", "FUEL ", "STATE ", "GALNET id="
+    "CONTACT ", "CONTACTS ", "PROFILE ", "CAREER ", "LOADOUT ", "ACTIVE SHIP ",
+    "SHIPDEF ", "OWNEDSHIP ", "SHIPYARD ", "FLIGHT ", "FUEL ", "STATE ", "GALNET id="
   };
   if (line == "GALNET END" || line == "WELCOME Helion/2") return false;
   for (const auto prefix : routinePrefixes)

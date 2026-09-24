@@ -97,16 +97,17 @@ continued free play rather than changing simulation mode.
 
 ## Current compatibility boundary
 
-`Profile` still physically stores the commander record, active ship state,
-credits, experience, upgrades, and owned/fitted modules. This is intentional:
-moving those fields into a new persistence schema would add migration risk
-without helping the current slice. Conceptually, the fields are separated as:
+`Profile` stores commander identity, progression, economy, reputation, and a
+fleet of persistent `OwnedShip` instances. The active instance is selected by
+stable ID; hull definitions remain immutable shared data. The legacy commander
+record projects the active vessel for backward compatibility, while `S` records
+persist the authoritative fleet. The ownership boundaries are:
 
 - **COMMANDER:** identity, credentials, credits, XP, progression, and future
   guild membership.
-- **SHIP:** the active `flight::State` (hull, fuel, cargo, position and
-  docking), ship upgrades, and fitted modules. The current profile has one
-  active ship; its state is server-authoritative.
+- **SHIP:** each owned instance has its own `flight::State` (hull, fuel, cargo,
+  position and docking), upgrades, modules, visual variant, livery, wear, and storage state.
+  Exactly one is active; all state and switching are server-authoritative.
 - **PERSONAL INVENTORY:** future stored commander-owned modules, salvage and
   other assets. Batch 3 keeps one small persisted salvage counter as a
   compatibility bridge rather than introducing a second inventory system.
@@ -144,9 +145,11 @@ The First Ore contract is issued by Orion under Kepler Authority jurisdiction.
 The current hostile is a Red Wake raider. Vanta is present only as a
 registered organization and future-career hook. Deterministic GalNet events
 are persisted only when these real state transitions occur. The canonical
-setting source is [`docs/lore/world-bible-v0.2.txt`](lore/world-bible-v0.2.txt);
+setting source is
+[`docs/lore/HELION_World_Bible_v0.10.docx`](lore/HELION_World_Bible_v0.10.docx);
 it is a design source, not a claim that its later guild, alien, industry,
-station, or territorial systems are implemented.
+station, security, Concordat, or territorial systems are implemented. The
+older v0.2 text remains historical reference material only.
 
 ## Extension path
 

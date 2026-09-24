@@ -194,6 +194,7 @@ Start the server in the first terminal:
 ./build-native/native/helion_server \
   4242 \
   "$HOME/.local/share/helion-server/commander.db" \
+  --environment development \
   --cert /tmp/helion-local-tls/server.crt \
   --key /tmp/helion-local-tls/server.key
 ```
@@ -326,6 +327,7 @@ Start a remotely reachable server:
 ./helion_server \
   4242 \
   /var/lib/helion/commander.db \
+  --environment development \
   --bind 0.0.0.0 \
   --cert /etc/helion/fullchain.pem \
   --key /etc/helion/private-key.pem \
@@ -389,7 +391,7 @@ Type=simple
 User=helion
 Group=helion
 WorkingDirectory=/var/lib/helion
-ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/commander.db --bind 0.0.0.0 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem --max-clients 32
+ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/commander.db --environment development --bind 0.0.0.0 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem --max-clients 32
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -567,4 +569,10 @@ LIBGL_ALWAYS_SOFTWARE=1 \
 
 ## 16. Current development limits
 
-The native client/server now forms a playable career slice with secure transport, mining, trading, missions, upgrades, persistent flight, and live contacts. Remaining major systems include combat, broader mission chains, functional hull damage and repair, deeper economy simulation, shared asteroid depletion, and richer exploration.
+The native client/server now forms a playable career slice with secure
+transport, mining, trading, missions, upgrades, combat and recovery, functional
+hull damage and repair, reputation, GalNet, persistent flight, live contacts,
+owned ships, and authoritative shipyards. Remaining major systems include
+broader mission chains, deeper regional economy simulation, shared asteroid
+depletion, player collision, multi-system travel, complete outfitting and
+shields, and richer exploration.

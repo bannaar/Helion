@@ -53,6 +53,20 @@ void check(bool condition, const char* label) {
   if (!condition) { std::cerr << "FAILED: " << label << '\n'; cleanup(); std::exit(1); }
 }
 
+std::string responseField(const std::string& response, const std::string& key) {
+  const auto start = response.find(key);
+  if (start == std::string::npos) return {};
+  const auto value = start + key.size();
+  const auto end = response.find_first_of(" \r\n", value);
+  return response.substr(value, end == std::string::npos ? std::string::npos : end - value);
+}
+
+std::size_t occurrences(const std::string& value, const std::string& needle) {
+  std::size_t count = 0, start = 0;
+  while ((start = value.find(needle, start)) != std::string::npos) { ++count; start += needle.size(); }
+  return count;
+}
+
 int freePort() {
   const int fd = socket(AF_INET, SOCK_STREAM, 0);
   check(fd >= 0, "test socket");
@@ -89,7 +103,11 @@ int connectTo(int port, bool encrypted = true) {
 
 std::string receiveUntil(int fd, const std::string& needle) {
   std::string received;
-  for (int i = 0; i < 40 && received.find(needle) == std::string::npos; ++i) {
+  const auto hasCompleteMatch = [&received, &needle] {
+    const auto match = received.find(needle);
+    return match != std::string::npos && received.find('\n', match) != std::string::npos;
+  };
+  for (int i = 0; i < 40 && !hasCompleteMatch(); ++i) {
     char bytes[1024];
     const ssize_t count = connections.at(fd)->receive(bytes, sizeof(bytes), 100);
     if (count < 0 && errno == ETIMEDOUT) continue;
@@ -103,6 +121,8 @@ std::string command(int fd,const std::string& value,const std::string& expected)
   const auto bytes=value+"\n";
   check(tlsSend(fd,bytes.data(),bytes.size(),0)==static_cast<ssize_t>(bytes.size()),"send gameplay command");
   const auto response=receiveUntil(fd,expected);
+  if (response.find(expected)==std::string::npos)
+    std::cerr << "command=" << value << " expected=" << expected << " received=" << response << '\n';
   check(response.find(expected)!=std::string::npos,"expected gameplay response");
   return response;
 }
@@ -114,6 +134,8 @@ std::string expectPersistenceFailure(int fd, const std::string& value) {
   check(tlsSend(fd, bytes.data(), bytes.size(), 0) == static_cast<ssize_t>(bytes.size()), "send rollback command");
   const auto response = receiveUntil(fd, "ERR persistence-failed");
   check(rename(movedDirectory.c_str(), testDirectory.c_str()) == 0, "restore save directory after rollback");
+  if (response.find("ERR persistence-failed") == std::string::npos)
+    std::cerr << "rollback command=" << value << " received=" << response << '\n';
   check(response.find("ERR persistence-failed") != std::string::npos, "durable action rolls back on save failure");
   return response;
 }
@@ -123,12 +145,15 @@ helion::flight::State flightState(int fd) {
   const auto start=response.find("FLIGHT ");
   const auto end=response.find('\n',start);
   helion::flight::State state; int credits=0,xp=0;
-  check(helion::flight::readSnapshot(response.substr(start,end-start),state,credits,xp),"valid live flight state");
+  const bool valid = helion::flight::readSnapshot(response.substr(start,end-start),state,credits,xp);
+  if (!valid)
+    std::cerr << "invalid flight response: " << response << '\n';
+  check(valid,"valid live flight state");
   return state;
 }
 
 void flyTo(int fd,double x,double y) {
-  for(int i=0;i<220;++i) {
+  for(int i=0;i<400;++i) {
     const auto s=flightState(fd);
     const double distance=std::hypot(x-s.x,y-s.y);
     if(distance<30 && helion::flight::speed(s)<12) {
@@ -156,7 +181,7 @@ int main(int argc, char** argv) {
   {
     std::ofstream fixture(data);
     fixture << "P\tpilot	legacy-pass-one	Pilot One\n";
-    fixture << "P\twingman	$legacy-pass-two	Wingman Two\n";
+    fixture << "P\twingman	$legacy-pass-two	Wingman Two\tfree-traders\tsidewinder\t50000\t0\n";
   }
   const int port = freePort();
   const std::string portText = std::to_string(port);
@@ -276,6 +301,67 @@ int main(int argc, char** argv) {
         "combat transitions publish deterministic GalNet events");
   flyTo(first,0,35);
   command(first,"DOCK","TRANSACTION DOCK_SALE");
+  const std::string wingmanLogin = "LOGIN wingman $legacy-pass-two\n";
+  check(tlsSend(first, wingmanLogin.data(), wingmanLogin.size(), 0) == static_cast<ssize_t>(wingmanLogin.size()),
+        "login funded legacy shipyard commander");
+  check(receiveUntil(first, "OK LOGIN").find("OK LOGIN user=wingman") != std::string::npos,
+        "shipyard commander authenticates");
+  const auto keplerInventory = command(first, "SHIPYARD LIST", "SHIPYARD END");
+  check(keplerInventory.find("id=TITAN_MULE manufacturer=Titan_Forge") != std::string::npos &&
+        keplerInventory.find("id=COMPACT_MILITIA") != std::string::npos &&
+        keplerInventory.find("id=ASTER_RAPTOR") == std::string::npos &&
+        keplerInventory.find("hull=SIDEWINDER") != std::string::npos &&
+        keplerInventory.find("variant=CIVILIAN") != std::string::npos,
+        "Kepler inventory and owned starter are authoritative");
+  command(first, "SHIPYARD BUY NOT_A_HULL", "ERR unknown-hull");
+  command(first, "SHIPYARD BUY ASTER_RAPTOR", "ERR hull-unavailable");
+  expectPersistenceFailure(first, "SHIPYARD BUY TITAN_MULE");
+  check(command(first, "PROFILE", "PROFILE").find("credits=50000") != std::string::npos,
+        "failed ship purchase rolls back credits");
+  const auto purchase = command(first, "SHIPYARD BUY TITAN_MULE", "TRANSACTION SHIP_PURCHASE");
+  const std::string muleId = responseField(purchase, "instance=");
+  check(!muleId.empty() && purchase.find("hull=TITAN_MULE") != std::string::npos &&
+        purchase.find("credits=2800") != std::string::npos, "ship purchase succeeds with server price");
+  command(first, "SHIPYARD BUY TITAN_MULE", "ERR ship-already-owned");
+  check(command(first, "PROFILE", "PROFILE").find("credits=47200") != std::string::npos,
+        "replayed purchase cannot charge twice");
+  const auto ownedBeforeSwitch = command(first, "SHIPYARD OWNED", "SHIPYARD END");
+  const auto sidewinderMarker = ownedBeforeSwitch.find("hull=SIDEWINDER");
+  check(sidewinderMarker != std::string::npos, "owned starter remains after purchase");
+  const auto sidewinderLineStart = ownedBeforeSwitch.rfind("OWNEDSHIP ", sidewinderMarker);
+  const std::string sidewinderId = responseField(ownedBeforeSwitch.substr(sidewinderLineStart), "instance=");
+  check(command(first, "SHIPYARD SWITCH " + muleId, "OK SHIP ACTIVE").find("hull=TITAN_MULE") != std::string::npos,
+        "owned ship can become active at its station");
+  command(first, "BUY food 7", "OK BOUGHT");
+  command(first, "BUY parts 7", "OK BOUGHT");
+  command(first, "BUY food 1", "ERR cargo-full");
+  check(command(first, "FLIGHT", "ACTIVE SHIP").find("cargo-capacity=14") != std::string::npos,
+        "active Mule enforces and reports its fourteen-ton hold");
+  command(first, "LAUNCH", "OK LAUNCHED");
+  command(first, "SHIPYARD SWITCH " + sidewinderId, "ERR dock-required");
+  command(first, "RECOVER", "ERR recovery-not-required");
+  closeConnection(first);
+  first = -1;
+  for (int i = 0; i < 40 && first < 0; ++i) {
+    usleep(50000);
+    first = connectTo(port);
+    if (first >= 0 && receiveUntil(first, "INFO commands=").find("WELCOME Helion/2") == std::string::npos) {
+      closeConnection(first); first = -1;
+    }
+  }
+  check(first >= 0, "reconnect after ship purchase");
+  check(tlsSend(first, wingmanLogin.data(), wingmanLogin.size(), 0) == static_cast<ssize_t>(wingmanLogin.size()),
+        "relogin purchased fleet");
+  check(receiveUntil(first, "OK LOGIN").find("OK LOGIN user=wingman") != std::string::npos,
+        "purchased fleet owner reconnects");
+  const auto reconnectedFleet = command(first, "PROFILE", "PROFILE");
+  check(reconnectedFleet.find("active-ship-id=" + muleId) != std::string::npos &&
+        reconnectedFleet.find("hull-id=TITAN_MULE") != std::string::npos &&
+        reconnectedFleet.find("owned-ships=2") != std::string::npos,
+        "owned and active ships survive reconnect");
+  check(tlsSend(first, login.data(), login.size(), 0) == static_cast<ssize_t>(login.size()), "restore pilot session");
+  check(receiveUntil(first, "OK LOGIN").find("OK LOGIN user=pilot") != std::string::npos,
+        "pilot session resumes after fleet test");
   const std::string create = "CREATE explorer synthetic-password Explorer One\n";
   check(tlsSend(first, create.data(), create.size(), 0) == static_cast<ssize_t>(create.size()), "create durable profile");
   check(receiveUntil(first, "OK CREATED").find("OK CREATED user=explorer") != std::string::npos,
@@ -288,6 +374,7 @@ int main(int argc, char** argv) {
         neutralProfile.find("corp.orion=0:Neutral") != std::string::npos &&
         neutralProfile.find("criminal.vanta=0:Neutral") != std::string::npos,
         "new commander receives neutral multi-organization standings");
+  command(first, "SHIPYARD BUY TITAN_MULE", "ERR insufficient-credits");
   command(first,"REPAIR","ERR hull-full");
   const auto missionOffer = command(first,"MISSION","MISSION 1 title=First Ore");
   check(missionOffer.find("issuer=corp.orion issuer-name=Orion_Extraction_Group") != std::string::npos &&
@@ -399,11 +486,17 @@ int main(int argc, char** argv) {
   const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   check(content.find("H\tpilot\t$scrypt$") != std::string::npos &&
         content.find("H\twingman\t$scrypt$") != std::string::npos, "all legacy profiles migrated");
+  check(content.rfind("E\tdevelopment\n", 0) == 0,
+        "legacy persistence migrates to an explicit development environment");
   check(content.find("legacy-pass-one") == std::string::npos &&
         content.find("$legacy-pass-two") == std::string::npos, "plaintext removed from current data file");
+  check(occurrences(content, "S\tpilot\t") == 1 && occurrences(content, "S\texplorer\t") == 1 &&
+        occurrences(content, "S\twingman\t") == 2,
+        "legacy migration is idempotent and purchased ownership persists exactly once");
 
   check(stat((data + ".lock").c_str(), &info) == 0 && (info.st_mode & 0777) == 0600,
         "stable owner-only lock file remains after shutdown");
+  bool strippedVariant = false;
   {
     std::ifstream input(data);
     std::ostringstream rewritten;
@@ -425,12 +518,30 @@ int main(int argc, char** argv) {
           if (i != 0) line.push_back('\t');
           line += fields[i];
         }
+      } else if (fields.size() == 33 && fields[0] == "S" && fields[1] == "explorer") {
+        fields[15] = "50";
+        line.clear();
+        for (std::size_t i = 0; i < fields.size(); ++i) {
+          if (i != 0) line.push_back('\t');
+          line += fields[i];
+        }
+      } else if (fields.size() == 33 && fields[0] == "S" && fields[1] == "wingman" &&
+                 fields[3] == "TITAN_MULE") {
+        // The initial Batch 13 S schema had no trailing visual variant.
+        fields.pop_back();
+        strippedVariant = true;
+        line.clear();
+        for (std::size_t i = 0; i < fields.size(); ++i) {
+          if (i != 0) line.push_back('\t');
+          line += fields[i];
+        }
       }
       rewritten << line << '\n';
     }
     std::ofstream output(data, std::ios::trunc);
     output << rewritten.str();
   }
+  check(strippedVariant, "old owned-ship schema fixture is present before restart");
   // Restart over the retained lock inode and verify actual persisted data.
   childPid = fork();
   check(childPid >= 0, "fork restarted server");
@@ -454,6 +565,15 @@ int main(int argc, char** argv) {
   const auto restoredFlight = flightState(restarted);
   check(restoredFlight.docked && restoredFlight.cargo == 0 && restoredFlight.hull == 50,
         "docked sold state survives reconnect");
+  const auto restoredWingmanLogin = command(restarted, "LOGIN wingman $legacy-pass-two", "OK LOGIN");
+  check(restoredWingmanLogin.find("user=wingman") != std::string::npos,
+        "older owned-ship variant schema loads after restart");
+  const auto restoredWingmanProfile = command(restarted, "PROFILE", "PROFILE");
+  check(restoredWingmanProfile.find("hull-id=TITAN_MULE") != std::string::npos &&
+        restoredWingmanProfile.find("owned-ships=2") != std::string::npos &&
+        restoredWingmanProfile.find("credits=46605") != std::string::npos,
+        "purchased fleet, active ship and debit survive server restart exactly once");
+  command(restarted, "LOGIN explorer synthetic-password", "OK LOGIN");
   expectPersistenceFailure(restarted,"REPAIR");
   const auto failedRepairProfile = command(restarted,"PROFILE","PROFILE");
   check(failedRepairProfile.find("credits=1536") != std::string::npos &&
@@ -464,7 +584,8 @@ int main(int argc, char** argv) {
   const std::string queries = "PROFILE\nSTATE\n";
   check(tlsSend(restarted, queries.data(), queries.size(), 0) == static_cast<ssize_t>(queries.size()), "query restored state");
   const std::string restored = receiveUntil(restarted, "STATE profiles=3 messages=1");
-  check(restored.find("ship=sidewinder credits=1386 experience=5") != std::string::npos &&
+  check(restored.find("ship=sidewinder") != std::string::npos &&
+        restored.find("credits=1386 experience=5") != std::string::npos &&
         restored.find("STATE profiles=3 messages=1") != std::string::npos, "profile and chat survive restart");
   expectPersistenceFailure(restarted,"TURNIN");
   const auto failedTurninProfile = command(restarted,"PROFILE","PROFILE");

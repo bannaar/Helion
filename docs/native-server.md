@@ -63,7 +63,7 @@ The command accepts an optional TCP port and persistence path, plus explicit
 bind and connection-limit options:
 
 ```sh
-./build-native/native/helion_server [port] [data-file] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem
+./build-native/native/helion_server [port] [data-file] [--environment development|test|production] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem
 ```
 
 Defaults:
@@ -72,6 +72,7 @@ Defaults:
 | --- | --- |
 | Listen port | `4242` |
 | Data file | `helion-server.db` in the current directory |
+| Runtime environment | `development` for backward compatibility |
 | Bind address | `127.0.0.1` only |
 | Transport | TLS 1.2+; certificate and key required |
 | Handshake deadline | 5 seconds; counts against the client limit |
@@ -86,12 +87,30 @@ Examples:
 ```sh
 # Local development
 ./build-native/native/helion_server 4242 ./var/helion-server.db \
+  --environment development \
   --cert ./tls/server.crt --key ./tls/server.key
 
-# Dedicated host, still listening only on loopback
+# Operator-managed production identity, still listening only on loopback
 ./build-native/native/helion_server 4242 /var/lib/helion/helion-server.db \
+  --environment production \
   --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem
 ```
+
+### Environment identity and persistence isolation
+
+Every newly written persistence file begins with a stable environment identity:
+`development`, `test`, or `production`. The server refuses to open a file whose
+identity differs from `--environment`. Existing untagged saves remain compatible
+with the default `development` environment and are atomically tagged during
+their established migration path; TEST and production deliberately reject
+untagged state. This prevents an operator from silently mounting copied writable
+state from another environment.
+
+Use separate paths, credentials, certificates, logs, and backups for each
+environment. The identity is an isolation guard, not a claim that private-test
+administration, launcher release channels, or production orchestration are
+already implemented. Current local-play, LAN, and hardware-validation guides
+therefore select `development` explicitly.
 
 `--bind` accepts a numeric IPv4 address. The default remains loopback-only;
 remote servers must opt into a non-loopback bind. All connections require
@@ -161,7 +180,7 @@ User=helion
 Group=helion
 WorkingDirectory=/opt/helion
 UMask=0077
-ExecStart=/opt/helion/build-native/native/helion_server 4242 /var/lib/helion/helion-server.db --bind 127.0.0.1 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem
+ExecStart=/opt/helion/build-native/native/helion_server 4242 /var/lib/helion/helion-server.db --environment production --bind 127.0.0.1 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -216,12 +235,20 @@ Then enter:
 Expected profile output includes the initial `sidewinder`, faction, credits,
 and experience fields.
 
+Docked clients may use `SHIPYARD LIST`, `SHIPYARD OWNED`, `SHIPYARD BUY
+<hull-id>`, and `SHIPYARD SWITCH <instance-id>`. The server validates local
+inventory, pad support, ownership, credits, and physical ship location before
+atomically persisting a transaction. New `S` records store owned ship
+instances; legacy profiles without them migrate deterministically to one
+Sidewinder and retain the existing `H` record as an active-ship projection.
+
 ## 7. Persistence and security limitations
 
-The line-oriented data file contains profile records and chat messages. New
-passwords must be 12–128 bytes; migrated legacy passwords may be shorter and
-continue to work. Passwords use OpenSSL scrypt with unique random salts and
-constant-time comparison. The server does not log password values. Treat data
+The line-oriented data file begins with an `E` environment record and then
+contains profile, owned-ship, GalNet, and chat records. New passwords must be
+12–128 bytes; migrated legacy passwords may be shorter and continue to work.
+Passwords use OpenSSL scrypt with unique random salts and constant-time
+comparison. The server does not log password values. Treat data
 files and any pre-migration backups as sensitive and never commit them.
 
 Before public deployment, add:

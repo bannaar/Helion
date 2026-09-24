@@ -41,6 +41,7 @@ For manual development, first generate a local certificate:
 ```sh
 native/scripts/helion-dev-cert /tmp/helion-local-tls
 ./build-native/native/helion_server 4242 helion-server.db \
+  --environment development \
   --cert /tmp/helion-local-tls/server.crt --key /tmp/helion-local-tls/server.key
 # In a separate terminal:
 ./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt
@@ -54,7 +55,8 @@ For the retained command-line mode, use
 The client commands are `/create username password display`, `/login username
 password`, `/chat message`, `/profile`, `/state`, `/contacts`, `/buy food 1`,
 `/sell parts 1`, `/mission`, `/accept`, `/turnin`, `/upgrade engine|hull`,
-`/repair`, `/refuel`, `/outfit LIST|BUY|FIT|REMOVE`, `/launch`, `/flight`,
+`/repair`, `/refuel`, `/outfit LIST|BUY|FIT|REMOVE`,
+`/shipyard LIST|OWNED|BUY hull-id|SWITCH instance-id`, `/launch`, `/flight`,
 `/input thrust turn brake`, `/mine`, `/dock`, and `/quit`.
 The optional server data-file stores commander profiles and GalNet
 messages durably and is replaced atomically after each write.
@@ -72,7 +74,8 @@ directory private to the server user.
    Arrow keys are aliases. The view stays north-up and follows your ship.
 3. Approach a teal ore asteroid within **85 m**, slow below **35 m/s**, and
    press **E** to extract one unit. The extractor recharges in **1.25 s**;
-   the hold carries **8 units**. Asteroids are renewable in this first sector.
+   the starter hold carries **8 units** and other hulls use their registry
+   capacity. Asteroids are renewable in this first sector.
 4. Return to the amber base marker on the radar. Within **85 m** at less
    than **35 m/s**, press **F** to dock and sell your cargo for **60 credits
    and 5 XP per unit**. A full trip pays **480 credits and 40 XP**.
@@ -95,6 +98,12 @@ FIT module-id`, and `OUTFIT REMOVE slot` are docked, server-priced operations.
 consumption, and `hull-plating` adds 25 maximum hull. `pulse-laser` is an
 owned/fittable weapon with a 240 m range, 25 damage, and a one-second server
 cooldown.
+
+Docked commanders can open the Shipyard service to inspect station inventory,
+buy an available hull, inspect owned ships, and activate a stored local ship.
+Kepler offers only the early Mule and Militia; broader medium-pad inventory is
+available at Cinder. Prices, ownership, availability, and switching are
+server-authoritative and survive reconnects.
 
 The server advances flight at a fixed 60 Hz and validates every mining and
 docking action. Clients send only bounded control inputs, never positions or
@@ -200,7 +209,7 @@ graphical activity soak (35,904 frames, 68 cycles, no OpenGL/SDL/render errors
 or disconnects) after completing and reconnecting the full Kepler career.
 
 The core render check accepts these UI fixtures in addition to flight states:
-`account`, `station`, `market`, `mission`, `outfit`, `profile`, `galnet-ui`,
+`account`, `station`, `market`, `mission`, `outfit`, `shipyard`, `profile`, `galnet-ui`,
 `options`, `graphics`, and `error`.
 
 `CORE-PERF` reports units explicitly: `glyphs`, `text-vertices`,

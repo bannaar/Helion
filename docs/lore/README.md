@@ -1,6 +1,7 @@
 # Helion world-bible integration
 
-The canonical setting and gameplay source is
+The canonical setting and gameplay source is HELION World Bible v0.10, stored in
+both [`HELION_World_Bible_v0.10.md`](HELION_World_Bible_v0.10.md) and
 [`HELION_World_Bible_v0.10.docx`](HELION_World_Bible_v0.10.docx). Version 0.10
 is the current development canon, not a claim that every described system is
 already implemented. [`world-bible-v0.2.txt`](world-bible-v0.2.txt) is retained
@@ -17,13 +18,13 @@ times, but they should use the same names and rules.
 
 | Domain | Canonical entities |
 | --- | --- |
-| Human powers | Helion Commonwealth, Free Systems Compact, Solar Directorate, Meridian League, Outer Reach |
-| Corporations and yards | Orion Extraction Group, Aster Dynamics, Titan Forge, NovaGen, Horizon Systems, Compact Yards, Meridian Shipyards, Helix Interstellar |
-| Criminal groups | Vanta Syndicate, Red Wake |
+| Human powers | Helion Commonwealth, Free Systems Compact, Solar Directorate, Meridian League, Aurelian Synod; Outer Reach is a region rather than a unified nation |
+| Corporations and yards | Orion Extraction Group, Aster Dynamics, Titan Forge, NovaGen, Horizon Systems, Helix Interstellar, Compact Yards, Meridian Shipyards |
+| Criminal groups | Vanta Syndicate, Red Wake, Wayfarers' Guild, The Hollow |
 | Interstellar institution | Helion Concordat: INSA, Gatewatch, Galactic Defense Force (GDF) |
 | Security | System Security, sovereign/local law enforcement, INSA intelligence, Blackstar Marshals |
 | Military | GDF, Commonwealth Navy, Directorate Fleet, Compact Mutual Defense Fleet, Meridian Security Fleet |
-| Alien civilizations | Khepri, Vael |
+| Alien civilizations / phenomena | Khepri, Vael, Choir, Null |
 | Alien-space systems | Helion Gates, Rifts, Unknown Space, the Veil |
 
 Use these names in UI copy, protocol-visible labels, test fixtures, mission

@@ -16,15 +16,15 @@ See [installation](docs/native-install.md) and
 [project state](docs/PROJECT_STATE.md). Native development follows World Bible
 v0.10 and grows incrementally from the validated server-authoritative slice.
 
-## Gameplay concept renders
+## Native development screenshots
 
-These presentation renders visualize native gameplay systems represented in
-the current development build. They are concept renders, not pixel-perfect
-screenshots of the SDL/OpenGL client.
+These are screenshots captured from the native SDL/OpenGL client rather than
+presentation/concept renders. They are development-state evidence, not a claim
+that the final art direction or UI is complete.
 
-| Ore extraction | Station return and trading | Live multiplayer contacts |
+| Native mining | Station interface | Flight approach |
 | --- | --- | --- |
-| ![A Helion commander extracting ore from an asteroid](docs/renders/mining-extraction.png) | ![A Helion ship returning to a station to trade and refit](docs/renders/station-return.png) | ![Helion commander and NPC ships sharing a live sector](docs/renders/multiplayer-contacts.png) |
+| ![Helion native mining view](screenshots/native-mining.png) | ![Helion native station view](screenshots/station.png) | ![Helion native flight approach view](screenshots/approach.png) |
 
 ## Repository layout
 

@@ -1,0 +1,508 @@
+/goal Develop HELION as one coherent native, server-authoritative, persistent online science-fiction universe. Treat the existing HELION repository as the authoritative implementation baseline and HELION Lore, Factions & Gameplay World Bible v0.10 as the current lore/worldbuilding authority. Extend the existing architecture incrementally, preserve compatibility, and use concrete tests/builds/artifacts as the evidence for completion.
+
+CORE DEVELOPMENT CONTRACT
+
+1. Inspect the repository before making architectural changes. Reuse existing systems and data paths rather than creating parallel implementations.
+2. Preserve HELION as a native, server-authoritative game. Clients request actions; the server validates and executes authoritative gameplay state changes.
+3. Preserve existing accounts, saves, progression, mining, missions, economy, GalNet, stations, ship ownership, reconnect behavior, security/protocol behavior, packaging, and installers unless an explicit tested migration is required.
+4. Lore must generate gameplay. Factions, corporations, geography, ships, security, crime, economy, careers, Gates, Rifts, aliens, and world events should create mechanics, opportunities, risk, consequences, and player decisions rather than exist only as background text.
+5. Prefer data-driven foundations and clean service boundaries. Do not hard-code future content into scattered gameplay conditionals.
+6. Build scalable foundations rather than attempting to implement the entire World Bible in one batch.
+7. Do not prematurely resolve the Architects, ultimate purpose of the Helion Gate network, Choir, Null, deepest Unknown Space mysteries, or other intentionally unresolved canon.
+8. HELION may take inspiration from successful sandbox/MMO architecture and economics, but must retain its own terminology, identity, content, visual language, and implementation.
+9. Do not claim deferred systems are implemented. Clearly separate implemented behavior, architectural preparation, and future work.
+10. Prefer measurable architectural improvements over speculative rewrites. Benchmark protocol, rendering, persistence, and hot-path changes where performance is a stated reason for the work.
+11. Keep repository state, documentation, CI, screenshots, and canonical design references aligned with the actual validated implementation.
+
+ONLINE SERVICE ARCHITECTURE
+
+HELION is designed around one canonical centrally hosted persistent production universe. It is not primarily a player-hosted multiplayer game.
+
+The production server is authoritative and operates independently of connected players. The universe does not belong to a client session and must continue to exist when zero players are online, except during scheduled maintenance or deliberate operator shutdown.
+
+HELION has three operational environments:
+
+DEVELOPMENT -> PRIVATE TEST -> PRODUCTION
+
+PRODUCTION
+- one canonical public HELION universe
+- persistent accounts and commanders
+- persistent owned ships/assets
+- persistent economy and markets
+- persistent faction/reputation/security/world state where implemented
+- continuous operation except scheduled maintenance
+- production state is never disposable test state
+- normal production clients ultimately connect through the HELION Launcher rather than manually selecting arbitrary hosts
+
+PRIVATE TEST
+- developers and explicitly invited civilian testers only
+- isolated from production
+- same fundamental server architecture and protocol family as production
+- separate database/state/configuration/credentials/logs/backups/server identity
+- receives patches and experimental builds before production
+- may be reset, rolled back, restored, reseeded, migrated, or intentionally manipulated
+- progress is non-canonical
+- supports both rapid functional-QA configuration and production-like economy/balance validation without contaminating production
+
+DEVELOPMENT
+- localhost/configurable developer servers
+- disposable state
+- automated tests and fixtures
+- debug builds and developer overrides
+
+Never permit accidental writable-state crossover between development, test, and production.
+
+PLAYER ENTRY / LAUNCHER DIRECTION
+
+Target production flow:
+
+HELION Launcher -> Account creation/sign-in -> Authentication -> Service/maintenance status -> Client version check -> Patch/update if required -> Launch HELION Client -> Authenticated connection to central production service
+
+Plan for at least STABLE and TEST release channels.
+- STABLE targets production and canonical progress.
+- TEST targets the private test environment and authorized users only.
+- A TEST client must not silently connect to production.
+- A STABLE client must not silently connect to TEST.
+- Developer builds may retain explicit server-address overrides for localhost and diagnostics.
+
+SERVER AUTHORITY
+
+Never trust clients to declare authoritative:
+- credits
+- XP
+- rank
+- faction standing
+- loyalty
+- reputation
+- inventory
+- cargo
+- ships
+- ship ownership
+- active ship
+- fitted modules/equipment
+- assets
+- location
+- mission completion
+- purchases
+- market transactions
+- manufacturing results
+- hull/fuel/condition
+- security consequences
+- authoritative economy results
+
+Use server validation, atomic/idempotent transactions where appropriate, and explicit persistence.
+
+NETWORK / PROTOCOL ARCHITECTURE
+
+Preserve mandatory TLS 1.2+ or newer as the transport-security boundary. Binary serialization is not a substitute for TLS, authentication, authorization, validation, replay protection, or server authority.
+
+The existing native protocol is a bounded newline/text command protocol over TLS. Evolve it deliberately rather than pretending it is JSON or replacing it blindly.
+
+Long-term protocol direction:
+- a lightweight, explicitly versioned binary framing layer over TLS
+- bounded frame sizes and bounded collection/string lengths
+- fixed-width integer types where practical
+- defined byte order/endian handling
+- explicit message type identifiers
+- protocol/schema version
+- flags/capabilities where useful
+- payload length
+- request/correlation identifier where useful
+- deterministic decoding and validation
+- clean failure for malformed, oversized, unsupported, or incompatible frames
+- explicit client/server compatibility negotiation
+- fuzz/property/boundary testing for decoders
+
+Prioritize binary migration where it materially benefits high-frequency traffic:
+- player input/control
+- flight/state snapshots
+- contacts/entity replication
+- combat state
+- market deltas/order updates
+- ship/outfitting state when high-volume
+- future simulation/event streams
+
+Low-frequency administration, diagnostics, bootstrap, or migration traffic may remain text temporarily if that keeps migration safe and maintainable.
+
+Do not use raw ABI-dependent C/C++ packed structs as the durable public wire contract. Compiler padding, alignment, enum size, architecture, endianness, and future schema evolution must not silently change network meaning.
+
+Acceptable implementation paths include:
+- a small custom explicit encoder/decoder using fixed-width fields, or
+- FlatBuffers or a similarly lightweight schema system if repository inspection and measurement justify the dependency.
+
+Do not introduce a large serialization dependency merely because it is fashionable. Compare implementation complexity, binary size, encode/decode cost, bandwidth, compatibility, and maintenance burden against the existing protocol.
+
+During migration, support a bounded compatibility strategy rather than an all-at-once flag day. Do not maintain indefinite duplicate protocol stacks after migration is complete.
+
+CLIENT ENGINE / STATE ARCHITECTURE
+
+Refactor client flow toward explicit, typed engine states rather than allowing login, menus, station gameplay, flight, reconnect, and fatal errors to accrete inside a monolithic event loop.
+
+Use the smallest state model supported by the current implementation. The architecture should be able to represent states such as:
+
+GameEngineState::BOOT
+GameEngineState::CONNECTING
+GameEngineState::LOGIN
+GameEngineState::STATION_CAREER
+GameEngineState::STATION_MARKET
+GameEngineState::STATION_OUTFITTING
+GameEngineState::STATION_SHIPYARD
+GameEngineState::ORBIT_VIEW
+GameEngineState::SPACE_FLIGHT
+GameEngineState::GALNET
+GameEngineState::OPTIONS
+GameEngineState::DISCONNECTED
+GameEngineState::FATAL_ERROR
+
+Do not create empty decorative states merely to satisfy a list. If a named gameplay state is not implemented yet, preserve a clean future transition point rather than faking gameplay.
+
+State transitions should be:
+- explicit
+- centralized enough to audit
+- deterministic
+- testable
+- driven by validated network/server results where authoritative state is involved
+- safe across reconnect/error paths
+- free of hidden duplication of server authority
+
+Client engine state is presentation/control-flow state only. Entering a client state must never itself grant authoritative docking, launch, location, credits, mission progress, purchases, ship ownership, cargo, combat results, or other server-owned state.
+
+Separate where practical:
+- network session/connection state
+- authenticated identity/session state
+- authoritative game snapshot/cache
+- engine/presentation state
+- UI/modal/menu state
+- renderer state
+
+Do not rewrite the entire client merely to introduce the state machine. Migrate incrementally and preserve legacy/core renderer compatibility.
+
+CHARACTER IDENTITY
+
+World Bible v0.10 defines character creation and national origin as canonical future systems.
+
+Players should eventually select an origin from the major playable human powers and create a persistent editable avatar portrait. National origin influences cultural presentation, biography, contacts, dialogue, and limited starting relationships without permanently locking profession, morality, allegiance, or future faction relationships.
+
+Human national visual identity should be expressed primarily through culture, grooming, clothing, materials, technology, insignia, architecture, history, and presentation. Do not biologically lock skin color or facial structure to nationality.
+
+Preserve Kepler as the common initial starting system unless a later explicit design change creates alternate starts.
+
+SHIP DESIGN PRINCIPLE
+
+Ships are not interchangeable stat containers. A ship should express:
+- manufacturer
+- operator
+- class
+- role
+- technology
+- economic purpose
+- strengths
+- weaknesses
+- career usefulness
+- visual identity
+
+There must not be one universally best ship.
+
+Keep separate:
+- canonical Ship Definition
+- Owned Ship Instance
+- fitted equipment/modules
+- visual/operator variant
+
+Human ship visual families:
+- Aster: elegant, lightweight, fast, integrated, aerospace-oriented
+- Titan: heavy, armored, powerful, exposed industrial/military engineering
+- Orion: rugged industrial machinery and extraction hardware
+- Horizon: dark/faceted sensors, electronic warfare, stealth-oriented architecture
+- Compact: modular, rugged, repairable frontier engineering
+- Meridian: commercial architecture shaped by cargo/passenger/economic efficiency
+- Helix: human scientific vessels incorporating experimental Gate/Rift systems
+
+Manufacturer and operator identity are separate. Vanta is primarily a converter/modifier of stolen or illicit hulls rather than a normal standardized manufacturer.
+
+Alien visual taxonomy:
+HUMAN = ENGINEERED
+KHEPRI = GROWN
+VAEL = MATHEMATICALLY CONSTRUCTED
+
+Do not finalize Architect ship identity prematurely. Choir and Null are not ordinary ship factions.
+
+ECONOMIC PRINCIPLE
+
+HELION should evolve toward a strongly player-influenced persistent sandbox economy while remaining usable at low population through NPC seeding and safety mechanisms.
+
+Explicitly distinguish:
+- FAUCETS: currency created by the simulation
+- SINKS: currency removed from circulation
+- TRANSFERS: existing currency moved between participants
+
+Player-to-player trade should normally transfer existing currency rather than create it.
+
+Long-term material loop:
+RESOURCE EXTRACTION -> REFINING/PROCESSING -> COMPONENTS -> MANUFACTURING -> SHIPS/MODULES/GOODS -> REGIONAL MARKETS -> USE/CONSUMPTION/DESTRUCTION -> RENEWED DEMAND
+
+NPC organizations must be capable of bootstrapping a fresh universe before players have built an industrial base. Seed essential commodities, starter equipment, modules, ships, services, NPC buy orders, NPC sell orders, and mission-driven demand/supply where appropriate.
+
+The seeded economy should not be an infinite magical warehouse. Model, as implementation matures:
+- target/finite inventories
+- replenishment/restock rates
+- NPC purchasing budgets or bounded demand
+- regional production/consumption
+- station/system specialization
+- transport cost and security risk
+- price floors/ceilings or stabilizers where needed
+- destruction/consumption and service sinks
+- taxes/fees
+- economic-event inputs
+- gradual reduction of NPC support where healthy player liquidity develops
+- safety mechanisms for low-population regions
+
+Physical goods have meaningful locations. Avoid one magical universal warehouse. Regional differences in supply, demand, price, security, taxation, resources, conflict, and events should create mining, industry, hauling, trade, speculation, piracy, escort work, smuggling, and economic warfare.
+
+Instrument economic systems from their introduction. Prepare to measure credits created/destroyed/in circulation, mission payouts, fees/taxes, mining/refining/production/destruction, NPC/player market volume, prices, regional trade, wealth concentration, stockouts, restock flow, and other relevant live-economy signals.
+
+Economic state should eventually feed GalNet through the World Bible loop:
+Gameplay -> Simulation -> News -> Player Decisions -> Simulation
+
+ECONOMY PLAYER-HANDOFF GATE
+
+Do not hand the production-like economy to ordinary players merely because buy/sell commands function.
+
+Before wider invited-player economy testing, demonstrate that the economy can bootstrap and remain usable with zero or very few players.
+
+At minimum, production-like PRIVATE TEST validation should cover:
+- essential NPC-seeded supply
+- NPC demand/buy orders where needed
+- finite or target-based inventory behavior
+- replenishment behavior
+- persistence across restart
+- production-like prices separate from the 100-credit functional QA policy
+- mission/mining/trading income scaled coherently against ship/module/service prices
+- repair/refuel/service/tax or other meaningful sinks
+- no obvious infinite-arbitrage loop
+- no duplicate-purchase/replay credit or item creation
+- telemetry sufficient to observe faucets, sinks, transfers, inventory, price, and trade flow
+- usable progression at low population without trivializing later player industry
+
+The TEST environment may retain the 100-credit abundant-supply configuration for rapid functional QA. That configuration must be clearly distinct from production-like balance testing and must never redefine canonical production prices.
+
+SYSTEM SECURITY & FRONTIER MODEL
+
+Every charted human system has a canonical security rating from -5.0 through +5.0 inclusive, valid only in 0.2 increments.
+
+Security classes:
+- +0.2 to +5.0: High Security
+- 0.0: Zero Space
+- -0.2 to -2.2: Supported Low Security
+- -2.4 to -4.0: Deep Low Security
+- -4.2 to -5.0: Extreme Low Security
+
+Higher ratings correspond to stronger infrastructure, local/faction policing, customs, Concordat/GDF presence, national naval presence, rescue capability, and safer civilian/industrial traffic.
+
+In High Security, unprovoked player aggression is criminal and may generate criminal flags, bounties/warrants, police response, faction response, GDF reinforcement, docking/service restrictions, and escalation for repeated/serious offenses.
+
+0.0 Zero Space is unclaimed/uncontrolled. Player aggression receives no automatic general criminal penalty or automatic Concordat/faction bounty merely because the attack occurred there. Local NPC groups or player organizations may still react according to their own interests and standings.
+
+In Supported Low Security (-0.2 to -2.2), a small GDF response may assist an attacked player who is Neutral or better with relevant authorities when operational conditions permit.
+
+In Deep Low Security (-2.4 to -4.0), routine rescue is not dependable, but GDF expeditionary anti-piracy fleets may appear as events.
+
+Extreme Low Security (-4.2 to -5.0) has essentially no dependable outside response.
+
+NPC mining may occur across High and Low Security. Low Security NPC industrial operations should normally use armed escorts.
+
+Security ratings may change over time only in 0.2 increments and should change because of meaningful simulation causes such as piracy, player crime, anti-piracy campaigns, faction investment, war, loss of infrastructure, Gate disruption, major events, or successful stabilization. Do not randomly oscillate ratings.
+
+HELION CONCORDAT
+
+World Bible v0.10 establishes the Helion Concordat as the independent umbrella institution for INSA, Gatewatch, and the Galactic Defense Force.
+
+Founding principle:
+"No flag owns the road between stars."
+
+The Concordat is not a galactic government. It is politically and legally subordinate to no external sovereign power and is governed internally by the Crossroads Charter, Concordat law, tribunals, inspectorates, rules of engagement, and scientific safety protocols.
+
+The three coequal arms are:
+
+INSA
+- intelligence
+- counterintelligence
+- signals intelligence
+- covert investigation
+- organized-crime/piracy-network analysis
+- strategic threat warning
+- specialized intelligence/retrieval fleet
+- Blackstar Marshals as elite field/retrieval/counterterrorist arm
+
+GATEWATCH
+- Gate science
+- Gate maintenance and protection
+- anomaly observation
+- experimental and classified technology
+- xenological/archaeological Gate-related research
+- specialized research, containment, exploration, and Gate-defense fleet
+
+GDF
+- independent full-spectrum naval force
+- civilian/shipping-lane protection
+- route and Connector Gate security
+- anti-piracy
+- rescue/humanitarian operations
+- expeditionary operations
+- major military response
+- full command, combat, defense, reconnaissance, ECM/ECCM, logistics, sustainment, hospital/rescue, and special-operations fleet structure
+
+Operational shorthand:
+INSA knows. Gatewatch understands. The GDF acts.
+
+INSA and Gatewatch maintain specialized fleets for their own missions. The GDF maintains the much larger full-spectrum fleet.
+
+The GDF may receive superior classified operational technology through INSA threat intelligence/captured systems and Gatewatch experimental science. Selected dangerous systems are governed by the Three-Key Doctrine requiring INSA intelligence justification, Gatewatch technical authorization, and GDF operational authorization.
+
+Do not collapse INSA into ordinary police. Do not turn Gatewatch into a conventional navy. Do not reduce the GDF to patrol boats.
+
+TEST SERVER PRINCIPLE
+
+The private test universe is deliberately controllable for development and QA.
+
+Two roles must remain distinct:
+DEV_ADMIN
+INVITED_TESTER
+
+DEV_ADMIN may use secured TEST-only developer and test administration functions for existing systems, including where implemented:
+- credits
+- XP
+- rank
+- faction standing
+- loyalty
+- reputation
+- inventory
+- cargo
+- commodities
+- modules/equipment
+- ships
+- ship ownership
+- active ship
+- hull/fuel/condition
+- location
+- station/system location
+- assets
+- missions and mission state
+- progression
+- permits/licenses/unlocks
+- selected economy/test-world state
+
+INVITED_TESTER MUST NOT have access to developer/admin commands or direct state-manipulation functions. This restriction is imperative and must be enforced server-side rather than by hidden UI.
+
+Every privileged test/admin operation must generate detailed audit records including identity, environment, action, target, relevant before/requested/after values, result, reason/failure, and correlation/request identity where appropriate. Never log passwords, private keys, or authentication/session secrets.
+
+The TEST server may be reset, rolled back, restored, reseeded, patched, migrated, or run with experimental features.
+
+On TEST, normal purchasable test items should be abundantly seeded at 100 credits for rapid functional QA. TEST pricing must not modify canonical production prices.
+
+On TEST, normal ship eligibility requirements are void for testers: faction, reputation, loyalty, rank, career, license, permit, and ordinary progression requirements do not prevent purchase/piloting of test-available ships. This convenience does not grant INVITED_TESTER administrative commands.
+
+PRODUCTION ADMINISTRATION PRINCIPLE
+
+Production requires a separate secured operations/administration control plane for service health, security, monitoring, moderation, maintenance, deployment, backup, recovery, and incident response.
+
+Production administration must not become a casual version of the TEST developer console.
+
+Use least privilege and role-based access. Prepare roles such as OWNER, OPS_ADMIN, SECURITY_ADMIN, GAME_MASTER, SUPPORT, and READ_ONLY_OPERATOR as architecture evolves.
+
+Use dedicated admin identities, strong authentication, MFA-ready design, session expiration/revocation, private administrative access where practical, complete audit logging, and explicit reasons/confirmation for high-risk production mutations.
+
+Never hard-code secrets. Never commit credentials/tokens/private keys. Never trust client-declared roles.
+
+DAILY MAINTENANCE
+
+Production has a configurable scheduled daily maintenance window.
+
+Design for lifecycle states such as:
+ONLINE
+MAINTENANCE_SOON
+DRAINING
+MAINTENANCE
+UPDATING
+RESTARTING
+DEGRADED
+OFFLINE
+
+Target lifecycle:
+ONLINE -> warnings -> stop accepting new sessions -> gracefully drain/disconnect -> flush authoritative state -> checkpoint/backup -> stop -> deploy/migrate -> integrity/health checks -> restart -> reopen -> ONLINE
+
+Maintenance time and warning intervals are configurable, not permanently hard-coded gameplay constants.
+
+RELEASE PIPELINE
+
+Target promotion flow:
+DEVELOPMENT -> automated tests -> local integration -> PRIVATE TEST -> migration/multiplayer/invited-tester/regression/soak validation -> explicit production approval -> scheduled maintenance -> backup -> deploy -> migrate -> health validation -> reopen production
+
+Never automatically promote a build to production solely because it deployed successfully to TEST.
+
+REPOSITORY / CI / PRESENTATION INTEGRITY
+
+Treat source-control state as part of engineering correctness.
+
+- Preserve validated local milestone work before beginning the next batch.
+- Do not reconstruct missing local source from reports when the actual working tree can be preserved and pushed.
+- Keep online development branches synchronized through explicit commits/PRs rather than silent history rewrites.
+- Keep the repository-local World Bible pointer aligned with the currently approved canon version.
+- Do not leave stale documentation claiming old architectural or gameplay state after validated replacements exist.
+- Distinguish actual native-client screenshots from concept art or presentation renders.
+- Prefer actual captured build evidence in README/project-state material when showing implemented gameplay.
+- Remove or clearly label superseded renders so repository presentation does not imply they are current client output.
+- CI graphical tests must execute in an environment that actually supplies the required display/context, such as Xvfb on headless GitHub runners, rather than failing merely because X11 is absent.
+- Do not mark CI green by skipping meaningful tests without an explicit documented reason.
+
+SECURITY / OPERATIONS PRINCIPLE
+
+Design production so it can be safely operated and recovered.
+
+Prepare for:
+- structured logs
+- immutable-style privileged audit trails
+- metrics and health checks
+- authentication/authorization monitoring
+- rate limiting and abuse protection
+- secure sessions
+- transaction replay/duplication defense
+- database health monitoring
+- scheduled backups
+- verified restores
+- deployment rollback
+- alerting
+- incident response
+- service/economy/security monitoring
+
+Server authority is the primary gameplay-state anti-cheat defense. Do not introduce invasive kernel-level client anti-cheat merely to satisfy this principle.
+
+PLAYER PROGRESSION
+
+Preserve the intended broad progression:
+Kepler -> Sidewinder -> First Ore -> Economy -> Credits/Reputation -> Ships/Careers -> Factions/Corporations -> Multi-system activity -> Concordat/Gatewatch contact -> Rifts/Unknown Space -> Alien civilizations -> deeper Helion mysteries
+
+Careers should include and interconnect miner, trader, hauler, explorer, salvager, bounty hunter, smuggler, pirate, corporate contractor, national military pilot, Compact militia, mercenary, scientist, alien archaeologist, Gatewatch operative, and future Concordat-aligned intelligence/GDF opportunities where appropriate.
+
+ENGINEERING DISCIPLINE
+
+For every implementation batch:
+1. Inspect repository/current working tree first.
+2. Identify existing architecture and completed prior-batch work.
+3. Reuse existing systems.
+4. Reconcile canon/implementation conflicts explicitly.
+5. Make the smallest coherent extension that satisfies the batch.
+6. Implement rather than stopping at a plan unless genuinely blocked.
+7. Add deterministic/idempotent migrations where required.
+8. Add or update tests.
+9. Run established validation.
+10. Repair failures without weakening tests.
+11. Rerun validation after repairs.
+12. Review final diff for regressions, duplication, accidental scope expansion, environment leakage, protocol compatibility, and client-state authority leaks.
+13. Report exact commands/results and distinguish implemented, deferred, and blocked work.
+14. When optimizing bandwidth/CPU/latency, report before/after measurements or explain why reliable measurement is not yet available.
+15. Before wider player handoff, verify seeded-economy readiness and production-like balance separately from rapid 100-credit TEST QA.
+
+Do not discard unrelated user work, silently rewrite functioning architecture, perform destructive Git operations unnecessarily, push/merge without authorization, weaken tests for a green result, or guess when repository inspection can determine the answer.
+
+HELION should grow as one coherent game, simulation, and online service rather than a collection of disconnected prototypes.

@@ -72,8 +72,10 @@ def run_client(client, port, cert, captures, phase):
         raise AssertionError(
             f"graphical acceptance {phase} failed ({result.returncode})\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
-    if "actual=3.3-core" not in result.stdout or "renderer-class=hardware" not in result.stdout:
-        raise AssertionError(f"acceptance did not use hardware OpenGL 3.3 core\n{result.stdout}")
+    expected_renderer = "software" if os.environ.get("HELION_HEADLESS_SOFTWARE_GL") == "1" else "hardware"
+    if ("actual=3.3-core" not in result.stdout or
+            f"renderer-class={expected_renderer}" not in result.stdout):
+        raise AssertionError(f"acceptance did not use the expected OpenGL 3.3 core renderer\n{result.stdout}")
     return result.stdout
 
 

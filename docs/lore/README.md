@@ -1,8 +1,10 @@
 # Helion world-bible integration
 
 The canonical setting and gameplay source is
-[`world-bible-v0.2.txt`](world-bible-v0.2.txt). Version 0.2 is an approved
-design source, not a claim that every described system is already implemented.
+[`HELION_World_Bible_v0.10.docx`](HELION_World_Bible_v0.10.docx). Version 0.10
+is the current development canon, not a claim that every described system is
+already implemented. [`world-bible-v0.2.txt`](world-bible-v0.2.txt) is retained
+as a historical reference and must not override later canon.
 
 ## Canonical rule
 
@@ -16,10 +18,11 @@ times, but they should use the same names and rules.
 | Domain | Canonical entities |
 | --- | --- |
 | Human powers | Helion Commonwealth, Free Systems Compact, Solar Directorate, Meridian League, Outer Reach |
-| Corporations | Orion Extraction Group, Aster Dynamics, Titan Forge, NovaGen, Horizon Systems, Helix Interstellar |
+| Corporations and yards | Orion Extraction Group, Aster Dynamics, Titan Forge, NovaGen, Horizon Systems, Compact Yards, Meridian Shipyards, Helix Interstellar |
 | Criminal groups | Vanta Syndicate, Red Wake |
-| Security | System Security, faction law enforcement, INSA, Gatewatch |
-| Military | Commonwealth Navy, Directorate Fleet, Compact Mutual Defense Fleet, Meridian Security Fleet |
+| Interstellar institution | Helion Concordat: INSA, Gatewatch, Galactic Defense Force (GDF) |
+| Security | System Security, sovereign/local law enforcement, INSA intelligence, Blackstar Marshals |
+| Military | GDF, Commonwealth Navy, Directorate Fleet, Compact Mutual Defense Fleet, Meridian Security Fleet |
 | Alien civilizations | Khepri, Vael |
 | Alien-space systems | Helion Gates, Rifts, Unknown Space, the Veil |
 

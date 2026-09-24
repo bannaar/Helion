@@ -145,9 +145,11 @@ The First Ore contract is issued by Orion under Kepler Authority jurisdiction.
 The current hostile is a Red Wake raider. Vanta is present only as a
 registered organization and future-career hook. Deterministic GalNet events
 are persisted only when these real state transitions occur. The canonical
-setting source is [`docs/lore/world-bible-v0.2.txt`](lore/world-bible-v0.2.txt);
+setting source is
+[`docs/lore/HELION_World_Bible_v0.10.docx`](lore/HELION_World_Bible_v0.10.docx);
 it is a design source, not a claim that its later guild, alien, industry,
-station, or territorial systems are implemented.
+station, security, Concordat, or territorial systems are implemented. The
+older v0.2 text remains historical reference material only.
 
 ## Extension path
 

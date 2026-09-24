@@ -1,5 +1,6 @@
 #include "client/core_renderer.h"
 #include "client/cockpit.h"
+#include "shared/ships.h"
 
 #include <algorithm>
 #include <array>
@@ -117,14 +118,70 @@ std::array<float, 2> worldPoint(double cx, double cy, double yaw, float x, float
 }
 
 void addShip(Vertices& vertices, double x, double y, double yaw, const PresentationColor& color,
-             bool destroyed, float size = 1.0f) {
+             bool destroyed, float size = 1.0f, std::string_view hullId = {}) {
+  const auto* hull = ships::find(hullId);
+  if (hull && hull->padSize == ships::PadSize::medium) size *= 1.25f;
   const auto point = [=](float px, float py) { return worldPoint(x, y, yaw, px * size, py * size); };
-  const auto nose = point(0, 24);
-  const auto left = point(-16, -13);
-  const auto right = point(16, -13);
-  const auto center = point(0, -4);
-  addTriangle(vertices, nose[0], nose[1], left[0], left[1], center[0], center[1], color);
-  addTriangle(vertices, nose[0], nose[1], center[0], center[1], right[0], right[1], color);
+  const auto fill = [&](float ax, float ay, float bx, float by, float cx, float cy) {
+    const auto a = point(ax, ay), b = point(bx, by), c = point(cx, cy);
+    addTriangle(vertices, a[0], a[1], b[0], b[1], c[0], c[1], color);
+  };
+  const std::string_view manufacturer = hull ? hull->manufacturerId : std::string_view{};
+  if (hullId == "ASTER_CLIPPER") {
+    // Slender command bow, broad commercial hold, and paired aft propulsion.
+    fill(0, 34, -10, 7, 10, 7);
+    fill(-10, 7, -17, -16, 17, -16);
+    fill(-10, 7, 17, -16, 10, 7);
+    fill(-17, -9, -21, -28, -10, -18);
+    fill(17, -9, 10, -18, 21, -28);
+  } else if (hullId == "COMMONWEALTH_VALIANT") {
+    // A broad armored corvette rather than an enlarged utility shuttle.
+    fill(-9, 27, -23, 6, 9, 27);
+    fill(9, 27, -23, 6, 23, 6);
+    fill(-23, 6, -19, -20, 19, -20);
+    fill(-23, 6, 19, -20, 23, 6);
+    fill(-19, -20, -13, -27, 13, -27);
+    fill(-19, -20, 13, -27, 19, -20);
+  } else if (hullId == "COMMONWEALTH_INTREPID") {
+    // Frigate-length service spine with separate port and starboard sections.
+    fill(0, 37, -11, 13, 11, 13);
+    fill(-11, 13, -9, -30, 9, -30);
+    fill(-11, 13, 9, -30, 11, 13);
+    fill(-9, 10, -26, -3, -24, -23);
+    fill(-9, 10, -24, -23, -9, -24);
+    fill(9, 10, 24, -23, 26, -3);
+    fill(9, 10, 9, -24, 24, -23);
+  } else if (hullId == "COMPACT_RANGER") {
+    // Exposed modular spine and expedition pods distinguish it from Militia.
+    fill(0, 32, -8, 12, 8, 12);
+    fill(-8, 12, -7, -31, 7, -31);
+    fill(-8, 12, 7, -31, 8, 12);
+    fill(-8, 7, -24, 4, -23, -16);
+    fill(-8, 7, -23, -16, -8, -14);
+    fill(8, 7, 23, -16, 24, 4);
+    fill(8, 7, 8, -14, 23, -16);
+  } else if (manufacturer == "ASTER_DYNAMICS") {
+    const auto nose = point(0, 30), tail = point(0, -18), left = point(-18, -8), right = point(18, -8);
+    addTriangle(vertices, nose[0], nose[1], left[0], left[1], tail[0], tail[1], color);
+    addTriangle(vertices, nose[0], nose[1], tail[0], tail[1], right[0], right[1], color);
+  } else if (manufacturer == "TITAN_FORGE") {
+    const auto noseL = point(-9, 23), noseR = point(9, 23), left = point(-20, -13), right = point(20, -13);
+    const auto rearL = point(-16, -22), rearR = point(16, -22);
+    addTriangle(vertices, noseL[0], noseL[1], left[0], left[1], rearL[0], rearL[1], color);
+    addTriangle(vertices, noseL[0], noseL[1], rearL[0], rearL[1], noseR[0], noseR[1], color);
+    addTriangle(vertices, noseR[0], noseR[1], rearL[0], rearL[1], rearR[0], rearR[1], color);
+    addTriangle(vertices, noseR[0], noseR[1], rearR[0], rearR[1], right[0], right[1], color);
+  } else if (manufacturer == "COMPACT_YARDS") {
+    const auto nose = point(0, 23), spineL = point(-7, -20), spineR = point(7, -20);
+    const auto podL = point(-21, -15), railL = point(-18, 8), podR = point(21, -15), railR = point(18, 8);
+    addTriangle(vertices, nose[0], nose[1], spineL[0], spineL[1], spineR[0], spineR[1], color);
+    addTriangle(vertices, railL[0], railL[1], podL[0], podL[1], spineL[0], spineL[1], color);
+    addTriangle(vertices, railR[0], railR[1], spineR[0], spineR[1], podR[0], podR[1], color);
+  } else {
+    const auto nose = point(0, 24), left = point(-16, -13), right = point(16, -13), center = point(0, -4);
+    addTriangle(vertices, nose[0], nose[1], left[0], left[1], center[0], center[1], color);
+    addTriangle(vertices, nose[0], nose[1], center[0], center[1], right[0], right[1], color);
+  }
   if (destroyed) {
     const auto a = point(-18, -18), b = point(18, 18), c = point(18, -18), d = point(-18, 18);
     addLine(vertices, a[0], a[1], b[0], b[1], 5.0f, {1.0f, 0.20f, 0.20f});
@@ -463,7 +520,7 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
     addLine(dynamic, static_cast<float>(snapshot.player.x), static_cast<float>(snapshot.player.y),
       static_cast<float>(targetIt->x), static_cast<float>(targetIt->y), 7.0f, {1.0f, 0.32f, 0.65f});
   addShip(dynamic, snapshot.player.x, snapshot.player.y, snapshot.player.yaw,
-    {0.30f, 0.86f, 0.95f}, snapshot.player.destroyed, 1.0f);
+    {0.30f, 0.86f, 0.95f}, snapshot.player.destroyed, 1.0f, snapshot.ui.activeHullId);
   if (dynamic.size() > kMaxCoreDynamicVertices) {
     dynamic.resize(kMaxCoreDynamicVertices - kMaxCoreDynamicVertices % 3);
   }
@@ -509,7 +566,7 @@ bool CoreRenderer::render(int width, int height, const PresentationSnapshot& sna
   addHudQuad(hud, layout, 220, 145, 110, 10, grid);
   addHudQuad(hud, layout, 220, 145, 110 * clampHudValue(snapshot.player.fuel, snapshot.player.maxFuel), 10, teal);
   addHudQuad(hud, layout, 220, 170, 110, 10, grid);
-  addHudQuad(hud, layout, 220, 170, 110 * clampHudValue(flight::cargoUsed(snapshot.player), flight::kCargoCapacity), 10, amber);
+  addHudQuad(hud, layout, 220, 170, 110 * clampHudValue(flight::cargoUsed(snapshot.player), snapshot.ui.cargoCapacity), 10, amber);
   addHudQuad(hud, layout, 820, 120, 110, 8, grid);
   addHudQuad(hud, layout, 820, 120, 110 * clampHudValue(snapshot.player.weaponCooldown, 1.0), 8, red);
   addHudQuad(hud, layout, 820, 145, 22, 22, snapshot.player.docked ? amber : grid);

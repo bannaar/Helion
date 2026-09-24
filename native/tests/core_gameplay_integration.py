@@ -107,7 +107,9 @@ def check_core_context(client):
     env["SDL_VIDEODRIVER"] = "x11"
     result = subprocess.run([client, "--renderer", "core", "--graphics-info"],
                             env=env, capture_output=True, text=True, timeout=15)
-    if result.returncode != 0 or "actual=3.3-core" not in result.stdout or "renderer-class=hardware" not in result.stdout:
+    expected_renderer = "software" if os.environ.get("HELION_HEADLESS_SOFTWARE_GL") == "1" else "hardware"
+    if (result.returncode != 0 or "actual=3.3-core" not in result.stdout or
+            f"renderer-class={expected_renderer}" not in result.stdout):
         raise AssertionError(f"core context probe failed: {result.stdout}\n{result.stderr}")
 
 

@@ -28,6 +28,9 @@ int main() {
   const auto summary = reputationSummary(neutral);
   std::map<std::string, int> restored;
   check(parseReputationSummary(summary, restored) && restored == neutral, "reputation summary round trip");
+  check(parseReputationSummary("authority.kepler=0:Neutral,corp.orion=0:Neutral,criminal.vanta=0:Neutral,criminal.red_wake=0:Neutral,faction.commonwealth=0:Neutral", restored) &&
+        restored.at("corp.aster") == 0 && restored.at("faction.compact") == 0,
+        "legacy reputation summaries gain new organizations neutrally");
   check(!parseReputationSummary("unknown.organization=0:Neutral", restored), "unknown reputation id rejected");
   check(!parseReputationSummary("authority.kepler=101:Allied", restored), "out-of-range reputation rejected");
   return failures == 0 ? 0 : 1;

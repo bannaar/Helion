@@ -1,9 +1,12 @@
 node_modules
-node_modules
 .vercel/output/
 .vscode/
 native/build/
 build/
+/_CPack_Packages/
+/helion*.deb
+/helion*.tar.gz
+/helion-server-test-*/
 helion-server.db
 helion-server.db-shm
 helion-server.db-wal

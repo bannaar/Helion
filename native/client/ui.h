@@ -18,6 +18,7 @@ enum class UiScreen {
   market,
   mission,
   outfitting,
+  shipyard,
   profile,
   galnet,
   options,
@@ -31,6 +32,7 @@ enum class UiControlId {
   stationMarket,
   stationMission,
   stationOutfitting,
+  stationShipyard,
   stationProfile,
   stationGalnet,
   stationOptions,
@@ -50,6 +52,9 @@ enum class UiControlId {
   outfitBuy,
   outfitFit,
   outfitRemove,
+  shipyardRow,
+  shipyardBuy,
+  shipyardSwitch,
   galnetEntry,
   optionsTelemetry,
   dismiss, help, introDismiss, accountName, accountPassword, accountDisplay,
@@ -108,6 +113,29 @@ struct UiGalnetEntry {
   std::string headline;
 };
 
+struct UiShipyardRow {
+  std::string hullId;
+  std::string instanceId;
+  std::string displayName;
+  std::string manufacturer;
+  std::string operatorName;
+  std::string shipClass;
+  std::string role;
+  std::string padSize;
+  std::string state;
+  int price = 0;
+  int speed = 0;
+  int boost = 0;
+  int acceleration = 0;
+  int handling = 0;
+  int hull = 0;
+  int shields = 0;
+  int cargo = 0;
+  double jumpRange = 0;
+  bool owned = false;
+  bool active = false;
+};
+
 struct UiState {
   UiScreen screen = UiScreen::account;
   int selected = 0;
@@ -134,6 +162,9 @@ struct UiState {
   int engineLevel = 1;
   int hullLevel = 1;
   int salvage = 0;
+  int cargoCapacity = flight::kCargoCapacity;
+  std::string activeHullId = "SIDEWINDER";
+  std::string activeHullName = "Sidewinder";
   int missionStage = 0;
   bool missionOreMined = false;
   std::string missionTitle = "First Ore";
@@ -145,6 +176,7 @@ struct UiState {
   std::vector<std::string> ownedModules;
   std::array<std::string, 4> fittedModules{};
   std::vector<UiGalnetEntry> galnet;
+  std::vector<UiShipyardRow> shipyardRows;
 };
 
 std::string uiScreenName(UiScreen screen);

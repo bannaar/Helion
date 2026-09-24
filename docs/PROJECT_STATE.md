@@ -1,8 +1,9 @@
 # Helion project state
 
-Helion has two runtimes. The browser prototype remains in `src/` and is not
-part of the native release work. The native runtime is a C++17 SDL2/OpenGL
-client plus a POSIX server under `native/`.
+Helion's authoritative implementation and release path is the native C++17
+SDL2/OpenGL client plus POSIX TLS server under `native/`. The browser prototype
+remains in `src/` as legacy reference material and is not a peer authority
+path, production universe, or part of the native release.
 
 The native client is playable today. A commander can create an account or log
 in through bounded graphical fields, launch from Kepler, fly with W/S/A/D
@@ -36,12 +37,26 @@ the commander in flight.
 Other clients receive live positions through `/contacts`, and the client
 renders commander ships alongside NPC traffic.
 
+Batch 13 adds a canonical eight-hull native registry, manufacturer/operator and
+visual profiles, persistent owned ship instances, deterministic migration of
+legacy Sidewinders, active-ship selection, Small/Medium pad declarations, and
+authoritative Kepler/Cinder shipyards. Hull cargo, acceleration, top speed,
+handling, durability, fuel, mining compatibility, and price now affect the
+native game. The cockpit shipyard browses specs and owned vessels and switches
+only between ships physically stored at the current station. Exact definitions,
+balance, persistence, and canon reconciliation are in `docs/native-ships.md`.
+
 Transport is mandatory TLS 1.2 or newer. The server requires a certificate and
 private key and never emits a plaintext greeting. The client validates trust,
 expiration, and DNS/IP Subject Alternative Name before sending commands. Local
 play generates a private loopback certificate automatically. The server uses
 scrypt password hashes, owner-only save files, a stable save lock, bounded
 line decoding, connection limits, timeouts, and atomic persistence.
+Persistence files now carry a server-validated `development`, `test`, or
+`production` environment identity. A mismatched process refuses the file;
+untagged legacy state is accepted and atomically migrated only by the
+backward-compatible development environment. This establishes state isolation,
+not the deferred TEST administration or production operations control planes.
 
 The combined install includes `helion_server`, `helion_client`,
 `helion-dev-cert`, `helion-play`, a desktop entry, icon, and documentation.

@@ -200,7 +200,7 @@ void render(int width, int height, const View& v) {
   text(24,18,"HELION",white,3); text(24,48,"KEPLER REACH / MINING SECTOR",muted,1.5f);
   text(400,20,v.connected ? (v.authenticated ? "COMMAND LINK / ONLINE" : "COMMAND LINK / SIGN IN") : "COMMAND LINK / OFFLINE",
        v.connected ? teal : amber,1.5f);
-  text(400,46,"SIDEWINDER / "+std::string(v.ship.docked ? "DOCKED" : "FREE FLIGHT"),white,1.5f);
+  text(400,46,v.ui.activeHullName+" / "+std::string(v.ship.docked ? "DOCKED" : "FREE FLIGHT"),white,1.5f);
   const auto kepler = v.reputation.find("authority.kepler");
   const auto orion = v.reputation.find("corp.orion");
   const auto redWake = v.reputation.find("criminal.red_wake");

@@ -66,6 +66,12 @@ int main() {
     "career action remains domain-validated");
   check(helion::protocol::parseRequest("OUTFIT LIST").command == Command::outfit, "OUTFIT LIST accepted");
   check(helion::protocol::parseRequest("OUTFIT BUY mining-mk2").command == Command::outfit, "OUTFIT BUY accepted");
+  check(helion::protocol::parseRequest("SHIPYARD LIST").command == Command::shipyard, "SHIPYARD LIST accepted");
+  const auto shipPurchase = helion::protocol::parseRequest("SHIPYARD BUY TITAN_MULE");
+  check(shipPurchase.command == Command::shipyard && shipPurchase.first == "BUY" && shipPurchase.second == "TITAN_MULE",
+    "SHIPYARD BUY accepted");
+  check(helion::protocol::parseRequest("SHIPYARD SWITCH ship-1234-0002").command == Command::shipyard,
+    "SHIPYARD SWITCH accepted");
   const auto engineUpgrade = helion::protocol::parseRequest("UPGRADE engine");
   const auto hullUpgrade = helion::protocol::parseRequest("UPGRADE hull");
   check(engineUpgrade.command == Command::upgrade && engineUpgrade.first == "engine", "engine upgrade accepted");
@@ -74,6 +80,8 @@ int main() {
     check(helion::protocol::parseRequest(invalidUpgrade).command == Command::invalid, "invalid upgrade rejected");
   for (const auto* invalidOutfit : {"OUTFIT", "OUTFIT LIST extra", "OUTFIT BUY", "OUTFIT REMOVE invalid extra"})
     check(helion::protocol::parseRequest(invalidOutfit).command == Command::invalid, "invalid outfit rejected");
+  for (const auto* invalidShipyard : {"SHIPYARD", "SHIPYARD LIST extra", "SHIPYARD BUY", "SHIPYARD SELL TITAN_MULE"})
+    check(helion::protocol::parseRequest(invalidShipyard).command == Command::invalid, "invalid shipyard rejected");
   for (const auto* invalidCombat : {"FIRE", "FIRE bad target", "FIRE ", "RECOVER extra"})
     check(helion::protocol::parseRequest(invalidCombat).command == Command::invalid, "invalid combat request rejected");
   check(helion::protocol::parseRequest("LOGIN pilot").error == "usage=LOGIN username password", "malformed LOGIN rejected");

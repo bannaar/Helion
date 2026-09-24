@@ -15,6 +15,7 @@ std::string uiScreenName(UiScreen screen) {
     case UiScreen::market: return "MARKET / COMMODITIES";
     case UiScreen::mission: return "MISSION / CONTRACTS";
     case UiScreen::outfitting: return "OUTFITTING / LOADOUT";
+    case UiScreen::shipyard: return "SHIPYARD / FLEET";
     case UiScreen::profile: return "PROFILE / PROGRESSION";
     case UiScreen::galnet: return "GALNET / NEWS";
     case UiScreen::options: return "OPTIONS / CONTROLS";
@@ -33,6 +34,7 @@ std::string uiControlName(UiControlId control) {
     case UiControlId::stationMarket: return "station-market";
     case UiControlId::stationMission: return "station-mission";
     case UiControlId::stationOutfitting: return "station-outfitting";
+    case UiControlId::stationShipyard: return "station-shipyard";
     case UiControlId::stationProfile: return "station-profile";
     case UiControlId::stationGalnet: return "station-galnet";
     case UiControlId::stationOptions: return "station-options";
@@ -52,6 +54,9 @@ std::string uiControlName(UiControlId control) {
     case UiControlId::outfitBuy: return "outfit-buy";
     case UiControlId::outfitFit: return "outfit-fit";
     case UiControlId::outfitRemove: return "outfit-remove";
+    case UiControlId::shipyardRow: return "shipyard-row";
+    case UiControlId::shipyardBuy: return "shipyard-buy";
+    case UiControlId::shipyardSwitch: return "shipyard-switch";
     case UiControlId::galnetEntry: return "galnet-entry";
     case UiControlId::optionsTelemetry: return "options-telemetry";
     case UiControlId::dismiss: return "dismiss";
@@ -90,6 +95,8 @@ std::string uiButtonLabel(UiControlId control) {
     case UiControlId::outfitBuy: return "BUY";
     case UiControlId::outfitFit: return "FIT";
     case UiControlId::outfitRemove: return "REMOVE";
+    case UiControlId::shipyardBuy: return "PURCHASE";
+    case UiControlId::shipyardSwitch: return "MAKE ACTIVE";
     case UiControlId::dismiss: return "BACK / ENTER OR ESC";
     case UiControlId::help: return "HELP / F9";
     case UiControlId::introDismiss: return "CONTINUE / SKIP INTRO";
@@ -144,6 +151,7 @@ int uiMaxScroll(const UiState& state) {
     constexpr int visible = 9;
     return std::max(0, static_cast<int>(state.galnet.size()) - visible);
   }
+  if (state.screen == UiScreen::shipyard) return std::max(0, static_cast<int>(state.shipyardRows.size()) - 6);
   return 0;
 }
 
@@ -159,15 +167,15 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::accountCreate, 310, 330, 300, 38, 4, state.connected && !state.commandPending);
       break;
     case UiScreen::station: {
-      const std::array<UiControlId, 10> ids = {
+      const std::array<UiControlId, 11> ids = {
         UiControlId::stationMarket, UiControlId::stationMission,
-        UiControlId::stationOutfitting, UiControlId::stationProfile,
+        UiControlId::stationOutfitting, UiControlId::stationShipyard, UiControlId::stationProfile,
         UiControlId::stationGalnet, UiControlId::stationOptions,
         UiControlId::stationGraphics, UiControlId::stationLaunch,
         UiControlId::stationRepair, UiControlId::stationRefuel};
       for (std::size_t i = 0; i < ids.size(); ++i)
-        addControl(controls, ids[i], 20, 178 + static_cast<float>(i) * 27, 920, 28,
-          static_cast<int>(i), i < 7 ? state.authenticated : active);
+        addControl(controls, ids[i], 20, 172 + static_cast<float>(i) * 25, 920, 26,
+          static_cast<int>(i), i < 8 ? state.authenticated : active);
       break;
     }
     case UiScreen::market:
@@ -200,6 +208,20 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::outfitRemove, 410, 442, 220, 34, 0, active);
       addControl(controls, UiControlId::upgradeEngine, 650, 442, 130, 34, 0, active);
       addControl(controls, UiControlId::upgradeHull, 800, 442, 130, 34, 0, active);
+      break;
+    }
+    case UiScreen::shipyard: {
+      constexpr int visible = 6;
+      const int first = std::clamp(state.scrollOffset, 0, uiMaxScroll(state));
+      const int last = std::min(static_cast<int>(state.shipyardRows.size()), first + visible);
+      for (int i = first; i < last; ++i)
+        addControl(controls, UiControlId::shipyardRow, 20, 136 + static_cast<float>(i - first) * 38,
+          920, 36, i, state.authenticated);
+      const bool selected = state.selected >= 0 && state.selected < static_cast<int>(state.shipyardRows.size());
+      const bool owned = selected && state.shipyardRows[static_cast<std::size_t>(state.selected)].owned;
+      const bool activeShip = owned && state.shipyardRows[static_cast<std::size_t>(state.selected)].active;
+      addControl(controls, UiControlId::shipyardBuy, 20, 438, 220, 34, 0, active && selected && !owned);
+      addControl(controls, UiControlId::shipyardSwitch, 260, 438, 240, 34, 0, active && owned && !activeShip);
       break;
     }
     case UiScreen::galnet: {
@@ -283,6 +305,16 @@ std::string uiCommandFor(UiControlId control, int index, const UiState& state) {
     case UiControlId::recover: return "RECOVER";
     case UiControlId::upgradeEngine: return "UPGRADE engine";
     case UiControlId::upgradeHull: return "UPGRADE hull";
+    case UiControlId::shipyardBuy:
+      if (index >= 0 && index < static_cast<int>(state.shipyardRows.size()) &&
+          !state.shipyardRows[static_cast<std::size_t>(index)].owned)
+        return "SHIPYARD BUY " + state.shipyardRows[static_cast<std::size_t>(index)].hullId;
+      return {};
+    case UiControlId::shipyardSwitch:
+      if (index >= 0 && index < static_cast<int>(state.shipyardRows.size()) &&
+          state.shipyardRows[static_cast<std::size_t>(index)].owned)
+        return "SHIPYARD SWITCH " + state.shipyardRows[static_cast<std::size_t>(index)].instanceId;
+      return {};
     case UiControlId::outfitBuy:
     case UiControlId::outfitFit:
       if (index >= 0 && index < static_cast<int>(loadout::kCatalogue.size()))
@@ -298,7 +330,7 @@ std::string uiCommandFor(UiControlId control, int index, const UiState& state) {
 }
 
 void populateUiDerived(UiState& state, const flight::State& ship) {
-  state.quantity = std::clamp(state.quantity, 1, flight::kCargoCapacity);
+  state.quantity = std::clamp(state.quantity, 1, std::max(1, state.cargoCapacity));
   state.scrollOffset = std::clamp(state.scrollOffset, 0, uiMaxScroll(state));
   state.docked = ship.docked;
   state.destroyed = ship.destroyed;
@@ -307,6 +339,7 @@ void populateUiDerived(UiState& state, const flight::State& ship) {
   if (state.ownedModules.size() > helion::loadout::kCatalogue.size())
     state.ownedModules.resize(helion::loadout::kCatalogue.size());
   if (state.galnet.size() > 32) state.galnet.erase(state.galnet.begin(), state.galnet.end() - 32);
+  if (state.shipyardRows.size() > 32) state.shipyardRows.resize(32);
   for (auto& entry : state.galnet) {
     if (entry.id.size() > 64) entry.id.resize(64);
     if (entry.headline.size() > 180) entry.headline.resize(180);

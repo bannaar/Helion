@@ -12,6 +12,7 @@
 #include <deque>
 #include <fcntl.h>
 #include <iostream>
+#include <iomanip>
 #include <memory>
 #include <limits>
 #include <map>
@@ -19,6 +20,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sstream>
+#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -37,6 +39,9 @@
 #include "shared/career.h"
 #include "shared/loadout.h"
 #include "shared/organizations.h"
+#include "shared/owned_ship.h"
+#include "shared/ships.h"
+#include "shared/shipyard.h"
 #include "shared/tls.h"
 
 namespace {
@@ -57,20 +62,16 @@ struct Profile {
   std::string passwordHash;
   std::string display;
   std::string faction = "free-traders";
-  std::string ship = "sidewinder";
   int credits = 1500;
   int experience = 0;
   bool legacyCredential = false;
-  helion::flight::State flight{};
   int missionStage = 0;
   helion::career::State career;
-  int hullLevel = 1;
-  int engineLevel = 1;
   bool missionOreMined = false;
-  std::vector<std::string> ownedModules{"mining-basic", "engine-basic", "hull-standard"};
-  std::array<std::string, helion::loadout::kSlotCount> fittedModules{{
-    "mining-basic", "engine-basic", "hull-standard", ""
-  }};
+  std::vector<helion::ships::OwnedShip> ownedShips;
+  std::string activeShipId;
+  unsigned nextShipSequence = 2;
+  bool legacyProjectionOverFuel = false;
   // These combat fields are the persistent reward claim and recovery state;
   // the NPC itself is rebuilt at runtime from this small seed.
   int salvage = 0;
@@ -97,6 +98,7 @@ std::vector<ChatMessage> messages;
 std::vector<GalNetEvent> galnetEvents;
 std::vector<int> clients;
 bool flightStateDirty = false;
+bool ownershipMigrationPending = false;
 std::mutex transportMutex;
 struct Transport {
   explicit Transport(std::shared_ptr<helion::tls::Connection> value) : connection(std::move(value)) {}
@@ -105,13 +107,41 @@ struct Transport {
 };
 std::unordered_map<int, std::shared_ptr<Transport>> transports;
 
+helion::ships::OwnedShip& activeShip(Profile& profile) {
+  const auto found = std::find_if(profile.ownedShips.begin(), profile.ownedShips.end(),
+    [&profile](const auto& ship) { return ship.instanceId == profile.activeShipId; });
+  if (found == profile.ownedShips.end()) throw std::logic_error("profile has no active ship");
+  return *found;
+}
+
+const helion::ships::OwnedShip& activeShip(const Profile& profile) {
+  const auto found = std::find_if(profile.ownedShips.begin(), profile.ownedShips.end(),
+    [&profile](const auto& ship) { return ship.instanceId == profile.activeShipId; });
+  if (found == profile.ownedShips.end()) throw std::logic_error("profile has no active ship");
+  return *found;
+}
+
+void addStarterShip(Profile& profile, std::string_view commander, const helion::flight::State& legacyFlight = {},
+                    int hullLevel = 1, int engineLevel = 1,
+                    std::vector<std::string> ownedModules = {"mining-basic", "engine-basic", "hull-standard"},
+                    std::array<std::string, helion::loadout::kSlotCount> fittedModules = {{
+                      "mining-basic", "engine-basic", "hull-standard", ""}}) {
+  auto ship = helion::ships::makeStarterShip(commander, legacyFlight, hullLevel, engineLevel);
+  ship.ownedModules = std::move(ownedModules);
+  ship.fittedModules = std::move(fittedModules);
+  profile.activeShipId = ship.instanceId;
+  profile.ownedShips = {std::move(ship)};
+  profile.nextShipSequence = 2;
+}
+
 const helion::loadout::ModuleDefinition* fittedModule(const Profile& profile, helion::loadout::Slot slot) {
-  const auto& id = profile.fittedModules[helion::loadout::slotIndex(slot)];
+  const auto& id = activeShip(profile).fittedModules[helion::loadout::slotIndex(slot)];
   return id.empty() ? nullptr : helion::loadout::find(id);
 }
 
 bool ownsModule(const Profile& profile, std::string_view id) {
-  return std::find(profile.ownedModules.begin(), profile.ownedModules.end(), id) != profile.ownedModules.end();
+  const auto& modules = activeShip(profile).ownedModules;
+  return std::find(modules.begin(), modules.end(), id) != modules.end();
 }
 
 std::string joinModules(const std::vector<std::string>& modules) {
@@ -157,10 +187,9 @@ bool addGalNetEvent(std::string_view id, std::string_view headline) {
 }
 
 void refreshDerivedShipState(Profile& profile) {
-  profile.flight.maxFuel = helion::flight::fuelCapacity(profile.engineLevel);
+  auto& ship = activeShip(profile);
   const auto* defense = fittedModule(profile, helion::loadout::Slot::defense);
-  profile.flight.maxHull = helion::flight::hullCapacity(profile.hullLevel) + (defense ? defense->hullBonus : 0);
-  profile.flight.hull = std::min(profile.flight.hull, profile.flight.maxHull);
+  helion::ships::refreshDerivedState(ship, defense ? defense->hullBonus : 0);
 }
 
 void resetCombatTarget(Profile& profile) {
@@ -169,15 +198,86 @@ void resetCombatTarget(Profile& profile) {
 }
 
 std::string loadoutLine(const Profile& profile) {
-  const auto fitted = [&profile](helion::loadout::Slot slot) {
-    const auto& id = profile.fittedModules[helion::loadout::slotIndex(slot)];
+  const auto& ship = activeShip(profile);
+  const auto fitted = [&ship](helion::loadout::Slot slot) {
+    const auto& id = ship.fittedModules[helion::loadout::slotIndex(slot)];
     return id.empty() ? std::string("none") : id;
   };
-  return "LOADOUT owned=" + joinModules(profile.ownedModules) +
+  return "LOADOUT owned=" + joinModules(ship.ownedModules) +
     " fitted-mining=" + fitted(helion::loadout::Slot::mining) +
     " fitted-engine=" + fitted(helion::loadout::Slot::engine) +
     " fitted-defense=" + fitted(helion::loadout::Slot::defense) +
     " fitted-weapon=" + fitted(helion::loadout::Slot::weapon);
+}
+
+std::string wireToken(std::string_view value) {
+  std::string result(value);
+  std::replace(result.begin(), result.end(), ' ', '_');
+  return result;
+}
+
+std::string shipDefinitionLine(const helion::ships::Definition& hull) {
+  std::string hardpoints;
+  for (const auto& hardpoint : hull.hardpoints) {
+    if (!hardpoints.empty()) hardpoints += ',';
+    hardpoints += helion::ships::slotSizeName(hardpoint.size);
+    hardpoints += ':';
+    hardpoints += hardpoint.mount;
+  }
+  std::string tags;
+  for (const auto tag : hull.visualTags) {
+    if (!tags.empty()) tags += ',';
+    tags += tag;
+  }
+  const auto* manufacturer = helion::ships::findManufacturer(hull.manufacturerId);
+  const auto* operatorProfile = helion::ships::findOperator(hull.operatorId);
+  return "SHIPDEF id=" + std::string(hull.id) + " manufacturer=" + wireToken(manufacturer->displayName) +
+    " manufacturer-id=" + std::string(hull.manufacturerId) + " operator=" + wireToken(operatorProfile->displayName) +
+    " operator-id=" + std::string(hull.operatorId) + " model=" + wireToken(hull.model) +
+    " name=" + wireToken(hull.displayName) + " class=" + wireToken(hull.shipClass) +
+    " role=" + wireToken(hull.role) + " pad=" + helion::ships::padSizeName(hull.padSize) +
+    " price=" + std::to_string(hull.purchasePrice) + " mass=" + std::to_string(static_cast<int>(hull.mass)) +
+    " speed=" + std::to_string(static_cast<int>(hull.topSpeed)) +
+    " boost=" + std::to_string(static_cast<int>(hull.boostSpeed)) +
+    " acceleration=" + std::to_string(static_cast<int>(hull.acceleration)) +
+    " handling=" + std::to_string(hull.maneuverability) + " hull=" + std::to_string(hull.baseHull) +
+    " shields=" + std::to_string(hull.baseShields) + " cargo=" + std::to_string(hull.cargoCapacity) +
+    " fuel=" + std::to_string(static_cast<int>(hull.fuelCapacity)) +
+    " jump-laden=" + std::to_string(hull.jumpRangeLaden) +
+    " jump-unladen=" + std::to_string(hull.jumpRangeUnladen) + " hardpoints=" + hardpoints +
+    " utilities=" + std::to_string(hull.utilityMounts.size()) + " hull-family=" + std::string(hull.hullFamily) +
+    " silhouette=" + std::string(hull.silhouetteFamily) + " tags=" + tags;
+}
+
+std::string ownedShipLine(const Profile& profile, const helion::ships::OwnedShip& ship) {
+  const auto* variant = helion::ships::findVisualVariant(ship.visualVariantId);
+  return "OWNEDSHIP instance=" + ship.instanceId + " hull=" + ship.hullId +
+    " name=" + wireToken(ship.customName) + " station=" + std::to_string(ship.flight.station) +
+    " state=" + (ship.instanceId == profile.activeShipId ? "ACTIVE" : "STORED") +
+    " hull-condition=" + std::to_string(ship.flight.hull) + " max-hull=" + std::to_string(ship.flight.maxHull) +
+    " fuel=" + std::to_string(static_cast<int>(ship.flight.fuel)) +
+    " cargo=" + std::to_string(helion::flight::cargoUsed(ship.flight)) +
+    " cargo-capacity=" + std::to_string(helion::ships::cargoCapacity(ship)) +
+    " variant=" + ship.visualVariantId + " operator=" + wireToken(
+      helion::ships::findOperator(variant->operatorId)->displayName) +
+    " livery=" + ship.livery + " wear=" + ship.wearState;
+}
+
+void appendShipyardState(std::vector<std::string>& responses, const Profile& profile, bool includeOffers = true) {
+  const auto& current = activeShip(profile);
+  const int station = current.flight.station;
+  responses.push_back("SHIPYARD BEGIN station=" + std::to_string(station));
+  if (includeOffers) {
+    for (const auto* hull : helion::shipyard::availableAt(station,
+      helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad, profile.reputation)) {
+      if (std::any_of(profile.ownedShips.begin(), profile.ownedShips.end(),
+          [hull](const auto& owned) { return owned.hullId == hull->id; })) continue;
+      responses.push_back(shipDefinitionLine(*hull));
+    }
+  }
+  for (const auto& owned : profile.ownedShips) responses.push_back(ownedShipLine(profile, owned));
+  responses.push_back("SHIPYARD END station=" + std::to_string(station) + " active=" + profile.activeShipId +
+    " maximum-pad=" + helion::ships::padSizeName(helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad));
 }
 
 std::string encode(const std::string& value) {
@@ -207,24 +307,40 @@ std::string decode(const std::string& value) {
 
 void saveStateLocked() {
   std::ostringstream snapshot;
+  snapshot << std::setprecision(17);
   for (const auto& [name, profile] : profiles) {
+    const auto& ship = activeShip(profile);
+    const auto& flight = ship.flight;
     snapshot << "H\t" << encode(name) << '\t' << encode(profile.passwordHash) << '\t'
          << encode(profile.display) << '\t' << encode(profile.faction) << '\t'
-         << encode(profile.ship) << '\t' << profile.credits << '\t'
-         << profile.experience << '\t' << profile.missionStage << '\t' << profile.hullLevel << '\t'
-         << profile.engineLevel << '\t' << profile.flight.x << '\t' << profile.flight.y << '\t'
-         << profile.flight.vx << '\t' << profile.flight.vy << '\t' << profile.flight.yaw << '\t'
-         << profile.flight.docked << '\t' << profile.flight.cargo << '\t' << profile.flight.food << '\t'
-         << profile.flight.parts << '\t' << profile.flight.station << '\t' << profile.flight.hull << '\t'
-         << profile.flight.maxHull << '\t' << profile.missionOreMined << '\t' << profile.flight.fuel << '\t'
-         << joinModules(profile.ownedModules);
-    for (const auto& fitted : profile.fittedModules) snapshot << '\t' << fitted;
+         << encode(ship.hullId == "SIDEWINDER" ? "sidewinder" : ship.hullId) << '\t' << profile.credits << '\t'
+         << profile.experience << '\t' << profile.missionStage << '\t' << ship.hullLevel << '\t'
+         << ship.engineLevel << '\t' << flight.x << '\t' << flight.y << '\t'
+         << flight.vx << '\t' << flight.vy << '\t' << flight.yaw << '\t'
+         << flight.docked << '\t' << flight.cargo << '\t' << flight.food << '\t'
+         << flight.parts << '\t' << flight.station << '\t' << flight.hull << '\t'
+         << flight.maxHull << '\t' << profile.missionOreMined << '\t' << flight.fuel << '\t'
+         << joinModules(ship.ownedModules);
+    for (const auto& fitted : ship.fittedModules) snapshot << '\t' << fitted;
     snapshot << '\t' << profile.salvage << '\t' << profile.combatTargetGeneration
-             << '\t' << profile.combatTargetDefeated << '\t' << profile.flight.destroyed
-             << '\t' << profile.flight.weaponCooldown << '\t'
+             << '\t' << profile.combatTargetDefeated << '\t' << flight.destroyed
+             << '\t' << flight.weaponCooldown << '\t'
              << encode(helion::organizations::reputationSummary(profile.reputation)) << '\t'
              << helion::career::serialize(profile.career);
     snapshot << '\n';
+    for (const auto& owned : profile.ownedShips) {
+      const auto& state = owned.flight;
+      snapshot << "S\t" << encode(name) << '\t' << encode(owned.instanceId) << '\t' << owned.hullId << '\t'
+        << encode(owned.customName) << '\t' << state.x << '\t' << state.y << '\t' << state.vx << '\t'
+        << state.vy << '\t' << state.yaw << '\t' << state.docked << '\t' << state.cargo << '\t'
+        << state.food << '\t' << state.parts << '\t' << state.station << '\t' << state.hull << '\t'
+        << state.maxHull << '\t' << state.fuel << '\t' << state.maxFuel << '\t' << state.destroyed << '\t'
+        << state.weaponCooldown << '\t' << owned.hullLevel << '\t' << owned.engineLevel << '\t'
+        << joinModules(owned.ownedModules);
+      for (const auto& fitted : owned.fittedModules) snapshot << '\t' << fitted;
+      snapshot << '\t' << encode(owned.livery) << '\t' << owned.wearState << '\t' << owned.stored
+        << '\t' << (owned.instanceId == profile.activeShipId) << '\t' << owned.visualVariantId << '\n';
+    }
   }
   for (const auto& event : galnetEvents)
     snapshot << "G\t" << encode(event.id) << '\t' << encode(event.headline) << '\n';
@@ -277,6 +393,8 @@ void loadState() {
   if (!file) { close(fd); throw std::runtime_error("cannot read persistence file"); }
   char* buffer = nullptr;
   std::size_t capacity = 0;
+  std::set<std::string> profilesWithShipRecords;
+  std::set<std::string> instanceIds;
   try {
     ssize_t length;
     while ((length = ::getline(&buffer, &capacity, file)) >= 0) {
@@ -296,6 +414,12 @@ void loadState() {
         std::getline(input, creditsText, '\t');
         std::getline(input, experienceText, '\t');
         Profile profile;
+        helion::flight::State legacyFlight;
+        int legacyHullLevel = 1;
+        int legacyEngineLevel = 1;
+        std::vector<std::string> legacyOwnedModules{"mining-basic", "engine-basic", "hull-standard"};
+        std::array<std::string, helion::loadout::kSlotCount> legacyFittedModules{{
+          "mining-basic", "engine-basic", "hull-standard", ""}};
         initializeReputation(profile);
         profile.passwordHash = decode(second);
         profile.display = decode(third);
@@ -303,7 +427,9 @@ void loadState() {
         if (!profile.legacyCredential && !helion::security::isEncodedHash(profile.passwordHash))
           throw std::runtime_error("malformed password hash record");
         if (!faction.empty()) profile.faction = decode(faction);
-        if (!ship.empty()) profile.ship = decode(ship);
+        const std::string legacyHullId = decode(ship);
+        if (!legacyHullId.empty() && legacyHullId != "sidewinder" && legacyHullId != "SIDEWINDER" &&
+            !helion::ships::find(legacyHullId)) throw std::runtime_error("unknown legacy ship");
         auto parseNumber = [](const std::string& value, int fallback) {
           if (value.empty()) return fallback;
           std::size_t used = 0;
@@ -325,20 +451,20 @@ void loadState() {
           throw std::runtime_error("malformed persistence number");
         std::string value;
         std::getline(input, value, '\t'); profile.missionStage = parseNumber(value, 0);
-        std::getline(input, value, '\t'); profile.hullLevel = std::clamp(parseNumber(value, 1), 1, 5);
-        std::getline(input, value, '\t'); profile.engineLevel = std::clamp(parseNumber(value, 1), 1, 5);
-        std::getline(input, value, '\t'); profile.flight.x = std::stod(value.empty()?"0":value);
-        std::getline(input, value, '\t'); profile.flight.y = std::stod(value.empty()?"0":value);
-        std::getline(input, value, '\t'); profile.flight.vx = std::stod(value.empty()?"0":value);
-        std::getline(input, value, '\t'); profile.flight.vy = std::stod(value.empty()?"0":value);
-        std::getline(input, value, '\t'); profile.flight.yaw = std::stod(value.empty()?"0":value);
-        std::getline(input, value, '\t'); profile.flight.docked = value.empty() || value == "1";
-        std::getline(input, value, '\t'); profile.flight.cargo = parseNumber(value, 0);
-        std::getline(input, value, '\t'); profile.flight.food = parseNumber(value, 0);
-        std::getline(input, value, '\t'); profile.flight.parts = parseNumber(value, 0);
-        std::getline(input, value, '\t'); profile.flight.station = parseNumber(value, 0);
-        std::getline(input, value, '\t'); profile.flight.hull = std::clamp(parseNumber(value, 100), 0, 200);
-        std::getline(input, value, '\t'); profile.flight.maxHull = parseNumber(value, 100);
+        std::getline(input, value, '\t'); legacyHullLevel = std::clamp(parseNumber(value, 1), 1, 5);
+        std::getline(input, value, '\t'); legacyEngineLevel = std::clamp(parseNumber(value, 1), 1, 5);
+        std::getline(input, value, '\t'); legacyFlight.x = parseDouble(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.y = parseDouble(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.vx = parseDouble(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.vy = parseDouble(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.yaw = parseDouble(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.docked = value.empty() || value == "1";
+        std::getline(input, value, '\t'); legacyFlight.cargo = parseNumber(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.food = parseNumber(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.parts = parseNumber(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.station = parseNumber(value, 0);
+        std::getline(input, value, '\t'); legacyFlight.hull = std::clamp(parseNumber(value, 100), 0, 1000);
+        std::getline(input, value, '\t'); legacyFlight.maxHull = parseNumber(value, 100);
         std::vector<std::string> extensions;
         while (std::getline(input, value, '\t')) extensions.push_back(value);
         if (extensions.size() > 14) throw std::runtime_error("unexpected persistence fields");
@@ -348,34 +474,35 @@ void loadState() {
           profile.missionOreMined = extensions[0] == "1";
         }
         const bool hasSavedFuel = extensions.size() >= 2;
-        if (hasSavedFuel) profile.flight.fuel = parseDouble(extensions[1], -1);
-        else profile.flight.fuel = helion::flight::fuelCapacity(profile.engineLevel);
+        if (hasSavedFuel) legacyFlight.fuel = parseDouble(extensions[1], -1);
+        else legacyFlight.fuel = helion::flight::fuelCapacity(legacyEngineLevel);
         if (extensions.size() >= 3) {
-          profile.ownedModules.clear();
-          profile.fittedModules.fill("");
+          legacyOwnedModules.clear();
+          legacyFittedModules.fill("");
           std::size_t start = 0;
           while (start <= extensions[2].size()) {
             const auto end = extensions[2].find(',', start);
             const std::string id = extensions[2].substr(start, end == std::string::npos ? std::string::npos : end - start);
             const auto* module = helion::loadout::find(id);
-            if (!module || id.empty() || ownsModule(profile, id))
+            if (!module || id.empty() || std::find(legacyOwnedModules.begin(), legacyOwnedModules.end(), id) != legacyOwnedModules.end())
               throw std::runtime_error("malformed persisted module ownership");
-            profile.ownedModules.push_back(id);
+            legacyOwnedModules.push_back(id);
             if (end == std::string::npos) break;
             start = end + 1;
           }
-          if (profile.ownedModules.empty()) throw std::runtime_error("malformed persisted module ownership");
+          if (legacyOwnedModules.empty()) throw std::runtime_error("malformed persisted module ownership");
         }
         for (std::size_t slot = 0; slot < helion::loadout::kSlotCount && extensions.size() >= slot + 4; ++slot) {
           const std::string& id = extensions[slot + 3];
           if (id.empty()) {
-            profile.fittedModules[slot].clear();
+            legacyFittedModules[slot].clear();
             continue;
           }
           const auto* module = helion::loadout::find(id);
-          if (!module || helion::loadout::slotIndex(module->slot) != slot || !ownsModule(profile, id))
+          if (!module || helion::loadout::slotIndex(module->slot) != slot ||
+              std::find(legacyOwnedModules.begin(), legacyOwnedModules.end(), id) == legacyOwnedModules.end())
             throw std::runtime_error("malformed persisted module fitting");
-          profile.fittedModules[slot] = id;
+          legacyFittedModules[slot] = id;
         }
         if (extensions.size() >= 8) profile.salvage = parseNumber(extensions[7], 0);
         if (extensions.size() >= 9) profile.combatTargetGeneration = parseNumber(extensions[8], 1);
@@ -385,9 +512,9 @@ void loadState() {
         }
         if (extensions.size() >= 11) {
           if (extensions[10] != "0" && extensions[10] != "1") throw std::runtime_error("malformed destruction state");
-          profile.flight.destroyed = extensions[10] == "1";
+          legacyFlight.destroyed = extensions[10] == "1";
         }
-        if (extensions.size() >= 12) profile.flight.weaponCooldown = parseDouble(extensions[11], 0);
+        if (extensions.size() >= 12) legacyFlight.weaponCooldown = parseDouble(extensions[11], 0);
         if (extensions.size() >= 13 &&
             !helion::organizations::parseReputationSummary(decode(extensions[12]), profile.reputation))
           throw std::runtime_error("malformed persisted reputation");
@@ -396,24 +523,117 @@ void loadState() {
             !helion::career::valid(profile.career, profile.missionStage))
           throw std::runtime_error("malformed persisted career state");
         if (profile.missionStage == 2) profile.missionOreMined = false;
-        if (profile.flight.cargo < 0 || profile.flight.food < 0 || profile.flight.parts < 0 ||
-            profile.flight.cargo + profile.flight.food + profile.flight.parts > helion::flight::kCargoCapacity ||
-            profile.flight.station < 0 || profile.flight.station >= static_cast<int>(helion::flight::kStations.size()) ||
-            profile.flight.fuel < 0 || profile.salvage < 0 || profile.salvage > 1000000000 ||
+        if (legacyFlight.cargo < 0 || legacyFlight.food < 0 || legacyFlight.parts < 0 ||
+            static_cast<long long>(legacyFlight.cargo) + legacyFlight.food + legacyFlight.parts >
+              helion::flight::kMaximumSupportedCargo ||
+            legacyFlight.station < 0 || legacyFlight.station >= static_cast<int>(helion::flight::kStations.size()) ||
+            legacyFlight.fuel < 0 || profile.salvage < 0 || profile.salvage > 1000000000 ||
             profile.combatTargetGeneration < 1 || profile.combatTargetGeneration > 1000000000 ||
-            profile.flight.weaponCooldown < 0 || profile.flight.weaponCooldown > 10) throw std::runtime_error("malformed persisted ship state");
+            legacyFlight.weaponCooldown < 0 || legacyFlight.weaponCooldown > 10) throw std::runtime_error("malformed persisted ship state");
+        profile.legacyProjectionOverFuel = legacyFlight.fuel > helion::flight::fuelCapacity(legacyEngineLevel);
+        const std::string commander = decode(first);
+        addStarterShip(profile, commander, legacyFlight, legacyHullLevel, legacyEngineLevel,
+                       std::move(legacyOwnedModules), std::move(legacyFittedModules));
         refreshDerivedShipState(profile);
-        if (profile.flight.fuel > profile.flight.maxFuel)
-          throw std::runtime_error("malformed persisted fuel state");
-        if (profile.flight.destroyed) {
-          profile.flight.hull = 0;
-          profile.flight.cargo = 0;
-          profile.flight.docked = false;
+        auto& migratedShip = activeShip(profile);
+        // An H row is only a compatibility projection when S rows follow. Its
+        // fuel/hull may exceed Sidewinder limits; validate the authoritative S
+        // instance instead, or the migrated starter at end of file.
+        if (migratedShip.flight.destroyed) {
+          migratedShip.flight.hull = 0;
+          migratedShip.flight.cargo = 0;
+          migratedShip.flight.docked = false;
         }
-        profile.flight.inputAge = 1;
+        migratedShip.flight.inputAge = 1;
         resetCombatTarget(profile);
-        if (!profiles.emplace(decode(first), std::move(profile)).second)
+        if (!profiles.emplace(commander, std::move(profile)).second)
           throw std::runtime_error("duplicate profile in persistence file");
+      } else if (kind == "S" && !first.empty() && !second.empty() && !third.empty()) {
+        const std::string commander = decode(first);
+        const auto profileIt = profiles.find(commander);
+        if (profileIt == profiles.end()) throw std::runtime_error("ship record precedes commander");
+        auto parseNumber = [](const std::string& value) {
+          std::size_t used = 0;
+          const int result = std::stoi(value, &used);
+          if (used != value.size()) throw std::runtime_error("malformed ship number");
+          return result;
+        };
+        auto parseDouble = [](const std::string& value) {
+          std::size_t used = 0;
+          const double result = std::stod(value, &used);
+          if (used != value.size() || !std::isfinite(result)) throw std::runtime_error("malformed ship number");
+          return result;
+        };
+        std::vector<std::string> fields;
+        std::string value;
+        while (std::getline(input, value, '\t')) fields.push_back(value);
+        if (fields.size() != 28 && fields.size() != 29)
+          throw std::runtime_error("unexpected owned ship fields");
+        auto& profile = profileIt->second;
+        if (profilesWithShipRecords.emplace(commander).second) {
+          profile.ownedShips.clear();
+          profile.activeShipId.clear();
+          profile.nextShipSequence = 1;
+        }
+        helion::ships::OwnedShip owned;
+        owned.instanceId = decode(second);
+        owned.hullId = third;
+        owned.customName = decode(fields[0]);
+        if (!instanceIds.emplace(owned.instanceId).second) throw std::runtime_error("duplicate owned ship instance");
+        if (!helion::ships::find(owned.hullId)) throw std::runtime_error("unknown owned ship hull");
+        owned.flight.x = parseDouble(fields[1]); owned.flight.y = parseDouble(fields[2]);
+        owned.flight.vx = parseDouble(fields[3]); owned.flight.vy = parseDouble(fields[4]);
+        owned.flight.yaw = parseDouble(fields[5]);
+        const auto parseBool = [&parseNumber](const std::string& text) {
+          const int parsed = parseNumber(text);
+          if (parsed != 0 && parsed != 1) throw std::runtime_error("malformed ship boolean");
+          return parsed != 0;
+        };
+        owned.flight.docked = parseBool(fields[6]);
+        owned.flight.cargo = parseNumber(fields[7]); owned.flight.food = parseNumber(fields[8]);
+        owned.flight.parts = parseNumber(fields[9]); owned.flight.station = parseNumber(fields[10]);
+        owned.flight.hull = parseNumber(fields[11]);
+        const int savedMaximumHull = parseNumber(fields[12]);
+        owned.flight.fuel = parseDouble(fields[13]);
+        const double savedMaximumFuel = parseDouble(fields[14]);
+        owned.flight.destroyed = parseBool(fields[15]);
+        owned.flight.weaponCooldown = parseDouble(fields[16]);
+        owned.hullLevel = parseNumber(fields[17]); owned.engineLevel = parseNumber(fields[18]);
+        owned.ownedModules.clear();
+        std::size_t start = 0;
+        while (start <= fields[19].size()) {
+          const auto end = fields[19].find(',', start);
+          const std::string id = fields[19].substr(start, end == std::string::npos ? std::string::npos : end - start);
+          if (id.empty() || !helion::loadout::find(id) ||
+              std::find(owned.ownedModules.begin(), owned.ownedModules.end(), id) != owned.ownedModules.end())
+            throw std::runtime_error("malformed owned ship modules");
+          owned.ownedModules.push_back(id);
+          if (end == std::string::npos) break;
+          start = end + 1;
+        }
+        for (std::size_t slot = 0; slot < helion::loadout::kSlotCount; ++slot)
+          owned.fittedModules[slot] = fields[20 + slot];
+        owned.visualVariantId = fields.size() == 29 ? fields[28] :
+          std::string(helion::ships::defaultVisualVariant(*helion::ships::find(owned.hullId)));
+        owned.livery = decode(fields[24]); owned.wearState = fields[25];
+        owned.stored = parseBool(fields[26]);
+        const bool active = parseBool(fields[27]);
+        const auto* defenseId = owned.fittedModules[helion::loadout::slotIndex(helion::loadout::Slot::defense)].empty() ? nullptr :
+          helion::loadout::find(owned.fittedModules[helion::loadout::slotIndex(helion::loadout::Slot::defense)]);
+        if (owned.flight.hull < 0 || owned.flight.hull > savedMaximumHull ||
+            owned.flight.fuel < 0 || owned.flight.fuel > savedMaximumFuel)
+          throw std::runtime_error("malformed owned ship state");
+        helion::ships::refreshDerivedState(owned, defenseId ? defenseId->hullBonus : 0);
+        if (owned.flight.maxHull != savedMaximumHull || std::abs(owned.flight.maxFuel - savedMaximumFuel) > 0.001 ||
+            !helion::ships::validate(owned) || active == owned.stored)
+          throw std::runtime_error("malformed owned ship state");
+        owned.flight.inputAge = 1;
+        if (active) {
+          if (!profile.activeShipId.empty()) throw std::runtime_error("multiple active ships");
+          profile.activeShipId = owned.instanceId;
+        }
+        profile.ownedShips.push_back(std::move(owned));
+        profile.nextShipSequence = static_cast<unsigned>(profile.ownedShips.size() + 1);
       } else if (kind == "M" && !first.empty() && !second.empty()) {
         messages.push_back({decode(first), decode(second)});
       } else if (kind == "G" && !first.empty() && !second.empty() && third.empty()) {
@@ -425,6 +645,24 @@ void loadState() {
       }
     }
     if (ferror(file)) throw std::runtime_error("cannot read persistence file");
+    instanceIds.clear();
+    for (auto& [name, profile] : profiles) {
+      if (profilesWithShipRecords.count(name) == 0) {
+        if (profile.legacyProjectionOverFuel) throw std::runtime_error("malformed persisted fuel state");
+        ownershipMigrationPending = true;
+      }
+      profile.legacyProjectionOverFuel = false;
+      if (profile.ownedShips.empty() || profile.activeShipId.empty()) throw std::runtime_error("profile has no active ship");
+      std::size_t activeCount = 0;
+      for (const auto& owned : profile.ownedShips) {
+        if (!helion::ships::validate(owned)) throw std::runtime_error("invalid persisted owned ship");
+        if (!instanceIds.emplace(owned.instanceId).second) throw std::runtime_error("duplicate owned ship instance");
+        if (owned.instanceId == profile.activeShipId) ++activeCount;
+      }
+      if (activeCount != 1) throw std::runtime_error("profile active ship is ambiguous");
+      refreshDerivedShipState(profile);
+      resetCombatTarget(profile);
+    }
   } catch (...) {
     free(buffer);
     fclose(file);
@@ -436,7 +674,7 @@ void loadState() {
 
 void migrateLegacyProfiles() {
   auto migrated = profiles;
-  bool changed = false;
+  bool changed = ownershipMigrationPending;
   for (auto& [name, profile] : migrated) {
     (void)name;
     if (helion::security::migrateLegacyCredential(profile.passwordHash, profile.legacyCredential)) {
@@ -446,7 +684,8 @@ void migrateLegacyProfiles() {
   }
   if (!changed) return;
   profiles.swap(migrated);
-  try { saveStateLocked(); } catch (...) { profiles.swap(migrated); throw; }
+  try { saveStateLocked(); ownershipMigrationPending = false; }
+  catch (...) { profiles.swap(migrated); throw; }
   for (auto& [name, profile] : migrated) {
     (void)name;
     std::fill(profile.passwordHash.begin(), profile.passwordHash.end(), '\0');
@@ -474,10 +713,20 @@ std::string stateLine() {
 }
 
 void appendFlightState(std::vector<std::string>& responses, Profile& profile) {
-  responses.push_back(helion::flight::snapshot(profile.flight, profile.credits, profile.experience));
-  responses.push_back(helion::flight::fuelLine(profile.flight));
-  if (profile.flight.destroyed || !profile.combatEvents.empty())
-    responses.push_back(helion::flight::combatStatusLine(profile.flight));
+  const auto& ship = activeShip(profile);
+  const auto& hull = helion::ships::definition(ship);
+  responses.push_back(helion::flight::snapshot(ship.flight, profile.credits, profile.experience));
+  responses.push_back(helion::flight::fuelLine(ship.flight));
+  responses.push_back("ACTIVE SHIP instance=" + ship.instanceId + " hull=" + ship.hullId +
+    " display=" + std::string(hull.model) + " manufacturer=" + std::string(hull.manufacturerId) +
+    " operator=" + std::string(hull.operatorId) + " cargo-capacity=" + std::to_string(hull.cargoCapacity) +
+    " speed=" + std::to_string(static_cast<int>(hull.topSpeed)) +
+    " acceleration=" + std::to_string(static_cast<int>(hull.acceleration)) +
+    " handling=" + std::to_string(hull.maneuverability) + " hull-capacity=" +
+    std::to_string(ship.flight.maxHull) + " pad=" + helion::ships::padSizeName(hull.padSize) +
+    " mass=" + std::to_string(static_cast<int>(hull.mass)) + " livery=" + ship.livery + " wear=" + ship.wearState);
+  if (ship.flight.destroyed || !profile.combatEvents.empty())
+    responses.push_back(helion::flight::combatStatusLine(ship.flight));
   while (!profile.combatEvents.empty()) {
     responses.push_back(std::move(profile.combatEvents.front()));
     profile.combatEvents.pop_front();
@@ -496,7 +745,7 @@ void broadcast(const std::string& line) {
 std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
   std::vector<helion::flight::Contact> result;
   const auto current = profiles.find(user);
-  if (current != profiles.end() && !current->second.hostile.destroyed && !current->second.flight.destroyed) {
+  if (current != profiles.end() && !current->second.hostile.destroyed && !activeShip(current->second).flight.destroyed) {
     const auto& hostile = current->second.hostile;
     const auto* affiliation = helion::organizations::find(hostile.faction);
     result.push_back({hostile.id, "hostile", hostile.x, hostile.y, 0, false, true, hostile.hull, hostile.maxHull,
@@ -504,7 +753,8 @@ std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
   }
   for (const auto& [name, profile] : profiles) {
     if (name == user) continue;
-    result.push_back({name, "pilot", profile.flight.x, profile.flight.y, profile.flight.yaw, profile.flight.docked, false, 0, 0, "", ""});
+    const auto& flight = activeShip(profile).flight;
+    result.push_back({name, "pilot", flight.x, flight.y, flight.yaw, flight.docked, false, 0, 0, "", ""});
   }
   const double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
   result.push_back({"HAULER-7", "hauler", 420.0 + std::cos(t * 0.08) * 180.0,
@@ -514,19 +764,20 @@ std::vector<helion::flight::Contact> contactsFor(const std::string& user) {
 
 void applyNpcDamage(Profile& profile) {
   const auto& hostile = profile.hostile;
-  const int before = profile.flight.hull;
-  profile.flight.hull = std::max(0, profile.flight.hull - helion::combat::kNpcDamage);
+  auto& flight = activeShip(profile).flight;
+  const int before = flight.hull;
+  flight.hull = std::max(0, flight.hull - helion::combat::kNpcDamage);
   profile.combatEvents.push_back("COMBAT DAMAGE source=" + hostile.id +
-    " damage=" + std::to_string(before - profile.flight.hull) +
-    " hull=" + std::to_string(profile.flight.hull));
-  if (profile.flight.hull != 0) return;
-  profile.flight.destroyed = true;
-  profile.flight.docked = false;
-  profile.flight.vx = 0;
-  profile.flight.vy = 0;
-  profile.flight.input = {};
-  profile.flight.inputAge = 1;
-  profile.flight.cargo = 0;
+    " damage=" + std::to_string(before - flight.hull) +
+    " hull=" + std::to_string(flight.hull));
+  if (flight.hull != 0) return;
+  flight.destroyed = true;
+  flight.docked = false;
+  flight.vx = 0;
+  flight.vy = 0;
+  flight.input = {};
+  flight.inputAge = 1;
+  flight.cargo = 0;
   profile.combatEvents.push_back("COMBAT DESTROYED player=1 cargo-lost=1 recovery=RECOVER");
 }
 
@@ -554,7 +805,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT SHIPYARD FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -616,6 +867,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             initializeReputation(profile);
             profile.passwordHash = encoded;
             profile.display = display;
+            addStarterShip(profile, name);
             profiles.emplace(name, std::move(profile));
             try {
               persistStateLocked();
@@ -679,20 +931,24 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             if (it == profiles.end()) response = "ERR profile-missing";
             else {
               const Profile& profile = it->second;
+              const auto& ship = activeShip(profile);
+              const auto& flight = ship.flight;
               response = "PROFILE user=" + user + " display=" + profile.display +
-                " faction=" + profile.faction + " ship=" + profile.ship +
+                " faction=" + profile.faction + " ship=" + (ship.hullId == "SIDEWINDER" ? "sidewinder" : ship.hullId) +
+                " active-ship-id=" + ship.instanceId + " hull-id=" + ship.hullId +
+                " owned-ships=" + std::to_string(profile.ownedShips.size()) +
                 " credits=" + std::to_string(profile.credits) +
                 " experience=" + std::to_string(profile.experience) +
-                " hull=" + std::to_string(profile.flight.hull) +
-                " max-hull=" + std::to_string(profile.flight.maxHull) +
-                " fuel=" + std::to_string(profile.flight.fuel) +
-                " max-fuel=" + std::to_string(profile.flight.maxFuel) +
-                " engine-level=" + std::to_string(profile.engineLevel) +
-                " hull-level=" + std::to_string(profile.hullLevel) +
+                " hull=" + std::to_string(flight.hull) +
+                " max-hull=" + std::to_string(flight.maxHull) +
+                " fuel=" + std::to_string(flight.fuel) +
+                " max-fuel=" + std::to_string(flight.maxFuel) +
+                " engine-level=" + std::to_string(ship.engineLevel) +
+                " hull-level=" + std::to_string(ship.hullLevel) +
                 " mission-stage=" + std::to_string(profile.missionStage) +
                 " mission-ore-mined=" + std::to_string(profile.missionOreMined) +
                 " salvage=" + std::to_string(profile.salvage) +
-                " destroyed=" + std::to_string(profile.flight.destroyed) +
+                " destroyed=" + std::to_string(flight.destroyed) +
                 " organizations=" + helion::organizations::organizationSummary() +
                 " reputation=" + helion::organizations::reputationSummary(profile.reputation) +
                 " " + loadoutLine(profile);
@@ -720,7 +976,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
             const auto galnetBefore = galnetEvents;
-            const auto result = helion::career::act(profile.career, profile.missionStage, profile.flight,
+            const auto result = helion::career::act(profile.career, profile.missionStage, activeShip(profile).flight,
               profile.credits, profile.experience, fittedModule(profile, helion::loadout::Slot::weapon) != nullptr,
               request.first, request.second);
             if (result.line.rfind("OK", 0) == 0) {
@@ -781,7 +1037,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               }
             }
           } else if (profile.missionStage != 1) response = "ERR mission-not-active";
-          else if (!profile.missionOreMined || !profile.flight.docked) response = "ERR objective-incomplete";
+          else if (!profile.missionOreMined || !activeShip(profile).flight.docked) response = "ERR objective-incomplete";
           else if (profile.credits > std::numeric_limits<int>::max() - 250 ||
                    profile.experience > std::numeric_limits<int>::max() - 25) response = "ERR profile-limit";
           else {
@@ -821,7 +1077,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           const bool dirtyBefore = flightStateDirty;
           const auto galnetBefore = galnetEvents;
           if (request.command == helion::protocol::Command::recover) {
-            const auto result = helion::flight::recover(profile.flight);
+            const auto result = helion::flight::recover(activeShip(profile).flight);
             if (result.rfind("OK", 0) == 0) {
               try {
                 persistStateLocked();
@@ -833,9 +1089,9 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 std::cerr << error.what() << '\n';
               }
             } else responses.push_back(result);
-          } else if (profile.flight.docked) {
+          } else if (activeShip(profile).flight.docked) {
             responses.push_back("ERR launch-required");
-          } else if (profile.flight.destroyed) {
+          } else if (activeShip(profile).flight.destroyed) {
             responses.push_back("ERR recovery-required");
           } else {
             const auto* weapon = fittedModule(profile, helion::loadout::Slot::weapon);
@@ -843,11 +1099,11 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               responses.push_back("ERR weapon-required");
             else if (request.first != profile.hostile.id) responses.push_back("ERR invalid-target");
             else if (profile.hostile.destroyed) responses.push_back("ERR target-destroyed");
-            else if (helion::combat::distance(profile.hostile, profile.flight) > weapon->weaponRange)
+            else if (helion::combat::distance(profile.hostile, activeShip(profile).flight) > weapon->weaponRange)
               responses.push_back("ERR target-out-of-range");
-            else if (profile.flight.weaponCooldown > 0) responses.push_back("ERR weapon-cooldown");
+            else if (activeShip(profile).flight.weaponCooldown > 0) responses.push_back("ERR weapon-cooldown");
             else {
-              profile.flight.weaponCooldown = weapon->weaponCooldown;
+              activeShip(profile).flight.weaponCooldown = weapon->weaponCooldown;
               profile.hostile.hull = std::max(0, profile.hostile.hull - weapon->weaponDamage);
               responses.push_back("COMBAT HIT target=" + profile.hostile.id +
                 " damage=" + std::to_string(weapon->weaponDamage) +
@@ -898,8 +1154,79 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               }
             }
           }
-          responses.push_back(helion::flight::combatStatusLine(profile.flight));
+          responses.push_back(helion::flight::combatStatusLine(activeShip(profile).flight));
           appendFlightState(responses, profile);
+        }
+        for (const auto& response : responses) sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::shipyard) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          auto& profile = profiles.at(user);
+          auto& current = activeShip(profile);
+          if (!current.flight.docked || current.flight.destroyed) {
+            responses.push_back("ERR dock-required");
+          } else if (request.first == "LIST" || request.first == "OWNED") {
+            appendShipyardState(responses, profile, request.first == "LIST");
+          } else if (request.first == "BUY") {
+            const auto* hull = helion::ships::find(request.second);
+            const int station = current.flight.station;
+            if (!hull) responses.push_back("ERR unknown-hull");
+            else if (!helion::shipyard::available(station,
+              helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad,
+              hull->id, profile.reputation)) responses.push_back("ERR hull-unavailable");
+            else if (std::any_of(profile.ownedShips.begin(), profile.ownedShips.end(),
+              [hull](const auto& owned) { return owned.hullId == hull->id; }))
+              responses.push_back("ERR ship-already-owned");
+            else if (profile.credits < hull->purchasePrice) responses.push_back("ERR insufficient-credits");
+            else {
+              const auto before = profile;
+              const bool dirtyBefore = flightStateDirty;
+              const std::string instance = helion::ships::deterministicInstanceId(user, profile.nextShipSequence++);
+              profile.credits -= hull->purchasePrice;
+              profile.ownedShips.push_back(helion::ships::makePurchasedShip(instance, *hull, station));
+              try {
+                persistStateLocked();
+                responses.push_back("OK SHIP PURCHASED instance=" + instance + " hull=" + std::string(hull->id) +
+                  " cost=" + std::to_string(hull->purchasePrice));
+                responses.push_back("TRANSACTION SHIP_PURCHASE instance=" + instance + " hull=" +
+                  std::string(hull->id) + " station=" + std::to_string(station) +
+                  " credits=" + std::to_string(hull->purchasePrice));
+              } catch (const std::exception& error) {
+                profile = before; flightStateDirty = dirtyBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
+            }
+            appendShipyardState(responses, profile);
+          } else if (request.first == "SWITCH") {
+            const auto target = std::find_if(profile.ownedShips.begin(), profile.ownedShips.end(),
+              [&request](const auto& owned) { return owned.instanceId == request.second; });
+            if (target == profile.ownedShips.end()) responses.push_back("ERR ship-not-owned");
+            else if (target->instanceId == profile.activeShipId) responses.push_back("ERR ship-already-active");
+            else if (!target->stored || !target->flight.docked || target->flight.destroyed ||
+                     target->flight.station != current.flight.station) responses.push_back("ERR ship-not-at-station");
+            else {
+              const auto before = profile;
+              const bool dirtyBefore = flightStateDirty;
+              current.stored = true;
+              target->stored = false;
+              profile.activeShipId = target->instanceId;
+              refreshDerivedShipState(profile);
+              try {
+                persistStateLocked();
+                responses.push_back("OK SHIP ACTIVE instance=" + profile.activeShipId +
+                  " hull=" + activeShip(profile).hullId);
+              } catch (const std::exception& error) {
+                profile = before; flightStateDirty = dirtyBefore;
+                responses.push_back("ERR persistence-failed");
+                std::cerr << error.what() << '\n';
+              }
+            }
+            appendShipyardState(responses, profile);
+            appendFlightState(responses, profile);
+          }
         }
         for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::refuel ||
@@ -910,12 +1237,12 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
           if (request.command == helion::protocol::Command::refuel) {
-            if (!profile.flight.docked) responses.push_back("ERR dock-required");
+            if (!activeShip(profile).flight.docked) responses.push_back("ERR dock-required");
             else {
               const auto before = profile;
               const bool dirtyBefore = flightStateDirty;
               helion::flight::FuelTransaction transaction;
-              const auto result = helion::flight::refuel(profile.flight, profile.credits, &transaction);
+              const auto result = helion::flight::refuel(activeShip(profile).flight, profile.credits, &transaction);
               if (result.rfind("OK", 0) == 0) {
                 try { persistStateLocked(); }
                 catch (const std::exception& error) {
@@ -934,7 +1261,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             appendFlightState(responses, profile);
           } else if (request.first == "LIST") {
             responses.push_back(loadoutLine(profile));
-          } else if (!profile.flight.docked) {
+          } else if (!activeShip(profile).flight.docked) {
             responses.push_back("ERR dock-required");
           } else {
             const auto* module = helion::loadout::find(request.second);
@@ -947,11 +1274,11 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               else if (request.second == "weapon") slot = helion::loadout::Slot::weapon;
               else validSlot = false;
               if (!validSlot) responses.push_back("ERR unknown-slot");
-              else if (profile.fittedModules[helion::loadout::slotIndex(slot)].empty()) responses.push_back("ERR slot-empty");
+              else if (activeShip(profile).fittedModules[helion::loadout::slotIndex(slot)].empty()) responses.push_back("ERR slot-empty");
               else {
                 const auto before = profile;
                 const bool dirtyBefore = flightStateDirty;
-                profile.fittedModules[helion::loadout::slotIndex(slot)].clear();
+                activeShip(profile).fittedModules[helion::loadout::slotIndex(slot)].clear();
                 refreshDerivedShipState(profile);
                 try {
                   persistStateLocked();
@@ -972,7 +1299,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 const auto before = profile;
                 const bool dirtyBefore = flightStateDirty;
                 profile.credits -= module->price;
-                profile.ownedModules.push_back(module->id);
+                activeShip(profile).ownedModules.push_back(module->id);
                 try {
                   persistStateLocked();
                   responses.push_back("OK MODULE BOUGHT module=" + std::string(module->id) +
@@ -990,12 +1317,12 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               }
             } else if (request.first == "FIT") {
               if (!ownsModule(profile, request.second)) responses.push_back("ERR module-not-owned");
-              else if (profile.fittedModules[helion::loadout::slotIndex(module->slot)] == module->id)
+              else if (activeShip(profile).fittedModules[helion::loadout::slotIndex(module->slot)] == module->id)
                 responses.push_back("ERR module-already-fitted");
               else {
                 const auto before = profile;
                 const bool dirtyBefore = flightStateDirty;
-                profile.fittedModules[helion::loadout::slotIndex(module->slot)] = module->id;
+                activeShip(profile).fittedModules[helion::loadout::slotIndex(module->slot)] = module->id;
                 refreshDerivedShipState(profile);
                 try {
                   persistStateLocked();
@@ -1022,11 +1349,14 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
-          if (!profile.flight.docked) responses.push_back("ERR dock-required");
+          auto& owned = activeShip(profile);
+          if (!owned.flight.docked) responses.push_back("ERR dock-required");
           else if (request.command == helion::protocol::Command::repair) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
-            const auto result = helion::flight::repair(profile.flight, profile.credits, profile.hullLevel);
+            const auto* defense = fittedModule(profile, helion::loadout::Slot::defense);
+            const auto result = helion::flight::repairToCapacity(owned.flight, profile.credits,
+              helion::ships::hullCapacity(owned, defense ? defense->hullBonus : 0));
             if (result.rfind("OK", 0) == 0) {
               try { persistStateLocked(); }
               catch (const std::exception& error) {
@@ -1039,7 +1369,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             if (responses.empty()) responses.push_back(result);
             appendFlightState(responses, profile);
           } else {
-            int& level = request.first == "hull" ? profile.hullLevel : profile.engineLevel;
+            int& level = request.first == "hull" ? owned.hullLevel : owned.engineLevel;
             const int cost = level * 500;
             if (level >= 5) responses.push_back("ERR upgrade-max");
             else if (profile.credits < cost) responses.push_back("ERR insufficient-credits");
@@ -1084,11 +1414,13 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           if (responses.empty()) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
-            const auto result = helion::flight::trade(profile.flight, profile.credits,
-              request.command == helion::protocol::Command::buy, request.first, quantity);
+            auto& owned = activeShip(profile);
+            const auto result = helion::flight::trade(owned.flight, profile.credits,
+              request.command == helion::protocol::Command::buy, request.first, quantity,
+              helion::ships::cargoCapacity(owned));
             if (result.rfind("OK", 0) == 0) {
               if (request.command == helion::protocol::Command::buy)
-                helion::career::purchased(profile.career, profile.flight.station, request.first, quantity);
+                helion::career::purchased(profile.career, owned.flight.station, request.first, quantity);
               try { persistStateLocked(); }
               catch (const std::exception& error) {
                 profile = before;
@@ -1112,8 +1444,9 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
-          auto& flight = profile.flight;
-          if (profile.flight.destroyed && request.command != helion::protocol::Command::flight) {
+          auto& owned = activeShip(profile);
+          auto& flight = owned.flight;
+          if (flight.destroyed && request.command != helion::protocol::Command::flight) {
             responses.push_back("ERR recovery-required");
           } else if (request.command == helion::protocol::Command::input) {
             flight.input = {request.thrust, request.turn, request.brake};
@@ -1129,7 +1462,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             if (request.command == helion::protocol::Command::launch) result = helion::flight::launch(flight);
             else if (request.command == helion::protocol::Command::mine) {
               const auto* mining = fittedModule(profile, helion::loadout::Slot::mining);
-              result = mining ? helion::flight::mine(flight, true, mining->miningCooldownMultiplier) :
+              result = mining && helion::ships::definition(owned).miningCapability ?
+                helion::flight::mine(flight, helion::ships::cargoCapacity(owned), true, mining->miningCooldownMultiplier) :
                 "ERR mining-module-required";
             } else {
               result = helion::flight::dock(flight, profile.credits, profile.experience,
@@ -1181,6 +1515,10 @@ int main(int argc, char** argv) {
   std::string bindAddress = "127.0.0.1";
   std::string certificate, privateKey;
   int positional = 0;
+  if (!helion::ships::validateRegistry()) {
+    std::cerr << "invalid canonical ship registry\n";
+    return 1;
+  }
   auto number = [](const std::string& value, unsigned long maximum) -> unsigned long {
     std::size_t end = 0;
     const unsigned long parsed = std::stoul(value, &end);
@@ -1259,20 +1597,21 @@ int main(int argc, char** argv) {
       std::lock_guard<std::mutex> lock(stateMutex);
       while (accumulator >= 1.0 / 60) {
         for (auto& entry : profiles) {
-          const auto before = entry.second.flight;
+          auto& owned = activeShip(entry.second);
+          const auto before = owned.flight;
           const auto* engine = fittedModule(entry.second, helion::loadout::Slot::engine);
           const double fuelMultiplier = engine ? engine->fuelConsumptionMultiplier : 1.0;
-          helion::flight::step(entry.second.flight, 1.0 / 60, entry.second.engineLevel, fuelMultiplier);
-          if (!before.destroyed && !before.docked && entry.second.flight.destroyed && entry.second.flight.hull == 0)
+          helion::flight::step(owned.flight, 1.0 / 60, helion::ships::definition(owned), owned.engineLevel, fuelMultiplier);
+          if (!before.destroyed && !before.docked && owned.flight.destroyed && owned.flight.hull == 0)
             entry.second.combatEvents.push_back("COMBAT DESTROYED player=1 cargo-lost=1 recovery=RECOVER");
-          helion::combat::step(entry.second.hostile, entry.second.flight, 1.0 / 60);
-          if (helion::combat::canNpcFire(entry.second.hostile, entry.second.flight)) {
+          helion::combat::step(entry.second.hostile, owned.flight, 1.0 / 60);
+          if (helion::combat::canNpcFire(entry.second.hostile, owned.flight)) {
             entry.second.hostile.fireCooldown = helion::combat::kNpcFireCooldown;
             applyNpcDamage(entry.second);
           }
-          if (!entry.second.flight.docked || before.docked != entry.second.flight.docked ||
-              before.hull != entry.second.flight.hull || before.cargo != entry.second.flight.cargo ||
-              before.fuel != entry.second.flight.fuel || before.destroyed != entry.second.flight.destroyed) {
+          if (!owned.flight.docked || before.docked != owned.flight.docked ||
+              before.hull != owned.flight.hull || before.cargo != owned.flight.cargo ||
+              before.fuel != owned.flight.fuel || before.destroyed != owned.flight.destroyed) {
             flightStateDirty = true;
           }
         }

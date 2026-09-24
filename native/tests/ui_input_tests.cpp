@@ -11,6 +11,13 @@ static SDL_Event mouse(Uint32 type, int x, int y) {
   return event;
 }
 
+static SDL_Event key(SDL_Keycode value) {
+  SDL_Event event{};
+  event.type = SDL_KEYDOWN;
+  event.key.keysym.sym = value;
+  return event;
+}
+
 int main() {
   using namespace helion::client;
   View view;
@@ -40,6 +47,29 @@ int main() {
   view.ui.commandPending = true;
   assert(input.handle(view, buy, 960, 600).empty());
   input.handle(view, release, 960, 600);
+
+  view.ui.commandPending = false;
+  view.ui.screen = UiScreen::shipyard;
+  view.ui.selected = 0;
+  view.ui.scrollOffset = 0;
+  view.ui.shipyardRows.clear();
+  for (int index = 0; index < 8; ++index) {
+    UiShipyardRow row;
+    row.hullId = "HULL_" + std::to_string(index);
+    row.displayName = row.hullId;
+    view.ui.shipyardRows.push_back(std::move(row));
+  }
+  for (int index = 0; index < 6; ++index) input.handle(view, key(SDLK_DOWN), 960, 600);
+  assert(view.ui.selected == 6 && view.ui.scrollOffset == 1);
+  assert(input.handle(view, key(SDLK_RETURN), 960, 600) == "SHIPYARD BUY HULL_6");
+
+  view.ui.cargoCapacity = 20;
+  view.ui.quantity = 8;
+  view.ui.screen = UiScreen::market;
+  auto quantityUp = mouse(SDL_MOUSEBUTTONDOWN, 580, 300);
+  input.handle(view, quantityUp, 960, 600);
+  input.handle(view, mouse(SDL_MOUSEBUTTONUP, 580, 300), 960, 600);
+  assert(view.ui.quantity == 9);
 
   view.ui.commandPending = false;
   view.ui.screen = UiScreen::account;

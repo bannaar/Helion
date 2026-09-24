@@ -37,6 +37,9 @@ the Kepler career: First Ore, Cinder supply delivery, and Red Wake response.
   below **35 m/s** to sell. Each unit pays **60 credits and 5 XP**.
 - **F5** opens contracts, **F4** market, **F6** outfitting, **F7** GalNet,
   and **F9** help. Mouse and keyboard both cover normal progression.
+- Select **Shipyard / Hulls and Owned Fleet** while docked to inspect local
+  inventory, purchase an affordable hull, or activate a stored ship at the
+  same station. Up/Down and Enter work alongside mouse controls.
 
 Local saves and logs live in `$XDG_DATA_HOME/helion`, defaulting to
 `~/.local/share/helion`. `HELION_DATA_DIR` overrides this directory and

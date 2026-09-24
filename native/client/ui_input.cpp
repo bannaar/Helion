@@ -6,6 +6,8 @@
 
 namespace helion::client {
 namespace {
+constexpr int kVisibleShipyardRows = 6;
+
 void open(UiState& ui, UiScreen screen) {
   ui.screen = screen; ui.selected = 0; ui.scrollOffset = 0;
   ui.focusedControl = UiControlId::none; ui.hoveredControl = UiControlId::none;
@@ -35,6 +37,8 @@ std::string UiInput::activate(View& view, UiHitResult hit) {
     case UiControlId::stationMarket: open(ui, UiScreen::market); return "FLIGHT";
     case UiControlId::stationMission: open(ui, UiScreen::mission); return "CAREER";
     case UiControlId::stationOutfitting: open(ui, UiScreen::outfitting); return "OUTFIT LIST";
+    case UiControlId::stationShipyard:
+      ui.shipyardRows.clear(); open(ui, UiScreen::shipyard); return "SHIPYARD LIST";
     case UiControlId::stationProfile: open(ui, UiScreen::profile); return "PROFILE";
     case UiControlId::stationGalnet: open(ui, UiScreen::galnet); return "GALNET";
     case UiControlId::stationOptions: open(ui, UiScreen::options); return {};
@@ -46,10 +50,11 @@ std::string UiInput::activate(View& view, UiHitResult hit) {
       open(ui, view.ship.docked ? UiScreen::station : UiScreen::flight); return "CAREER DISMISS";
     case UiControlId::marketFood: case UiControlId::marketParts: case UiControlId::outfitRow:
       ui.selected = hit.index; return {};
+    case UiControlId::shipyardRow: ui.selected = hit.index; return {};
     case UiControlId::missionRow: ui.missionSelected = std::clamp(hit.index, 0, 2); return {};
     case UiControlId::galnetEntry: ui.selected = hit.index - ui.scrollOffset; return {};
     case UiControlId::marketQuantityDown: ui.quantity = std::max(1, ui.quantity - 1); return {};
-    case UiControlId::marketQuantityUp: ui.quantity = std::min(flight::kCargoCapacity, ui.quantity + 1); return {};
+    case UiControlId::marketQuantityUp: ui.quantity = std::min(std::max(1, ui.cargoCapacity), ui.quantity + 1); return {};
     case UiControlId::optionsTelemetry:
       view.showTelemetry = !view.showTelemetry; ui.telemetryEnabled = view.showTelemetry; return {};
     case UiControlId::target:
@@ -78,7 +83,13 @@ std::string UiInput::handle(View& view, const SDL_Event& event, int width, int h
   }
   if (event.type == SDL_MOUSEWHEEL) {
     ui.scrollOffset = std::clamp(ui.scrollOffset - std::clamp(event.wheel.y, -32, 32), 0, uiMaxScroll(ui));
-    ui.selected = std::clamp(ui.selected, 0, std::max(0, std::min(9, int(ui.galnet.size()) - ui.scrollOffset) - 1));
+    if (ui.screen == UiScreen::shipyard && !ui.shipyardRows.empty()) {
+      ui.selected = std::clamp(ui.selected, ui.scrollOffset,
+        std::min(static_cast<int>(ui.shipyardRows.size()) - 1, ui.scrollOffset + kVisibleShipyardRows - 1));
+    } else if (ui.screen == UiScreen::galnet) {
+      ui.selected = std::clamp(ui.selected, 0,
+        std::max(0, std::min(9, int(ui.galnet.size()) - ui.scrollOffset) - 1));
+    }
     return {};
   }
   if (event.type == SDL_TEXTINPUT && ui.screen == UiScreen::account) {
@@ -116,15 +127,25 @@ std::string UiInput::handle(View& view, const SDL_Event& event, int width, int h
     UiControlId::stationMission, UiControlId::stationOutfitting, UiControlId::stationGalnet, UiControlId::stationGraphics, UiControlId::help};
   if (key >= SDLK_F2 && key <= SDLK_F9) return activate(view, {shortcuts[key - SDLK_F2], 0, true});
   if (key == SDLK_PAGEUP || key == SDLK_PAGEDOWN) {
-    ui.scrollOffset = std::clamp(ui.scrollOffset + (key == SDLK_PAGEDOWN ? 1 : -1), 0, uiMaxScroll(ui)); return {};
+    ui.scrollOffset = std::clamp(ui.scrollOffset + (key == SDLK_PAGEDOWN ? 1 : -1), 0, uiMaxScroll(ui));
+    if (ui.screen == UiScreen::shipyard && !ui.shipyardRows.empty())
+      ui.selected = std::clamp(ui.selected, ui.scrollOffset,
+        std::min(static_cast<int>(ui.shipyardRows.size()) - 1, ui.scrollOffset + kVisibleShipyardRows - 1));
+    return {};
   }
   if (key == SDLK_UP || key == SDLK_DOWN) {
     if (ui.screen == UiScreen::mission) ui.missionSelected = std::clamp(ui.missionSelected + (key == SDLK_DOWN ? 1 : -1), 0, 2);
     else {
-      const int maximum = ui.screen == UiScreen::station ? 9 : ui.screen == UiScreen::market ? 1 :
+      const int maximum = ui.screen == UiScreen::station ? 10 : ui.screen == UiScreen::market ? 1 :
         ui.screen == UiScreen::outfitting ? int(loadout::kCatalogue.size()) - 1 :
+        ui.screen == UiScreen::shipyard ? std::max(0, int(ui.shipyardRows.size()) - 1) :
         ui.screen == UiScreen::galnet ? std::max(0, std::min(9, int(ui.galnet.size()) - ui.scrollOffset) - 1) : 0;
       ui.selected = std::clamp(ui.selected + (key == SDLK_DOWN ? 1 : -1), 0, maximum);
+      if (ui.screen == UiScreen::shipyard) {
+        if (ui.selected < ui.scrollOffset) ui.scrollOffset = ui.selected;
+        else if (ui.selected >= ui.scrollOffset + kVisibleShipyardRows)
+          ui.scrollOffset = ui.selected - kVisibleShipyardRows + 1;
+      }
     }
     ui.focusedControl = UiControlId::none;
   }
@@ -141,6 +162,11 @@ std::string UiInput::handle(View& view, const SDL_Event& event, int width, int h
       const auto id = loadout::kCatalogue[std::clamp(ui.selected, 0, int(loadout::kCatalogue.size()) - 1)].id;
       return invoke(std::find(ui.ownedModules.begin(), ui.ownedModules.end(), id) == ui.ownedModules.end() ? UiControlId::outfitBuy : UiControlId::outfitFit);
     }
+    if (ui.screen == UiScreen::shipyard) {
+      if (ui.selected < 0 || ui.selected >= static_cast<int>(ui.shipyardRows.size())) return {};
+      return invoke(ui.shipyardRows[static_cast<std::size_t>(ui.selected)].owned ?
+        UiControlId::shipyardSwitch : UiControlId::shipyardBuy);
+    }
     return invoke(ui.screen == UiScreen::help ? UiControlId::introDismiss : UiControlId::dismiss);
   }
   if (ui.screen == UiScreen::market) {
@@ -155,6 +181,10 @@ std::string UiInput::handle(View& view, const SDL_Event& event, int width, int h
     if (key == SDLK_r) return invoke(UiControlId::outfitRemove);
     if (key == SDLK_1) return invoke(UiControlId::upgradeEngine);
     if (key == SDLK_2) return invoke(UiControlId::upgradeHull);
+  }
+  if (ui.screen == UiScreen::shipyard) {
+    if (key == SDLK_b) return invoke(UiControlId::shipyardBuy);
+    if (key == SDLK_f) return invoke(UiControlId::shipyardSwitch);
   }
   if (ui.screen == UiScreen::flight) {
     if (key == SDLK_e) return invoke(UiControlId::mine);

@@ -216,6 +216,13 @@ Then enter:
 Expected profile output includes the initial `sidewinder`, faction, credits,
 and experience fields.
 
+Docked clients may use `SHIPYARD LIST`, `SHIPYARD OWNED`, `SHIPYARD BUY
+<hull-id>`, and `SHIPYARD SWITCH <instance-id>`. The server validates local
+inventory, pad support, ownership, credits, and physical ship location before
+atomically persisting a transaction. New `S` records store owned ship
+instances; legacy profiles without them migrate deterministically to one
+Sidewinder and retain the existing `H` record as an active-ship projection.
+
 ## 7. Persistence and security limitations
 
 The line-oriented data file contains profile records and chat messages. New

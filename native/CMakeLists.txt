@@ -1,4 +1,4 @@
-add_library(helion_protocol STATIC shared/protocol.cpp shared/flight.cpp shared/combat.cpp shared/organizations.cpp shared/career.cpp)
+add_library(helion_protocol STATIC shared/protocol.cpp shared/flight.cpp shared/combat.cpp shared/organizations.cpp shared/career.cpp shared/ships.cpp shared/shipyard.cpp shared/owned_ship.cpp)
 target_include_directories(helion_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(helion_protocol PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -52,6 +52,10 @@ if(HELION_BUILD_TESTS)
   target_link_libraries(helion_career_tests PRIVATE helion_protocol)
   target_compile_options(helion_career_tests PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME helion_career_tests COMMAND helion_career_tests)
+  add_executable(helion_ships_tests tests/ships_tests.cpp)
+  target_link_libraries(helion_ships_tests PRIVATE helion_protocol)
+  target_compile_options(helion_ships_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME helion_ships_tests COMMAND helion_ships_tests)
   add_executable(helion_graphics_tests tests/graphics_tests.cpp)
   target_link_libraries(helion_graphics_tests PRIVATE helion_graphics)
   target_compile_options(helion_graphics_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -107,7 +111,7 @@ if(HELION_BUILD_TESTS)
     endif()
     add_test(NAME helion_tls_integration COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/tls_integration.py ${tls_test_arguments})
-    set_tests_properties(helion_tls_integration PROPERTIES TIMEOUT 90)
+    set_tests_properties(helion_tls_integration PROPERTIES TIMEOUT 90 RESOURCE_LOCK helion_gameplay_integration)
   endif()
 endif()
 
@@ -120,12 +124,14 @@ if(HELION_BUILD_TESTS AND HELION_BUILD_SERVER AND HELION_BUILD_CLIENT)
   add_test(NAME helion_core_gameplay COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core_gameplay_integration.py
     --server $<TARGET_FILE:helion_server> --client $<TARGET_FILE:helion_client>)
-  set_tests_properties(helion_core_gameplay PROPERTIES TIMEOUT 120 RESOURCE_LOCK helion_graphics_display)
+  set_tests_properties(helion_core_gameplay PROPERTIES TIMEOUT 120
+    RESOURCE_LOCK "helion_graphics_display;helion_gameplay_integration")
   add_test(NAME helion_graphical_acceptance COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/graphical_acceptance.py
     --server $<TARGET_FILE:helion_server> --client $<TARGET_FILE:helion_client>
     --cert-helper ${CMAKE_CURRENT_SOURCE_DIR}/scripts/helion-dev-cert)
-  set_tests_properties(helion_graphical_acceptance PROPERTIES TIMEOUT 240 RESOURCE_LOCK helion_graphics_display)
+  set_tests_properties(helion_graphical_acceptance PROPERTIES TIMEOUT 240
+    RESOURCE_LOCK "helion_graphics_display;helion_gameplay_integration")
 endif()
 
 if(HELION_BUILD_TESTS AND HELION_BUILD_CLIENT)

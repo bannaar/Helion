@@ -12,7 +12,11 @@ import time
 
 
 def run(args, **kwargs):
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=30, **kwargs)
+    timeout = kwargs.pop('timeout', 30)
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, **kwargs)
+    if result.returncode:
+        raise AssertionError(f"command failed ({result.returncode}): {args}\n{result.stdout}\n{result.stderr}")
+    return result
 
 
 def certificate(root, name, san, expired=False):
@@ -73,7 +77,7 @@ def main():
         wrong, wrong_key = certificate(root, 'wrong', 'DNS:wrong.invalid')
         expired, expired_key = certificate(root, 'expired', 'DNS:localhost,IP:127.0.0.1', True)
         # Existing migration, lock, gameplay, rollback and restart suite now runs over TLS.
-        print(run([args.gameplay, args.server, str(cert), str(key)]).stdout.strip())
+        print(run([args.gameplay, args.server, str(cert), str(key)], timeout=60).stdout.strip())
         missing = subprocess.run([args.server, str(free_port()), str(root / 'missing.db')], capture_output=True, timeout=8)
         assert missing.returncode != 0 and b'TLS requires' in missing.stderr
         mismatch = subprocess.run([args.server, str(free_port()), str(root / 'mismatch.db'), '--cert', str(cert),

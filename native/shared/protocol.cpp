@@ -107,6 +107,17 @@ Request parseRequest(std::string_view line) {
       return request;
     }
     request.command = Command::outfit;
+  } else if (command == "SHIPYARD") {
+    std::string extra;
+    if (!(input >> request.first) || request.first.size() > 16 ||
+        ((request.first == "LIST" || request.first == "OWNED") && (input >> extra)) ||
+        (request.first != "LIST" && request.first != "OWNED" && request.first != "BUY" && request.first != "SWITCH") ||
+        ((request.first == "BUY" || request.first == "SWITCH") &&
+          (!(input >> request.second) || request.second.size() > 64 || (input >> extra)))) {
+      request.error = "usage=SHIPYARD LIST|OWNED|BUY hull-id|SWITCH instance-id";
+      return request;
+    }
+    request.command = Command::shipyard;
   } else if (command == "BUY" || command == "SELL") {
     std::string extra;
     if (!(input>>request.first>>request.second) || (input>>extra) ||

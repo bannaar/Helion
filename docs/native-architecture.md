@@ -97,16 +97,17 @@ continued free play rather than changing simulation mode.
 
 ## Current compatibility boundary
 
-`Profile` still physically stores the commander record, active ship state,
-credits, experience, upgrades, and owned/fitted modules. This is intentional:
-moving those fields into a new persistence schema would add migration risk
-without helping the current slice. Conceptually, the fields are separated as:
+`Profile` stores commander identity, progression, economy, reputation, and a
+fleet of persistent `OwnedShip` instances. The active instance is selected by
+stable ID; hull definitions remain immutable shared data. The legacy commander
+record projects the active vessel for backward compatibility, while `S` records
+persist the authoritative fleet. The ownership boundaries are:
 
 - **COMMANDER:** identity, credentials, credits, XP, progression, and future
   guild membership.
-- **SHIP:** the active `flight::State` (hull, fuel, cargo, position and
-  docking), ship upgrades, and fitted modules. The current profile has one
-  active ship; its state is server-authoritative.
+- **SHIP:** each owned instance has its own `flight::State` (hull, fuel, cargo,
+  position and docking), upgrades, modules, visual variant, livery, wear, and storage state.
+  Exactly one is active; all state and switching are server-authoritative.
 - **PERSONAL INVENTORY:** future stored commander-owned modules, salvage and
   other assets. Batch 3 keeps one small persisted salvage counter as a
   compatibility bridge rather than introducing a second inventory system.

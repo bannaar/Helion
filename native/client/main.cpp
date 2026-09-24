@@ -20,6 +20,7 @@
 #include "shared/protocol.h"
 #include "shared/organizations.h"
 #include "shared/loadout.h"
+#include "shared/ships.h"
 #include "client/ui_input.h"
 #include "client/acceptance_driver.h"
 #include "client/render.h"
@@ -151,6 +152,66 @@ int integerField(std::string_view line, std::string_view key, int fallback = 0) 
   } catch (...) { return fallback; }
 }
 
+double doubleField(std::string_view line, std::string_view key, double fallback = 0) {
+  const auto value = fieldValue(line, key);
+  if (value.empty()) return fallback;
+  try {
+    std::size_t used = 0;
+    const double parsed = std::stod(value, &used);
+    return used == value.size() && std::isfinite(parsed) ? parsed : fallback;
+  } catch (...) { return fallback; }
+}
+
+std::string displayToken(std::string value) {
+  std::replace(value.begin(), value.end(), '_', ' ');
+  return value;
+}
+
+helion::client::UiShipyardRow shipyardRow(std::string_view line, bool owned) {
+  helion::client::UiShipyardRow row;
+  row.hullId = boundedUiText(fieldValue(line, "hull="), 64);
+  if (!owned) row.hullId = boundedUiText(fieldValue(line, "id="), 64);
+  row.instanceId = boundedUiText(fieldValue(line, "instance="), 64);
+  const auto* hull = helion::ships::find(row.hullId);
+  row.displayName = displayToken(fieldValue(line, "name="));
+  if (hull) {
+    if (row.displayName.empty()) row.displayName = std::string(hull->displayName);
+    const auto* manufacturer = helion::ships::findManufacturer(hull->manufacturerId);
+    const auto* operatorProfile = helion::ships::findOperator(hull->operatorId);
+    row.manufacturer = manufacturer ? std::string(manufacturer->displayName) : std::string(hull->manufacturerId);
+    row.operatorName = operatorProfile ? std::string(operatorProfile->displayName) : std::string(hull->operatorId);
+    row.shipClass = std::string(hull->shipClass); row.role = std::string(hull->role);
+    row.padSize = helion::ships::padSizeName(hull->padSize);
+    row.price = hull->purchasePrice; row.speed = static_cast<int>(hull->topSpeed);
+    row.boost = static_cast<int>(hull->boostSpeed); row.acceleration = static_cast<int>(hull->acceleration);
+    row.handling = hull->maneuverability; row.hull = hull->baseHull; row.shields = hull->baseShields;
+    row.cargo = hull->cargoCapacity; row.jumpRange = hull->jumpRangeLaden;
+  }
+  if (!owned) {
+    if (const auto value = fieldValue(line, "manufacturer="); !value.empty())
+      row.manufacturer = displayToken(value);
+    if (const auto value = fieldValue(line, "operator="); !value.empty())
+      row.operatorName = displayToken(value);
+    if (const auto value = fieldValue(line, "class="); !value.empty())
+      row.shipClass = displayToken(value);
+    if (const auto value = fieldValue(line, "role="); !value.empty())
+      row.role = displayToken(value);
+    if (const auto value = fieldValue(line, "pad="); !value.empty()) row.padSize = value;
+    row.price = integerField(line, "price=", row.price);
+    row.speed = integerField(line, "speed=", row.speed); row.boost = integerField(line, "boost=", row.boost);
+    row.acceleration = integerField(line, "acceleration=", row.acceleration);
+    row.handling = integerField(line, "handling=", row.handling); row.hull = integerField(line, "hull=", row.hull);
+    row.shields = integerField(line, "shields=", row.shields); row.cargo = integerField(line, "cargo=", row.cargo);
+    row.jumpRange = doubleField(line, "jump-laden=", row.jumpRange);
+  } else {
+    row.state = fieldValue(line, "state="); row.active = row.state == "ACTIVE";
+    const auto ownedOperator = fieldValue(line, "operator=");
+    if (!ownedOperator.empty()) row.operatorName = displayToken(ownedOperator);
+  }
+  row.owned = owned;
+  return row;
+}
+
 void splitModules(std::string_view value, std::vector<std::string>& modules) {
   modules.clear();
   std::size_t start = 0;
@@ -189,7 +250,23 @@ void updateUiFromLine(helion::client::View& view, std::string_view line) {
     if (first && !ui.career.introDismissed) ui.screen = helion::client::UiScreen::help;
     if (!first && !wasComplete && ui.career.complete) ui.screen = helion::client::UiScreen::completion;
   }
-  if (line.rfind("PROFILE ", 0) == 0) {
+  if (line.rfind("SHIPYARD BEGIN ", 0) == 0) {
+    ui.shipyardRows.clear(); ui.selected = 0; ui.scrollOffset = 0;
+  } else if (line.rfind("ACTIVE SHIP ", 0) == 0) {
+    ui.activeHullId = boundedUiText(fieldValue(line, "hull="), 64);
+    ui.activeHullName = displayToken(boundedUiText(fieldValue(line, "display="), 64));
+    ui.cargoCapacity = std::max(0, integerField(line, "cargo-capacity=", helion::flight::kCargoCapacity));
+  } else if (line.rfind("SHIPDEF ", 0) == 0) {
+    auto row = shipyardRow(line, false);
+    const auto existing = std::find_if(ui.shipyardRows.begin(), ui.shipyardRows.end(),
+      [&row](const auto& item) { return !item.owned && item.hullId == row.hullId; });
+    if (existing == ui.shipyardRows.end()) ui.shipyardRows.push_back(std::move(row)); else *existing = std::move(row);
+  } else if (line.rfind("OWNEDSHIP ", 0) == 0) {
+    auto row = shipyardRow(line, true);
+    const auto existing = std::find_if(ui.shipyardRows.begin(), ui.shipyardRows.end(),
+      [&row](const auto& item) { return item.owned && item.instanceId == row.instanceId; });
+    if (existing == ui.shipyardRows.end()) ui.shipyardRows.push_back(std::move(row)); else *existing = std::move(row);
+  } else if (line.rfind("PROFILE ", 0) == 0) {
     ui.engineLevel = std::clamp(integerField(line, "engine-level="), 1, 5);
     ui.hullLevel = std::clamp(integerField(line, "hull-level="), 1, 5);
     ui.salvage = std::max(0, integerField(line, "salvage="));
@@ -236,7 +313,7 @@ void updateUiFromLine(helion::client::View& view, std::string_view line) {
 bool validRenderState(std::string_view state) {
   return state == "normal" || state == "mining" || state == "target" || state == "combat" ||
     state == "docked" || state == "destroyed" || state == "galnet" || state == "galnet-ui" || state == "account" ||
-    state == "station" || state == "market" || state == "mission" || state == "outfit" ||
+    state == "station" || state == "market" || state == "mission" || state == "outfit" || state == "shipyard" ||
     state == "profile" || state == "options" || state == "graphics" || state == "error" ||
     state == "help" || state == "completion";
 }
@@ -279,13 +356,14 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
     view.log.push_back("TLS VERIFIED / SERVER CERTIFICATE ACCEPTED");
     return;
   }
-  if (state == "station" || state == "market" || state == "mission" || state == "outfit" || state == "galnet-ui" ||
+  if (state == "station" || state == "market" || state == "mission" || state == "outfit" || state == "shipyard" || state == "galnet-ui" ||
       state == "profile" || state == "options" || state == "graphics" || state == "error" ||
       state == "help" || state == "completion") {
     view.ui.screen = state == "station" ? helion::client::UiScreen::station :
       state == "market" ? helion::client::UiScreen::market :
       state == "mission" ? helion::client::UiScreen::mission :
       state == "outfit" ? helion::client::UiScreen::outfitting :
+      state == "shipyard" ? helion::client::UiScreen::shipyard :
       state == "profile" ? helion::client::UiScreen::profile :
       state == "galnet-ui" ? helion::client::UiScreen::galnet :
       state == "options" ? helion::client::UiScreen::options :
@@ -299,6 +377,10 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
       {"first-ore-available", "Orion Extraction Group requests first ore in Kepler"},
       {"supply-complete", "Kepler Authority confirms delivery from Cinder"},
       {"red-wake-defeated", "Red Wake raider defeated near Kepler"}};
+    if (state == "shipyard") view.ui.shipyardRows = {
+      shipyardRow("SHIPDEF id=TITAN_MULE", false),
+      shipyardRow("SHIPDEF id=COMPACT_MILITIA", false),
+      shipyardRow("OWNEDSHIP hull=SIDEWINDER instance=ship-render-0001 state=ACTIVE", true)};
     view.ship.docked = true;
     view.ship.station = 0;
     return;
@@ -736,6 +818,7 @@ int main(int argc,char** argv) {
           (pendingUiAction == "GALNET" && response == "GALNET END") ||
           (pendingUiAction == "CAREER" && response.rfind("CAREER ", 0) == 0) ||
           (pendingUiAction == "OUTFIT LIST" && response.rfind("LOADOUT ", 0) == 0) ||
+          (pendingUiAction == "SHIPYARD" && response.rfind("SHIPYARD END", 0) == 0) ||
           (pendingUiAction == "CONTACTS" && response == "CONTACTS END") ||
           (pendingUiAction == "FIRE" && response.rfind("COMBAT HIT ", 0) == 0);
         if (view.ui.commandPending && uiComplete) {

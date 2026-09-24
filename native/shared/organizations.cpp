@@ -1,6 +1,7 @@
 #include "shared/organizations.h"
 
 #include <charconv>
+#include <set>
 #include <utility>
 
 namespace helion::organizations {
@@ -51,6 +52,7 @@ std::string reputationSummary(const std::map<std::string, int>& standings) {
 
 bool parseReputationSummary(std::string_view value, std::map<std::string, int>& standings) {
   std::map<std::string, int> parsed;
+  std::set<std::string> seen;
   std::size_t start = 0;
   while (start <= value.size()) {
     const auto end = value.find(',', start);
@@ -62,7 +64,7 @@ bool parseReputationSummary(std::string_view value, std::map<std::string, int>& 
     const auto id = entry.substr(0, equals);
     const auto number = entry.substr(equals + 1, colon - equals - 1);
     const auto label = entry.substr(colon + 1);
-    if (!find(id) || parsed.find(std::string(id)) != parsed.end()) return false;
+    if (!find(id) || !seen.emplace(id).second) return false;
     int standing = 0;
     const auto result = std::from_chars(number.data(), number.data() + number.size(), standing);
     if (result.ec != std::errc{} || result.ptr != number.data() + number.size() ||
@@ -72,7 +74,10 @@ bool parseReputationSummary(std::string_view value, std::map<std::string, int>& 
     if (end == std::string_view::npos) break;
     start = end + 1;
   }
-  if (parsed.size() != kRegistry.size()) return false;
+  if (parsed.empty()) return false;
+  // Older saves contain only the organizations known when they were written.
+  // New canonical standings are introduced neutrally during load.
+  for (const auto& definition : kRegistry) parsed.emplace(definition.id, 0);
   standings = std::move(parsed);
   return true;
 }

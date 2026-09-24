@@ -14,7 +14,7 @@ def main():
     parser.add_argument("--client", required=True)
     args = parser.parse_args()
     states = ("normal", "mining", "target", "combat", "docked", "destroyed", "galnet",
-              "account", "station", "market", "mission", "outfit", "profile", "galnet-ui", "options", "graphics",
+              "account", "station", "market", "mission", "outfit", "shipyard", "profile", "galnet-ui", "options", "graphics",
               "error", "help", "completion")
     env = dict(os.environ, SDL_VIDEODRIVER="x11")
     with tempfile.TemporaryDirectory(prefix="helion-core-render-") as directory:

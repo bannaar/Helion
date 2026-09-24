@@ -15,6 +15,11 @@ int nearestStation(const State& s) {
 double speed(const State& s) { return std::hypot(s.vx, s.vy); }
 
 void step(State& s, double dt, int engineLevel, double fuelConsumptionMultiplier) {
+  step(s, dt, ships::sidewinder(), engineLevel, fuelConsumptionMultiplier);
+}
+
+void step(State& s, double dt, const ships::Definition& hull, int engineLevel,
+          double fuelConsumptionMultiplier) {
   if (!std::isfinite(dt) || dt <= 0) return;
   dt = std::min(dt, 0.05);
   s.cooldown = std::max(0.0, s.cooldown - dt);
@@ -34,14 +39,21 @@ void step(State& s, double dt, int engineLevel, double fuelConsumptionMultiplier
       s.fuel -= fuelBurn;
     }
   }
-  s.yaw = std::remainder(s.yaw + input.turn * 2.2 * dt, 2 * kPi);
+  s.yaw = std::remainder(s.yaw + input.turn * hull.turnRate * dt, 2 * kPi);
   const double engineMultiplier = 1.0 + 0.12 * (std::clamp(engineLevel, 1, 5) - 1);
-  const double acceleration = input.brake ? 0 : input.thrust * 130.0 * engineMultiplier;
+  const double acceleration = input.brake ? 0 : input.thrust * hull.acceleration * engineMultiplier;
   s.vx -= std::sin(s.yaw) * acceleration * dt;
   s.vy += std::cos(s.yaw) * acceleration * dt;
   const double drag = std::exp(-(input.brake ? 4.5 : 0.65) * dt);
   s.vx *= drag;
   s.vy *= drag;
+  const double currentSpeed = speed(s);
+  const double maximumSpeed = hull.topSpeed * engineMultiplier;
+  if (currentSpeed > maximumSpeed) {
+    const double scale = maximumSpeed / currentSpeed;
+    s.vx *= scale;
+    s.vy *= scale;
+  }
   s.x += s.vx * dt;
   s.y += s.vy * dt;
   // Soft collision hulls keep the ship outside the faceted asteroid meshes.
@@ -120,11 +132,15 @@ std::string recover(State& s) {
 }
 
 std::string mine(State& s, bool miningEnabled, double cooldownMultiplier) {
+  return mine(s, kCargoCapacity, miningEnabled, cooldownMultiplier);
+}
+
+std::string mine(State& s, int cargoCapacity, bool miningEnabled, double cooldownMultiplier) {
   if (s.docked) return "ERR launch-required";
   if (s.destroyed) return "ERR recovery-required";
   if (!miningEnabled) return "ERR mining-module-required";
   if (!std::isfinite(cooldownMultiplier) || cooldownMultiplier <= 0) return "ERR invalid-mining-module";
-  if (cargoUsed(s) >= kCargoCapacity) return "ERR cargo-full";
+  if (cargoCapacity < 0 || cargoUsed(s) >= cargoCapacity) return "ERR cargo-full";
   if (speed(s) > kWorkSpeed) return "ERR slow-down";
   const Rock& rock = kRocks[nearestRock(s)];
   if (std::hypot(s.x - rock.x, s.y - rock.y) > kMineRange) return "ERR asteroid-out-of-range";
@@ -314,7 +330,7 @@ bool readDockTransaction(const std::string& line, DockTransaction& transaction) 
       !parseField(credits, "credits", next.creditsEarned) ||
       !parseField(experience, "experience", next.experienceEarned)) return false;
   if (next.station < 0 || next.station >= static_cast<int>(kStations.size()) ||
-      next.cargoSold < 0 || next.cargoSold > kCargoCapacity || next.unitPrice < 0 ||
+      next.cargoSold < 0 || next.cargoSold > kMaximumSupportedCargo || next.unitPrice < 0 ||
       next.unitPrice > 100000 || next.creditsEarned < 0 || next.experienceEarned < 0 ||
       next.creditsEarned != next.cargoSold * next.unitPrice ||
       next.experienceEarned != next.cargoSold * 5) return false;
@@ -323,8 +339,13 @@ bool readDockTransaction(const std::string& line, DockTransaction& transaction) 
 }
 
 std::string repair(State& s, int& credits, int hullLevel) {
+  return repairToCapacity(s, credits, hullCapacity(hullLevel));
+}
+
+std::string repairToCapacity(State& s, int& credits, int maximumHull) {
   if (!s.docked) return "ERR dock-required";
-  s.maxHull = hullCapacity(hullLevel);
+  if (maximumHull < 1) return "ERR invalid-hull-state";
+  s.maxHull = maximumHull;
   if (s.hull >= s.maxHull) return "ERR hull-full";
   const int missing = s.maxHull - s.hull;
   const int cost = missing * 3;
@@ -335,15 +356,20 @@ std::string repair(State& s, int& credits, int hullLevel) {
 }
 
 std::string trade(State& s, int& credits, bool buying, const std::string& commodity, int quantity) {
+  return trade(s, credits, buying, commodity, quantity, kCargoCapacity);
+}
+
+std::string trade(State& s, int& credits, bool buying, const std::string& commodity, int quantity,
+                  int cargoCapacity) {
   if (!s.docked) return "ERR dock-required";
-  if (quantity<1 || quantity>kCargoCapacity) return "ERR invalid-quantity";
+  if (quantity<1 || quantity>cargoCapacity) return "ERR invalid-quantity";
   if (commodity!="food" && commodity!="parts") return "ERR unknown-commodity";
   int& inventory=commodity=="food" ? s.food : s.parts;
   const auto& market=kStations[s.station];
   const int price=commodity=="food" ? (buying?market.foodBuy:market.foodSell) : (buying?market.partsBuy:market.partsSell);
   const int total=price*quantity;
   if (buying) {
-    if (cargoUsed(s)+quantity>kCargoCapacity) return "ERR cargo-full";
+    if (cargoUsed(s)+quantity>cargoCapacity) return "ERR cargo-full";
     if (credits<total) return "ERR insufficient-credits";
     inventory+=quantity; credits-=total;
   } else {
@@ -402,12 +428,15 @@ bool readSnapshot(const std::string& line, State& s, int& credits, int& experien
   }
   if (!std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.vx) ||
       !std::isfinite(next.vy) || !std::isfinite(next.yaw) || !std::isfinite(next.cooldown) ||
-      std::abs(next.x) > 1201 || std::abs(next.y) > 1201 || std::abs(next.vx) > 250 ||
-      std::abs(next.vy) > 250 || std::abs(next.yaw) > kPi + 0.001 ||
-      docked < 0 || docked > 1 || next.cargo < 0 || next.cargo > kCargoCapacity || next.food<0 || next.parts<0 ||
-      next.food>8 || next.parts>8 || cargoUsed(next)>kCargoCapacity || next.station<0 || next.station>1 ||
+      std::abs(next.x) > 1201 || std::abs(next.y) > 1201 ||
+      std::abs(next.vx) > kMaximumSupportedSpeed || std::abs(next.vy) > kMaximumSupportedSpeed ||
+      std::abs(next.yaw) > kPi + 0.001 ||
+      docked < 0 || docked > 1 || next.cargo < 0 || next.cargo > kMaximumSupportedCargo || next.food<0 || next.parts<0 ||
+      next.food>kMaximumSupportedCargo || next.parts>kMaximumSupportedCargo ||
+      cargoUsed(next)>kMaximumSupportedCargo || next.station<0 || next.station>1 ||
       next.cooldown < 0 || next.cooldown > 1.251) return false;
-  if (next.hull < 0 || next.maxHull < 1 || next.maxHull > 200 || next.hull > next.maxHull) return false;
+  if (next.hull < 0 || next.maxHull < 1 || next.maxHull > kMaximumSupportedHull ||
+      next.hull > next.maxHull) return false;
   next.docked = docked != 0;
   s = next; credits = nextCredits; experience = nextExperience;
   return true;

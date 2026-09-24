@@ -36,6 +36,15 @@ the commander in flight.
 Other clients receive live positions through `/contacts`, and the client
 renders commander ships alongside NPC traffic.
 
+Batch 13 adds a canonical eight-hull native registry, manufacturer/operator and
+visual profiles, persistent owned ship instances, deterministic migration of
+legacy Sidewinders, active-ship selection, Small/Medium pad declarations, and
+authoritative Kepler/Cinder shipyards. Hull cargo, acceleration, top speed,
+handling, durability, fuel, mining compatibility, and price now affect the
+native game. The cockpit shipyard browses specs and owned vessels and switches
+only between ships physically stored at the current station. Exact definitions,
+balance, persistence, and canon reconciliation are in `docs/native-ships.md`.
+
 Transport is mandatory TLS 1.2 or newer. The server requires a certificate and
 private key and never emits a plaintext greeting. The client validates trust,
 expiration, and DNS/IP Subject Alternative Name before sending commands. Local

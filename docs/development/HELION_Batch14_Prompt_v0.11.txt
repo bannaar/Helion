@@ -1,0 +1,1724 @@
+HELION BATCH 14
+OUTFITTING, MODULES, REGIONAL MARKET FOUNDATION, SYSTEM SECURITY,
+BINARY PROTOCOL, CLIENT STATE ARCHITECTURE, TEST INFRASTRUCTURE & PERSISTENT ONLINE SERVICE FOUNDATIONS
+
+============================================================
+OBJECTIVE
+============================================================
+
+Continue development of the existing HELION repository from the COMPLETED and VALIDATED Batch 13 state.
+
+Do not restart or reimplement Batch 13.
+
+Treat:
+- the existing repository as the authoritative implementation baseline
+- HELION Lore, Factions & Gameplay World Bible v0.10 as the current lore/worldbuilding authority
+- the active /goal as the long-term engineering contract
+
+Batch 14 has eight coordinated objectives:
+
+1. Build the first coherent server-authoritative outfitting/module architecture on top of Batch 13's Ship Definition / Owned Ship Instance foundation.
+2. Establish the economic architecture required for regional markets, NPC seeding, economic telemetry, and future player industry/trade.
+3. Establish the canonical system-security data model and hooks required by World Bible v0.10 without attempting to build the entire future police/GDF simulation.
+4. Introduce a versioned lightweight binary client/server protocol foundation over the existing TLS transport, prioritizing high-frequency gameplay messages and measurable efficiency without sacrificing safety or compatibility.
+5. Refactor client flow into explicit engine states and transitions so login, station/career, orbit/space, menus, reconnect, and error handling are not tangled inside one monolithic loop.
+6. Formalize the DEVELOPMENT / PRIVATE TEST / PRODUCTION environment model and implement strict TEST administration boundaries.
+7. Establish production administration, security, monitoring, maintenance, backup, and deployment foundations without pretending production operations are complete.
+8. Preserve compatibility and leave clean integration points for future character creation, launcher/accounts, industry/manufacturing, Concordat gameplay, and deeper security simulation.
+
+Do not create a parallel game architecture.
+Do not replace functioning systems unnecessarily.
+Do not claim deferred systems are implemented.
+
+============================================================
+1. REPOSITORY AUDIT FIRST
+============================================================
+
+Before changing code, inspect the current repository and working tree.
+
+Audit at minimum:
+- current branch and uncommitted changes
+- Batch 13 completion report and tests
+- commander/player/account models
+- authentication/session model
+- protocol/version handling
+- current text/line framing and decoder limits
+- high-frequency message cadence and byte volume
+- client main-loop/state coupling and UI navigation
+- server lifecycle
+- networking and TLS
+- server authority boundaries
+- ship registry / canonical Ship Definitions
+- Owned Ship Instances
+- active_ship_id / owned ships
+- shipyard browse/buy/switch flow
+- pads and station shipyard inventory
+- cargo and inventory
+- existing modules/upgrades
+- hardpoint/slot foundations
+- flight stats and ship-derived gameplay values
+- hull/damage/fuel/shields/sensors where implemented
+- mining
+- missions
+- credits/economy
+- reputation/faction/rank/loyalty models where present
+- crime/bounty systems where present
+- galaxy/system/station definitions
+- persistence/storage/database
+- migrations
+- GalNet
+- logging/auditing
+- Dockerfile/server-only/client-only builds
+- packaging/installers
+- tests/validation scripts
+- existing documentation
+- repository-local world-bible files
+
+Identify exactly what Batch 13 already completed.
+
+Preserve it.
+
+If the repository still contains an older world-bible version, do not overwrite v0.10 canon using the older file. Record the discrepancy and use the externally supplied v0.10 requirements for this batch.
+
+============================================================
+2. PRESERVE BATCH 13 SHIP ARCHITECTURE
+============================================================
+
+Preserve separation among:
+
+SHIP DEFINITION
+OWNED SHIP INSTANCE
+FITTED EQUIPMENT / MODULE STATE
+VISUAL / OPERATOR VARIANT
+
+Canonical hull data must not be mutated to represent one commander's personal ship.
+
+Owned ships remain individually persistent instances.
+
+Do not regress Batch 13 ship migration, shipyard purchase, switching, cargo, location, upgrades, or reconnect behavior.
+
+============================================================
+3. OUTFITTING ARCHITECTURE
+============================================================
+
+Implement the first coherent outfitting architecture using the existing codebase.
+
+Support structured slot concepts where appropriate, such as:
+- WEAPON_HARDPOINT
+- UTILITY
+- CORE_INTERNAL
+- OPTIONAL_INTERNAL
+
+Preserve/extend size concepts already present. If no canonical enum exists, introduce the smallest clean representation, for example SIZE_1 through SIZE_4 or an equivalent existing convention.
+
+Core systems should be capable of representing future equipment such as:
+- power plant
+- thrusters
+- future FSD/jump-drive equipment
+- life support
+- power distributor
+- sensors
+- fuel system
+
+Do not invent active gameplay mechanics merely because a module definition exists.
+
+============================================================
+4. MODULE DEFINITIONS
+============================================================
+
+Create or extend a canonical, data-oriented module registry.
+
+Fields may include where appropriate:
+- module_id
+- display_name
+- manufacturer
+- category
+- slot_type
+- size
+- grade/class
+- purchase_price
+- mass
+- power_draw
+- integrity
+- compatibility constraints
+- gameplay modifiers
+- legal/restricted status
+- faction requirements
+- reputation requirements
+- rank/permit requirements
+- test availability
+- metadata
+
+Use repository conventions where they already exist.
+
+Do not scatter module balance values through unrelated gameplay code.
+
+============================================================
+5. MODULE OWNERSHIP & FITTED INSTANCES
+============================================================
+
+Determine the smallest coherent relationship among:
+- canonical Module Definition
+- owned module/inventory item
+- fitted module state on a particular Owned Ship Instance
+
+Integrate with the existing inventory/asset model instead of creating an unrelated second inventory system.
+
+Document the chosen model in the completion report.
+
+============================================================
+6. FIT / UNFIT OPERATIONS
+============================================================
+
+Provide server-authoritative operations for applicable current systems:
+- inspect fitted equipment
+- inspect compatible modules
+- fit
+- unfit/remove
+- validate ownership
+- validate ship instance
+- validate slot type
+- validate size
+- validate station/service context where required
+- validate production requirements
+- persist changes
+- reconnect with correct fitted state
+
+Clients request actions.
+The server validates and commits them.
+
+Protect against partial state changes and duplication.
+
+============================================================
+7. REPRESENTATIVE MODULE GAMEPLAY EFFECTS
+============================================================
+
+Implement only a manageable representative module set that proves the architecture.
+
+Prefer effects that naturally integrate with systems already present, such as:
+- cargo capacity
+- maximum speed
+- acceleration
+- maneuverability
+- hull durability
+- mining performance
+- sensors if an existing mechanic supports them
+- shields if an existing mechanic supports them
+
+Do not implement the entire future equipment catalogue.
+
+============================================================
+8. OUTFITTING UI / COMMAND SURFACE
+============================================================
+
+Extend the existing client/native interface or command surface rather than creating a browser rewrite.
+
+A player should be able to understand:
+- what is installed
+- available slots
+- compatible equipment
+- meaningful stat changes
+- why a fit request failed
+
+Keep server validation authoritative even if the client pre-validates for UX.
+
+============================================================
+9. ECONOMIC MODEL
+============================================================
+
+Begin evolving HELION toward the World Bible v0.10 economy.
+
+Explicitly distinguish:
+
+FAUCET
+Currency created by the simulation.
+
+SINK
+Currency removed from circulation.
+
+TRANSFER
+Existing currency moved between economic participants.
+
+Player-to-player trade should normally be a transfer, not a currency faucet.
+
+Audit existing credit creation/removal and document current behavior before changing it.
+
+============================================================
+10. EXISTING FAUCETS
+============================================================
+
+Instrument existing sources where applicable, such as:
+- mission rewards
+- NPC contracts
+- NPC resource purchases
+- bounties if implemented
+- scripted rewards
+
+Do not remove functioning gameplay just because the economy is immature.
+
+============================================================
+11. EXISTING / INITIAL SINKS
+============================================================
+
+Audit current credit sinks.
+
+Where compatible with existing gameplay, support or prepare sinks such as:
+- market transaction fees
+- service fees
+- repairs
+- outfitting/service charges
+- fines
+- registration/licenses/permits
+
+Do not add punitive arbitrary fees merely to satisfy a checklist.
+
+============================================================
+12. REGIONAL MARKET FOUNDATION
+============================================================
+
+Avoid one universal store.
+
+Market inventory/pricing must be capable of being associated with geographic/economic context such as:
+- station
+- system
+- region
+- faction
+- corporation
+
+Physical goods have locations.
+
+Different locations must be capable of having different availability and prices.
+
+Implement the smallest coherent regional market layer that integrates with existing station/shipyard/economy code.
+
+============================================================
+13. MARKET ORDER MODEL
+============================================================
+
+Design the architecture so it can eventually support:
+- NPC BUY orders
+- NPC SELL orders
+- PLAYER BUY orders
+- PLAYER SELL orders
+
+If complete player order matching is unsafe scope expansion, do not fake it.
+
+Implement the underlying data/service interfaces and seeded NPC market first, then explicitly defer full player matching.
+
+============================================================
+14. NPC-SEEDED BOOTSTRAP ECONOMY
+============================================================
+
+HELION initially needs NPC liquidity and supply.
+
+Seed appropriate essential markets through existing stations/corporations/governments.
+
+World Bible identities should guide future supply:
+- Orion: extraction/mining/industrial
+- Titan: heavy industrial/military hardware
+- Aster: performance ships/propulsion/navigation
+- Horizon: sensors/electronics/EW where implemented
+- Meridian: commercial/logistics/trade
+- Compact: rugged modular frontier goods
+- Helix: specialized Gate/science technology
+
+Do not force every organization into Batch 14.
+
+The production-like economy must be able to bootstrap with ZERO players online.
+
+For implemented markets, prefer finite or target-based seeded inventory, explicit restock/replenishment behavior, bounded NPC buy-order budgets or demand targets, and station-specific stock/demand rather than invisible infinite liquidity. Essential starter accessibility may use deliberate safety floors where documented.
+
+Before ordinary-player handoff, validate that a new commander can progress through the intended starter loop without relying on an existing player industrial base.
+
+============================================================
+14A. PRODUCTION-LIKE ECONOMY BALANCE & HANDOFF GATE
+============================================================
+
+The TEST 100-credit convenience economy is NOT a production-balance test.
+
+Maintain a separate production-like balance configuration for economy testing.
+
+Audit and tune together:
+- starting credits
+- starter mission payouts
+- mining/resource income
+- hauling/trade margins
+- fuel/service/repair costs
+- module prices
+- ship prices
+- taxes/fees where implemented
+- NPC stock and replenishment
+- NPC buy-order demand/budgets
+
+Do not copy development-fast ship prices into production merely because they make testing convenient.
+Do not copy World Bible price numbers blindly if the implemented income/time scale cannot support them.
+
+Use the World Bible ship roles/specifications as the design reference, then balance price against actual implemented earning rate, utility, risk, survivability, cargo, speed, range when active, availability, requirements, and replacement cost.
+
+Add automated or deterministic checks for obvious economy failures where feasible, including:
+- negative-price or zero-cost exploits
+- buy/sell inversion
+- infinite guaranteed arbitrage in the same market cycle
+- duplicate/replayed purchase rewards
+- unbounded NPC currency creation
+- market restart/reset duplication
+
+PLAYER HANDOFF GATE:
+Do not describe the production economy as ready for ordinary players until seeded supply, seeded demand, starter progression, core faucets/sinks, persistence, and economic telemetry have been exercised under a production-like configuration.
+
+============================================================
+15. NPC MARKET ADAPTATION INTERFACE
+============================================================
+
+Prepare clean future interfaces for NPC supply to react to market health, such as:
+- player supply
+- volume
+- price volatility
+- shortage
+- regional demand
+- manufacturing capacity
+
+Do not build a giant autonomous economist in Batch 14.
+
+NPC seeding should remain capable of supporting low population and essential accessibility.
+
+============================================================
+16. FUTURE INDUSTRIAL LOOP COMPATIBILITY
+============================================================
+
+Architect market/item data so later batches can support:
+
+MINING
+-> RAW MATERIALS
+-> REFINING
+-> PROCESSED MATERIALS
+-> COMPONENTS
+-> MODULE / SHIP MANUFACTURING
+-> MARKET
+-> USE / DAMAGE / CONSUMPTION / DESTRUCTION
+-> RENEWED DEMAND
+
+Do not implement the complete industrial chain during Batch 14.
+
+============================================================
+17. ECONOMIC TELEMETRY
+============================================================
+
+Add or extend structured economic telemetry for systems actually implemented.
+
+Prepare fields/events for relevant metrics such as:
+- credits_created
+- credits_destroyed
+- credits_in_circulation
+- mission_payouts
+- taxes_paid
+- fees_paid
+- ore_mined
+- materials_refined
+- items_produced
+- items_consumed
+- items_destroyed
+- ships_produced
+- ships_destroyed
+- npc_buy_volume
+- npc_sell_volume
+- player_buy_volume
+- player_sell_volume
+- market_volume
+- market_value
+- price_history
+- regional_trade_volume
+
+Do not fabricate metrics for systems that do not exist.
+
+============================================================
+18. GALNET ECONOMIC HOOKS
+============================================================
+
+Prepare the economic state/telemetry boundary so future GalNet can respond to:
+- shortages
+- surpluses
+- price spikes
+- industrial output
+- mining volume
+- trade disruption
+- piracy
+- war demand
+- major resource discoveries
+
+Do not build a huge news-generation system unless a small, safe integration naturally fits the current GalNet architecture.
+
+============================================================
+19. CANONICAL SYSTEM SECURITY RATING
+============================================================
+
+World Bible v0.10 defines a system security rating from:
+
+-5.0 through +5.0 inclusive
+
+Valid values occur only in increments of:
+
+0.2
+
+Introduce/extend a canonical representation and validation if the galaxy/system model can support it safely.
+
+Do not represent this with imprecise arbitrary floats if a safer normalized integer/enum-backed representation is appropriate. For example, an internal integer step from -25 to +25 may be preferable while displaying -5.0 to +5.0.
+
+Use existing code conventions where possible.
+
+============================================================
+20. SECURITY CLASSIFICATION
+============================================================
+
+Canonical classifications:
+
++0.2 to +5.0 = HIGH SECURITY
+0.0 = ZERO SPACE
+-0.2 to -2.2 = SUPPORTED LOW SECURITY
+-2.4 to -4.0 = DEEP LOW SECURITY
+-4.2 to -5.0 = EXTREME LOW SECURITY
+
+Expose a deterministic server-side classification function/service.
+
+Add tests at category boundaries.
+
+============================================================
+21. SECURITY-RATING GAMEPLAY HOOKS
+============================================================
+
+Security rating must be available to systems that will eventually control:
+- local/faction policing
+- GDF presence
+- navy presence
+- customs
+- response timing
+- escort activity
+- NPC mining security
+- piracy/smuggling opportunities
+- market/shipping risk
+- mission generation
+- anomalies/exploration risk
+
+Do not implement every AI response during this batch.
+
+Create clean query/event hooks rather than hard-coded scattered checks.
+
+============================================================
+22. HIGH SECURITY CRIME FOUNDATION
+============================================================
+
+In High Security, unprovoked player aggression is criminal.
+
+Where existing combat/crime architecture allows safe implementation, prepare or implement server-authoritative hooks for:
+- criminal flag
+- bounty/warrant accrual
+- security response request/event
+- escalating legal consequences
+
+If player combat does not yet support this safely, implement the canonical rule/data/event interfaces and tests without pretending full response AI exists.
+
+============================================================
+23. ZERO SPACE RULE
+============================================================
+
+0.0 Zero Space has no automatic general criminal penalty or automatic faction/Concordat bounty solely because player aggression occurred there.
+
+Do not infer that all NPCs or player organizations must ignore aggression. Local standings, contracts, territory, or organization behavior may still produce consequences later.
+
+Add server-side rule tests where a crime evaluation path exists.
+
+============================================================
+24. LOW SECURITY RESPONSE FOUNDATIONS
+============================================================
+
+SUPPORTED LOW SECURITY (-0.2 to -2.2):
+Prepare the rule/hook that a small GDF response may assist an attacked player who is Neutral or better with relevant authorities when conditions permit.
+
+DEEP LOW SECURITY (-2.4 to -4.0):
+Prepare event support for occasional GDF expeditionary anti-piracy fleet presence.
+
+EXTREME LOW SECURITY (-4.2 to -5.0):
+Assume no dependable general outside response.
+
+Do not build full fleet AI merely to satisfy these hooks.
+
+============================================================
+25. DYNAMIC SECURITY RATING FOUNDATION
+============================================================
+
+Security ratings may eventually change, but only in 0.2 increments.
+
+Prepare a controlled mutation/event interface with validation and auditability.
+
+Future causes may include:
+- sustained piracy
+- player crime
+- anti-piracy success
+- faction investment
+- security infrastructure
+- war
+- loss of stations/patrol bases
+- Gate disruption
+- economic collapse
+- population change
+- major events
+- successful GDF stabilization
+
+Do not randomly fluctuate system security in Batch 14.
+
+============================================================
+26. NPC MINING / ESCORT HOOKS
+============================================================
+
+NPC mining may exist in High and Low Security.
+
+Prepare system-security context for future industrial traffic.
+
+Low Security NPC mining should eventually normally use armed escorts.
+
+If current NPC mining simulation is not implemented, create no fake fleets. Preserve data/event compatibility and document the deferred AI work.
+
+============================================================
+27. HELION CONCORDAT CANON BOUNDARY
+============================================================
+
+World Bible v0.10 establishes the independent Helion Concordat.
+
+Founding principle:
+"No flag owns the road between stars."
+
+Three coequal arms:
+
+INSA
+- intelligence / counterintelligence / covert threat analysis
+- specialized reconnaissance/intelligence/retrieval fleet
+- Blackstar Marshals as elite field/retrieval/counterterrorist arm
+
+GATEWATCH
+- Gate science, technology, anomaly observation, protection, and classified research
+- specialized science/exploration/containment/Gate-defense fleet
+
+GDF
+- politically independent, border-free, full-spectrum naval force
+- civilian/shipping-lane protection
+- anti-piracy
+- rescue/humanitarian response
+- route security
+- expeditionary operations
+- command/combat/defense/ECM/ECCM/recon/logistics/support fleet structure
+
+Operational shorthand:
+INSA knows. Gatewatch understands. The GDF acts.
+
+Do NOT reinterpret INSA as ordinary police.
+Do NOT reinterpret Gatewatch as a conventional national navy.
+Do NOT reduce GDF to a small police patrol service.
+
+============================================================
+28. CONCORDAT IMPLEMENTATION SCOPE FOR BATCH 14
+============================================================
+
+Batch 14 should preserve and introduce data/service boundaries needed for future Concordat gameplay, especially where they intersect security ratings, reputation, crime, system metadata, server authority, and telemetry.
+
+Do NOT attempt during Batch 14 to implement:
+- the full GDF fleet roster
+- full GDF fleet AI
+- complete INSA espionage gameplay
+- complete Gatewatch science gameplay
+- Blackstar campaign systems
+- Three-Key technology gameplay
+- every historical Concordat event
+
+The World Bible is the canon contract. Future batches can implement the institutions properly.
+
+============================================================
+29. CHARACTER CREATION COMPATIBILITY
+============================================================
+
+World Bible v0.10 defines future national-origin and avatar creation.
+
+Do not build the full character creator during Batch 14 unless already required by existing architecture.
+
+However, if Batch 14 changes account/commander persistence, avoid decisions that block future fields for:
+- national origin
+- persistent character identity
+- avatar/portrait metadata
+- cosmetic presentation
+
+Do not tie nationality biologically to skin tone or facial structure.
+
+Preserve Kepler as the common initial start.
+
+============================================================
+30. ENVIRONMENT MODEL
+============================================================
+
+Formalize server-controlled/configuration-controlled environment identity:
+
+DEVELOPMENT
+TEST
+PRODUCTION
+
+Do not trust the client to declare environment identity.
+
+Centralize environment-specific behavior rather than scattering checks through gameplay code.
+
+Fail closed when environment identity is ambiguous for privileged/destructive operations.
+
+============================================================
+31. PRODUCTION PERSISTENT SERVER
+============================================================
+
+Production represents the canonical HELION universe.
+
+The server must be capable of:
+- starting with zero players
+- loading authoritative persistent state
+- remaining operational with zero players
+- accepting players later
+- saving independently of logout
+- gracefully flushing state during shutdown
+- restarting without losing legitimate progress
+
+Do not implement fake background simulation solely to tick a requirement box.
+
+============================================================
+32. PRIVATE TEST SERVER
+============================================================
+
+The private TEST environment is restricted to:
+
+DEV_ADMIN
+INVITED_TESTER
+
+It is:
+- isolated from production
+- resettable
+- rollback-capable
+- snapshot/restore capable where supported
+- patchable
+- suitable for experimental features
+- suitable for migration rehearsal
+- suitable for destructive QA
+- non-canonical
+
+Production and TEST must never share writable state or secrets.
+
+============================================================
+33. TEST ROLE AUTHORIZATION
+============================================================
+
+Implement or extend centralized server-side authorization.
+
+DEV_ADMIN may access authorized TEST developer/test functions.
+
+INVITED_TESTER MUST NOT access developer/admin state manipulation.
+
+This is IMPERATIVE.
+
+Do not rely on hidden UI, secret commands, client-supplied role strings, or undocumented syntax.
+
+Unauthorized privileged requests must fail server-side and be logged.
+
+============================================================
+34. TEST DEVELOPER COMMAND FRAMEWORK
+============================================================
+
+Build or extend a TEST-only typed, validated developer administration framework.
+
+DEV_ADMIN should be able to manipulate existing supported state such as:
+- credits
+- XP
+- rank
+- faction standings
+- loyalty
+- reputation
+- inventory
+- commodities
+- modules/equipment
+- cargo
+- ships
+- ship ownership
+- active ship
+- hull/fuel/condition
+- location
+- station/system location
+- assets
+- missions/mission state
+- progression
+- permits/licenses/unlocks
+- selected test/economy state
+
+Only implement commands for systems that currently exist.
+
+Prefer typed operations such as GET/SET/ADD/REMOVE/GRANT/REVOKE/RESET/TELEPORT/SPAWN where appropriate.
+
+Do not expose arbitrary memory or arbitrary raw database mutation as a convenience command.
+
+============================================================
+35. TEST PRIVILEGED AUDIT LOGGING
+============================================================
+
+EVERY privileged TEST operation must generate a detailed audit record.
+
+Record where appropriate:
+- timestamp
+- environment
+- server instance
+- admin account ID
+- admin identity
+- role
+- session/connection identity
+- action
+- target
+- parameters
+- before value
+- requested value
+- resulting value
+- success/failure
+- failure reason
+- correlation/request ID
+
+Also log unauthorized privileged attempts.
+
+Never log passwords, private keys, bearer/session tokens, or other secrets.
+
+============================================================
+36. TEST 100-CREDIT ECONOMY
+============================================================
+
+On TEST:
+
+NORMAL TEST-MARKET PURCHASABLE ITEMS SHOULD COST 100 CREDITS.
+
+This includes test-available ships and normal purchasable equipment/items where appropriate.
+
+Provide abundant seeded TEST supply.
+
+Implement using TEST-only configuration/market seeding/price policy.
+
+DO NOT modify canonical production prices.
+
+Tests must prove production pricing remains unchanged.
+
+============================================================
+37. TEST SHIP ACCESS
+============================================================
+
+On TEST, normal ship eligibility requirements are void for normal test gameplay.
+
+INVITED_TESTER and DEV_ADMIN may purchase/pilot test-available ships regardless of ordinary:
+- rank
+- faction
+- reputation
+- loyalty
+- career
+- license
+- permit
+- progression requirement
+
+This convenience applies through TEST gameplay rules.
+
+It does NOT give INVITED_TESTER developer/admin commands.
+
+============================================================
+38. TEST RESET / ROLLBACK / EXPERIMENTAL FEATURES
+============================================================
+
+Design/document controlled TEST operations for:
+- universe reset
+- database reset
+- player-state reset
+- snapshot restore
+- build rollback
+- migration rollback when technically safe
+- reseeding
+- experimental feature flags/deployment
+
+Do not invent unsafe automatic reverse migrations.
+
+Prefer restoring a known-good snapshot where schema rollback is unsafe.
+
+Every destructive operation must explicitly target TEST and be audited.
+
+A TEST operation must never silently target PRODUCTION.
+
+============================================================
+39. RELEASE CHANNEL FOUNDATION
+============================================================
+
+Prepare for:
+
+STABLE
+TEST
+
+STABLE:
+- production
+- normal players
+- canonical progress
+
+TEST:
+- private test server
+- developers and invited testers
+- experimental/pre-production builds
+- non-canonical/resettable progress
+
+Do not build a full CDN/patcher if out of scope.
+
+Establish unambiguous environment/version boundaries.
+
+============================================================
+40. VERSION / PROTOCOL COMPATIBILITY
+============================================================
+
+Audit current protocol/version handling.
+
+Prepare explicit compatibility checks.
+
+An incompatible client should eventually receive a clear result such as CLIENT_UPDATE_REQUIRED rather than drifting into undefined protocol failure.
+
+TEST and PRODUCTION may legitimately run different approved builds during validation.
+
+============================================================
+40A. LIGHTWEIGHT BINARY PROTOCOL MODERNIZATION
+============================================================
+
+The current native protocol is a bounded newline/text command protocol over TLS, not JSON. Preserve TLS 1.2+ and server authority, but introduce a binary protocol foundation where it provides measurable value.
+
+The goal is lower bandwidth, lower parse/format overhead, clearer schemas, and safer high-frequency replication as HELION grows.
+
+Do NOT send raw C/C++ object memory over the network.
+Do NOT rely on #pragma pack, compiler padding, host endianness, enum size, bool layout, pointer layout, or memcpy of native structs as the wire contract.
+
+Preferred architecture:
+- TLS remains the encrypted transport
+- binary framing exists above the TLS byte stream
+- fixed-width integer types are used on the wire
+- byte order is explicit and consistent
+- floating-point fields are serialized explicitly if used
+- every frame has a bounded payload length
+- message types are explicit/stable IDs
+- protocol/schema version is explicit
+- request/correlation IDs exist where useful
+- incremental decoding handles partial and multiple frames
+- oversized, malformed, unknown, and incompatible frames fail safely
+- no unbounded allocation is permitted from untrusted length fields
+
+A compact frame header may contain fields equivalent to:
+MAGIC / PROTOCOL_VERSION / MESSAGE_TYPE / FLAGS / PAYLOAD_LENGTH / REQUEST_ID
+
+Use repository conventions and the smallest safe representation.
+
+Serialization choice:
+- FlatBuffers is acceptable if repository inspection shows its generated-schema/runtime/build cost is justified and remains lightweight on the target hardware.
+- A small explicit custom encoder/decoder is also acceptable for HELION's current message set.
+- Raw ABI-dependent packed structs are NOT acceptable as the durable cross-version wire format.
+
+Prioritize high-frequency/state-heavy messages first, such as where implemented:
+- INPUT / player control
+- authoritative flight snapshots
+- contacts/entity replication
+- combat state/deltas
+- market/ship/outfitting snapshots or deltas when their volume warrants it
+
+Low-frequency human-readable diagnostics may remain available through a developer terminal UI, but the terminal should preferably translate human commands into the same typed protocol operations rather than require a separate insecure production command grammar.
+
+Do not maintain two uncontrolled gameplay authorities.
+
+Compatibility/migration:
+- negotiate or verify protocol version before normal gameplay
+- reject incompatible versions deterministically
+- preserve a clear CLIENT_UPDATE_REQUIRED / incompatible-protocol path
+- TEST and PRODUCTION may advertise different approved protocol/build versions
+- legacy text protocol support, if temporarily retained, must be explicit, bounded, tested, and removable; do not silently auto-detect arbitrary byte streams forever
+
+Measurement requirement:
+Benchmark representative old text framing versus the new binary path on realistic message samples. Report:
+- encoded bytes per message
+- aggregate bytes for a representative gameplay interval
+- encode time
+- decode time
+- allocation behavior where practical
+
+Do not claim a bandwidth/CPU win without measurements. If the measured benefit is negligible for a low-frequency message, keep the simpler implementation.
+
+Security tests must cover:
+- truncated headers
+- partial frames
+- multiple frames per read
+- oversized declared payloads
+- invalid message IDs
+- invalid protocol versions
+- malformed field values
+- replay-sensitive transactional messages where applicable
+- fuzz-like random byte input to the bounded decoder where practical
+
+============================================================
+40B. CLIENT GAME ENGINE STATE MACHINE
+============================================================
+
+Refactor client control flow so rendering, input routing, UI actions, connection/session handling, and gameplay screens are not implicitly coupled inside one giant loop.
+
+Introduce an explicit state controller using repository conventions. A flat enum is acceptable, for example:
+
+GameEngineState::BOOT
+GameEngineState::CONNECTING
+GameEngineState::LOGIN
+GameEngineState::STATION_CAREER
+GameEngineState::STATION_MARKET
+GameEngineState::STATION_OUTFITTING
+GameEngineState::STATION_SHIPYARD
+GameEngineState::ORBIT_VIEW
+GameEngineState::SPACE_FLIGHT
+GameEngineState::GALNET
+GameEngineState::OPTIONS
+GameEngineState::DISCONNECTED
+GameEngineState::FATAL_ERROR
+
+Use fewer or hierarchical states if the existing architecture supports that more cleanly. The names LOGIN, ORBIT_VIEW, and STATION_CAREER should be represented explicitly or by clearly equivalent typed states.
+
+If ORBIT_VIEW does not yet correspond to implemented gameplay, create only the clean state/transition integration point needed for future work. Do not fabricate unfinished orbital gameplay to satisfy the enum.
+
+Separate at least conceptually:
+- transport/connection state
+- authentication/session state
+- player/server-authoritative gameplay state
+- client presentation/navigation state
+
+The client's GameEngineState is NOT authority over docking, location, ownership, economy, mission completion, security, or combat outcomes. The server remains authoritative.
+
+Transitions should be explicit and testable. Examples include:
+BOOT -> CONNECTING
+CONNECTING -> LOGIN
+LOGIN -> STATION_CAREER after authenticated docked state is received
+STATION_* -> SPACE_FLIGHT only after authoritative launch succeeds
+SPACE_FLIGHT -> STATION_* only after authoritative dock/recovery state
+ANY NETWORKED STATE -> DISCONNECTED on connection loss
+DISCONNECTED -> CONNECTING on explicit reconnect
+
+On reconnect/login, derive the correct presentation state from authoritative server/session state rather than assuming the player is always docked.
+
+Route:
+- state-specific input
+- state-specific update logic
+- state-specific rendering/presentation
+- state entry/exit hooks where useful
+through the state controller without duplicating gameplay rules.
+
+Add tests for:
+- valid transitions
+- rejected/ignored invalid transitions
+- login failure
+- reconnect while docked
+- reconnect while in flight where supported
+- destroyed/recovery presentation
+- station subview navigation
+- Escape/back behavior
+- no client-only state transition granting server-side gameplay effects
+
+============================================================
+41. DAILY PRODUCTION MAINTENANCE
+============================================================
+
+Production has a configurable DAILY MAINTENANCE WINDOW.
+
+Prepare lifecycle concepts:
+ONLINE
+MAINTENANCE_SOON
+DRAINING
+MAINTENANCE
+UPDATING
+RESTARTING
+DEGRADED
+OFFLINE
+
+Target lifecycle:
+ONLINE
+-> warnings
+-> stop new sessions
+-> drain/disconnect active sessions
+-> flush authoritative state
+-> checkpoint/backup
+-> stop
+-> update/migrate
+-> integrity checks
+-> restart
+-> health checks
+-> reopen
+-> ONLINE
+
+Warning intervals are configurable. Example values may include 60/30/15/5/1 minutes, but do not hard-code gameplay assumptions to those exact values.
+
+============================================================
+42. PRODUCTION ADMINISTRATION FOUNDATION
+============================================================
+
+Production requires a secured operations/administration control plane.
+
+It must NOT simply expose the TEST developer cheat framework.
+
+Design/prepare least-privilege roles such as:
+- OWNER
+- OPS_ADMIN
+- SECURITY_ADMIN
+- GAME_MASTER
+- SUPPORT
+- READ_ONLY_OPERATOR
+
+Exact permissions should evolve from actual repository needs.
+
+============================================================
+43. PRODUCTION ADMIN SECURITY
+============================================================
+
+Prepare for:
+- dedicated admin identities
+- no shared admin account
+- strong authentication
+- MFA-ready architecture
+- session expiration
+- session revocation
+- reauthentication/confirmation for sensitive actions
+- private administrative network/access where practical
+- centralized authorization
+- least privilege
+- comprehensive audit logging
+
+Never:
+- hard-code passwords
+- hard-code tokens/private keys
+- commit secrets
+- expose DB credentials to clients
+- trust client-declared admin roles
+
+Do not build a giant public admin website during Batch 14.
+
+============================================================
+44. PRODUCTION HIGH-RISK MUTATIONS
+============================================================
+
+Any production capability that can alter credits, XP, rank, reputation, faction, inventory, ships, assets, location, mission state, economy, or world state must be treated as a high-risk support/recovery operation rather than a casual console convenience.
+
+Where implemented, require:
+- elevated permission
+- explicit target
+- explicit typed action
+- explicit reason
+- validation
+- confirmation where appropriate
+- detailed audit trail
+
+Prefer narrow recovery operations over arbitrary DB editing.
+
+============================================================
+45. PRODUCTION AUDIT LOGGING
+============================================================
+
+Prepare a privileged production audit trail separate from normal gameplay logs.
+
+Record where safe:
+- timestamp
+- environment
+- administrator identity
+- role
+- action
+- target
+- reason
+- before/after values
+- result
+- correlation ID
+
+Do not log secrets.
+
+============================================================
+46. STRUCTURED SERVER LOGGING
+============================================================
+
+Improve or prepare structured logs using fields such as:
+- timestamp
+- severity
+- subsystem
+- environment
+- server_instance
+- request_id
+- session_id
+- account_id
+- event
+- result
+
+Protect sensitive data.
+
+============================================================
+47. MONITORING / METRICS FOUNDATION
+============================================================
+
+Instrument or prepare clean metrics for:
+
+SERVICE
+- process health
+- uptime
+- connections
+- authenticated sessions
+- login/logout
+- errors
+
+PERFORMANCE
+- CPU
+- memory
+- disk
+- network
+- database latency
+- request latency
+- simulation/tick timing where relevant
+
+SECURITY
+- failed authentication
+- authorization failures
+- invalid sessions
+- rate-limit events
+- suspicious requests
+- banned account attempts where supported
+- privileged actions
+
+PERSISTENCE
+- database health
+- save failures
+- storage use
+- backup status
+- migration status
+
+GAME / ECONOMY
+- players online
+- active ships
+- transactions
+- missions
+- economic telemetry
+- security-rating events where implemented
+
+Do not build an elaborate dashboard merely to satisfy this batch.
+
+============================================================
+48. SECURITY AUDIT
+============================================================
+
+Inspect actual implementation for:
+- TLS
+- password hashing/storage
+- authentication
+- session/token handling
+- expiration/revocation
+- authorization
+- input validation
+- DB parameterization
+- replay/duplicate transaction handling
+- rate limiting
+- connection throttling
+- malformed request handling
+- request-size limits
+- service privilege separation
+- secrets handling
+- log leakage
+
+Repair critical issues that are safe and directly in scope.
+
+Record larger security work for the dedicated operations/security batch.
+
+Never claim a protection exists unless verified in code/config/tests.
+
+============================================================
+49. ABUSE / DEFENSE FOUNDATION
+============================================================
+
+Prepare appropriate defenses for:
+- brute-force login attempts
+- credential stuffing
+- malformed protocol traffic
+- request/command flooding
+- transaction replay
+- duplicate purchases
+- unauthorized state mutation
+- privilege escalation attempts
+- economy duplication exploits
+
+Server authority and validation are the primary gameplay-state anti-cheat defenses.
+
+Do not introduce invasive kernel-level client anti-cheat.
+
+============================================================
+50. BACKUP / RECOVERY FOUNDATION
+============================================================
+
+Document and implement where safe foundations for:
+- scheduled backups
+- pre-deployment backup
+- pre-migration backup
+- retention
+- restore procedures
+- restore validation
+- restoration rehearsal on PRIVATE TEST
+
+A backup that has never been restored is not considered fully validated.
+
+Do not overwrite the only good backup during a failed deployment.
+
+============================================================
+51. RELEASE PROMOTION MODEL
+============================================================
+
+Formalize the intended flow:
+
+DEVELOPMENT
+-> AUTOMATED TESTS
+-> LOCAL INTEGRATION
+-> PRIVATE TEST
+-> MIGRATION TESTING
+-> MULTIPLAYER/GAMEPLAY TESTING
+-> INVITED TESTERS
+-> REGRESSION
+-> SOAK/STABILITY
+-> EXPLICIT PRODUCTION APPROVAL
+-> SCHEDULED MAINTENANCE
+-> BACKUP
+-> DEPLOY
+-> MIGRATE
+-> HEALTH CHECK
+-> REOPEN
+
+Never automatically promote to production solely because TEST deployment succeeded.
+
+============================================================
+52. SERVER STATUS FOUNDATION
+============================================================
+
+Prepare a safe public/service status representation capable eventually of exposing:
+- environment
+- online/offline
+- maintenance state
+- server version
+- protocol compatibility
+- maintenance message
+- estimated reopening time where configured
+
+Do not expose internal network topology, credentials, DB details, or sensitive host information.
+
+============================================================
+53. LAUNCHER DIRECTION
+============================================================
+
+Do NOT build the complete launcher unless already required by current architecture.
+
+Preserve the future flow:
+Launcher -> Account -> Authentication -> Service Status -> Version Check -> Patch -> Launch Client -> Authenticated connection
+
+Normal production players should ultimately not need to enter arbitrary host/port information.
+
+Developer/test environments may retain explicit overrides.
+
+============================================================
+54. PERSISTENCE & MIGRATION
+============================================================
+
+Any new module, market, security, environment, authorization, audit, or telemetry state must preserve existing accounts/saves.
+
+Migrations must be:
+- deterministic
+- backward-aware
+- idempotent where appropriate
+- tested
+
+Preserve at minimum where applicable:
+- accounts
+- credits
+- XP
+- missions
+- reputation
+- owned ships
+- active ship
+- cargo
+- upgrades/modules
+- location
+- existing credentials/session compatibility where migration-safe
+
+============================================================
+55. TRANSACTION SAFETY
+============================================================
+
+Economic and outfitting operations must remain server-authoritative.
+
+Protect where applicable against:
+- double purchase
+- duplicate grant
+- replayed requests
+- negative credits
+- duplicated assets
+- partial transaction failure
+- save failure after payment
+- disconnect during transaction
+
+Prefer atomic or rollback-safe operations.
+
+============================================================
+56. RIFT / FUTURE SYSTEM COMPATIBILITY
+============================================================
+
+Preserve Batch 13's queryable ship mass.
+
+Do not implement Rifts merely because outfitting/economy/security work touches ship/system state.
+
+Future Rift constraints may use:
+- ship mass
+- total transit mass
+- fitted equipment
+- sensors/scientific modules
+- security/geography context
+
+Keep clean extension points.
+
+============================================================
+57. TESTING
+============================================================
+
+Add tests covering relevant implemented behavior.
+
+At minimum where applicable:
+
+OUTFITTING
+- module lookup
+- invalid module
+- valid fit
+- invalid slot type
+- invalid size
+- unowned module
+- fit/unfit persistence
+- reconnect
+- real gameplay modifier
+
+MARKET / ECONOMY
+- seeded inventory
+- valid purchase
+- insufficient credits
+- unavailable item
+- station/system availability
+- persistence
+- duplicate/replay safety
+- faucet/sink accounting
+- production canonical pricing
+
+SECURITY RATING
+- only -5.0..+5.0 accepted
+- only 0.2 increments accepted
+- exact category boundaries
+- 0.0 is Zero Space
+- High Security classification
+- supported/deep/extreme Low Security classification
+- controlled mutation uses valid 0.2 steps
+
+CRIME HOOKS where implemented
+- High Security unprovoked aggression rule
+- Zero Space does not automatically generate general criminal penalty
+- no client authority over security outcome
+
+TEST ENVIRONMENT
+- environment identity
+- TEST price = 100 credits
+- PRODUCTION price unchanged
+- TEST ship requirements bypassed
+- PRODUCTION requirements unchanged
+
+AUTHORIZATION
+- DEV_ADMIN allowed
+- INVITED_TESTER denied developer/admin state manipulation
+- normal account denied
+- PRODUCTION rejects TEST-only commands
+- unauthorized attempts logged
+
+AUDIT
+- success logged
+- failure/denial logged
+- target/action/correlation data correct
+- secrets excluded
+
+PERSISTENCE
+- migration
+- reload
+- no duplication
+- owned ships preserved
+- fitted modules preserved
+- credits preserved
+
+SERVER
+- starts with zero players
+- remains operational
+- accepts later connection
+- flush/restart persistence where testable
+
+SECURITY
+- malformed/unauthorized requests rejected
+- duplicate transaction rejected
+- server remains authoritative
+
+============================================================
+58. FULL REGRESSION VALIDATION
+============================================================
+
+After implementation run the repository's established validation suite.
+
+Include where applicable:
+- Debug build
+- sanitizer build/tests
+- server-only build
+- client-only build
+- package build
+- installer validation
+- persistence tests
+- protocol tests
+- security tests
+
+Repair failures.
+Do not weaken tests.
+Rerun after repairs.
+
+============================================================
+59. COMPATIBILITY
+============================================================
+
+Preserve functioning:
+- accounts
+- saves
+- starter experience
+- Sidewinder
+- First Ore
+- mining
+- missions
+- economy
+- GalNet
+- station services
+- docking/launch
+- ship ownership
+- shipyard
+- persistence/reconnect
+- protocol/TLS/security
+- client navigation/state behavior
+- packaging/installers
+
+No browser rewrite.
+No parallel game architecture.
+
+============================================================
+60. SCOPE CONTROL
+============================================================
+
+DO NOT attempt to complete during Batch 14:
+- every ship
+- every module
+- complete weapons/combat redesign
+- complete shields redesign
+- full FSD/fuel simulation
+- complete stealth/EW/interdiction
+- Rifts / Unknown Space
+- Khepri/Vael/Choir/Null gameplay
+- complete player manufacturing
+- complete blueprint/research system
+- complete player market order matching if unsafe
+- player corporations/stations
+- full character creator/avatar renderer
+- full Concordat campaign gameplay
+- full GDF fleet roster or fleet AI
+- full INSA espionage system
+- full Gatewatch science system
+- complete protocol rewrite of every low-frequency/debug message unless justified by measurement
+- complete launcher
+- patch CDN
+- public account website
+- payment infrastructure
+- full production cloud provisioning
+- full public admin dashboard
+- complete monitoring platform
+- invasive client anti-cheat
+
+Build foundations and prove them with tests.
+
+============================================================
+61. IMPLEMENTATION PROCESS
+============================================================
+
+Proceed through implementation rather than stopping after planning unless genuinely blocked.
+
+Suggested process:
+1. Audit repository/current Batch 13 state.
+2. Confirm no Batch 13 regression or incomplete work.
+3. Map integration points.
+4. Design smallest coherent extensions.
+5. Implement module/outfitting data architecture.
+6. Implement fit/unfit and representative effects.
+7. Implement regional/NPC market foundation.
+8. Add economic telemetry and production-like economy bootstrap/balance tests.
+9. Add security-rating representation/classification/hooks.
+10. Introduce the bounded/versioned binary protocol foundation and migrate representative high-frequency messages.
+11. Add protocol compatibility/decoder/benchmark tests.
+12. Introduce/refactor the client GameEngineState state machine and transition tests.
+13. Add environment model.
+14. Add TEST authorization/admin framework/audit.
+15. Add TEST 100-credit and ship-access policies.
+16. Add production admin/logging/monitoring/security foundations.
+17. Add migrations.
+18. Integrate client/native UI only as required.
+19. Add tests.
+20. Run full validation.
+21. Repair failures.
+22. Rerun validation.
+23. Review final diff for duplication/scope creep/security leaks.
+24. Verify TEST/PRODUCTION isolation.
+25. Verify World Bible v0.10 canon boundaries.
+26. Produce completion report.
+
+Do not:
+- discard unrelated work
+- reset user changes
+- perform destructive Git operations without need
+- weaken tests
+- push
+- merge
+without explicit authorization.
+
+============================================================
+62. COMPLETION CRITERIA
+============================================================
+
+Batch 14 is complete when the implemented scope demonstrates:
+
+OUTFITTING
+- canonical module definitions exist
+- modules can be owned/fitted as appropriate
+- server validates fitting
+- representative modules produce real gameplay differences
+- fitting persists/reconnects
+
+ECONOMY
+- faucets/sinks/transfers are distinguishable in architecture/telemetry
+- seeded regional/station market foundation exists
+- seeded supply/demand can bootstrap the implemented economy with zero players
+- starter progression works under a production-like economy configuration
+- TEST 100-credit convenience pricing remains separate from production-balance validation
+- economic telemetry exists for implemented systems
+- obvious implemented-market duplication/arbitrage/replay failures are covered by tests where feasible
+- production pricing is reconciled against actual implemented earnings and World Bible role/spec intent rather than copied blindly from development values
+
+PROTOCOL
+- TLS remains mandatory
+- a bounded/versioned binary framing/serialization path exists for representative gameplay traffic
+- wire layout is explicit and ABI-independent
+- malformed/oversized/incompatible frames fail safely
+- high-frequency binary messages preserve server authority and gameplay behavior
+- protocol compatibility is explicit
+- representative byte/CPU measurements are reported
+
+CLIENT STATE ARCHITECTURE
+- explicit typed client engine states exist
+- LOGIN, STATION_CAREER, and ORBIT_VIEW or clearly equivalent typed states are represented
+- input/update/render routing uses explicit state rather than scattered implicit conditions
+- reconnect restores presentation from authoritative server state
+- transition tests cover normal and invalid paths
+- no client state grants server-side authority
+
+SECURITY
+- canonical security rating model exists if galaxy architecture supports it
+- valid range/increments/classifications are enforced
+- High Security / Zero Space / Low Security rules are represented through clean server-side hooks
+- no fake claim of full police/GDF AI
+- Concordat roles are not misrepresented
+
+TEST
+- TEST identity is explicit
+- DEV_ADMIN and INVITED_TESTER are distinct
+- DEV_ADMIN can use implemented typed TEST admin operations
+- INVITED_TESTER cannot
+- authorization is server-side
+- privileged actions/attempts are audited
+- TEST 100-credit pricing works where implemented
+- TEST ship requirement bypass works
+- production pricing/requirements remain unchanged
+- destructive TEST operations cannot silently target production
+
+PRODUCTION FOUNDATION
+- production identity is explicit
+- server remains independent of player connection
+- admin/security/logging/monitoring architecture is documented/implemented to the safe Batch 14 level
+- security audit completed
+- critical in-scope defects repaired
+- larger operational work explicitly deferred
+
+REGRESSION
+- existing HELION gameplay remains functional
+- migrations succeed
+- persistence succeeds
+- established validation passes
+
+============================================================
+63. COMPLETION REPORT
+============================================================
+
+Produce a detailed Batch 14 completion report containing:
+
+1. Repository Audit
+2. Batch 13 Integration Status
+3. World Bible v0.10 Reconciliation
+4. Outfitting Architecture
+5. Module Registry
+6. Implemented Modules
+7. Gameplay Effects
+8. Inventory/Asset Integration
+9. Economic Architecture
+10. Faucets
+11. Sinks
+12. Regional/Seeded Market Foundation
+13. Production-Like Economy Bootstrap & Balance
+14. Economy Handoff-Gate Results
+15. Economic Telemetry
+16. GalNet Economy Hooks
+17. Security Rating Data Model
+18. Security Classification & Rules
+19. Crime/Security Hooks Implemented
+20. Deferred Security AI
+21. Helion Concordat Canon Integration
+22. Binary Protocol Architecture
+23. Binary Messages Migrated
+24. Protocol Versioning/Compatibility
+25. Protocol Safety/Fuzz/Bounds Results
+26. Protocol Byte/CPU Benchmark Results
+27. Client GameEngineState Architecture
+28. Client State Transition/Recovery Tests
+29. Character-Creation Compatibility
+30. Environment Architecture
+31. Production Environment
+32. Private Test Environment
+33. Development Environment
+34. DEV_ADMIN Capabilities
+35. INVITED_TESTER Restrictions
+36. Test Commands/Operations
+37. Audit Logging
+38. TEST 100-Credit Economy
+39. TEST Ship Access
+40. Reset/Rollback Support
+41. Production Admin Foundation
+42. Production Security Audit
+43. Monitoring/Logging Foundation
+44. Daily Maintenance Foundation
+45. Release Channels
+46. Version Compatibility
+47. Backup/Recovery Foundation
+48. Persistence/Migrations
+49. Transaction Safety
+50. Tests Added
+51. Exact Validation Commands
+52. Exact Validation Results
+53. Compatibility/Regression Results
+54. Security Issues Discovered
+55. Canon/Implementation Discrepancies
+56. Deferred Systems
+57. Known Limitations
+58. Recommended Batch 15
+
+Do not begin Batch 15.
+
+Complete Batch 14 implementation, testing, repair, regression review, and completion reporting first.

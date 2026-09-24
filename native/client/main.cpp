@@ -524,7 +524,9 @@ int main(int argc,char** argv) {
     else if (coreFailure.empty() && rendererMode == helion::graphics::RendererMode::auto_mode &&
              helion::graphics::classifyRenderer(graphics.result.actual.vendor,
                                                 graphics.result.actual.renderer) !=
-             helion::graphics::RendererClass::hardware) {
+             helion::graphics::RendererClass::hardware &&
+             !(std::getenv("HELION_HEADLESS_SOFTWARE_GL") &&
+               std::string_view(std::getenv("HELION_HEADLESS_SOFTWARE_GL")) == "1")) {
       coreFailure = "renderer-policy: automatic core requires a recognized hardware renderer";
     } else if (coreFailure.empty() && coreFault == "software") {
       coreFailure = "renderer-policy: injected software renderer";

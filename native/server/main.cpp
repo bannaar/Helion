@@ -219,6 +219,31 @@ std::string wireToken(std::string_view value) {
   return result;
 }
 
+std::string moduleDefinitionLine(const Profile& profile, const helion::loadout::ModuleDefinition& module) {
+  const auto fit = helion::loadout::compatibility(module, helion::ships::definition(activeShip(profile)));
+  const auto& fitted = activeShip(profile).fittedModules[helion::loadout::slotIndex(module.slot)];
+  return "MODULE id=" + std::string(module.id) + " name=" + wireToken(module.displayName) +
+    " manufacturer=" + module.manufacturerId + " category=" + helion::loadout::categoryName(module.category) +
+    " slot=" + helion::loadout::slotName(module.slot) +
+    " slot-type=" + helion::loadout::slotTypeName(module.slotType) +
+    " size=" + helion::ships::slotSizeName(module.size) + " grade=" + std::string(1, module.grade) +
+    " price=" + std::to_string(module.purchasePrice) + " mass=" + std::to_string(module.mass) +
+    " power=" + std::to_string(module.powerDraw) + " integrity=" + std::to_string(module.integrity) +
+    " legal=" + helion::loadout::legalStatusName(module.legalStatus) +
+    " effect=" + helion::loadout::effectSummary(module) +
+    " test-available=" + std::to_string(module.testAvailable) +
+    " owned=" + std::to_string(ownsModule(profile, module.id)) +
+    " fitted=" + std::to_string(fitted == module.id) +
+    " compatible=" + std::to_string(fit.compatible) +
+    " reason=" + helion::loadout::fitIssueName(fit.issue);
+}
+
+void appendOutfittingState(std::vector<std::string>& responses, const Profile& profile) {
+  for (const auto& module : helion::loadout::kCatalogue)
+    responses.push_back(moduleDefinitionLine(profile, module));
+  responses.push_back(loadoutLine(profile));
+}
+
 std::string shipDefinitionLine(const helion::ships::Definition& hull) {
   std::string hardpoints;
   for (const auto& hardpoint : hull.hardpoints) {
@@ -1287,7 +1312,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             }
             appendFlightState(responses, profile);
           } else if (request.first == "LIST") {
-            responses.push_back(loadoutLine(profile));
+            appendOutfittingState(responses, profile);
           } else if (!activeShip(profile).flight.docked) {
             responses.push_back("ERR dock-required");
           } else {
@@ -1320,21 +1345,25 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             } else if (!module) {
               responses.push_back("ERR unknown-module");
             } else if (request.first == "BUY") {
+              const auto fit = helion::loadout::compatibility(*module,
+                helion::ships::definition(activeShip(profile)));
               if (ownsModule(profile, request.second)) responses.push_back("ERR module-owned");
-              else if (profile.credits < module->price) responses.push_back("ERR insufficient-credits");
+              else if (!fit.compatible) responses.push_back("ERR module-incompatible reason=" +
+                std::string(helion::loadout::fitIssueName(fit.issue)));
+              else if (profile.credits < module->purchasePrice) responses.push_back("ERR insufficient-credits");
               else {
                 const auto before = profile;
                 const bool dirtyBefore = flightStateDirty;
-                profile.credits -= module->price;
+                profile.credits -= module->purchasePrice;
                 activeShip(profile).ownedModules.push_back(module->id);
                 try {
                   persistStateLocked();
                   responses.push_back("OK MODULE BOUGHT module=" + std::string(module->id) +
                                      " slot=" + helion::loadout::slotName(module->slot) +
-                                     " cost=" + std::to_string(module->price));
+                                     " cost=" + std::to_string(module->purchasePrice));
                   responses.push_back("TRANSACTION MODULE_PURCHASE module=" + std::string(module->id) +
                                      " slot=" + helion::loadout::slotName(module->slot) +
-                                     " credits=" + std::to_string(module->price));
+                                     " credits=" + std::to_string(module->purchasePrice));
                 } catch (const std::exception& error) {
                   profile = before;
                   flightStateDirty = dirtyBefore;
@@ -1343,7 +1372,11 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 }
               }
             } else if (request.first == "FIT") {
+              const auto fit = helion::loadout::compatibility(*module,
+                helion::ships::definition(activeShip(profile)));
               if (!ownsModule(profile, request.second)) responses.push_back("ERR module-not-owned");
+              else if (!fit.compatible) responses.push_back("ERR module-incompatible reason=" +
+                std::string(helion::loadout::fitIssueName(fit.issue)));
               else if (activeShip(profile).fittedModules[helion::loadout::slotIndex(module->slot)] == module->id)
                 responses.push_back("ERR module-already-fitted");
               else {
@@ -1542,8 +1575,8 @@ int main(int argc, char** argv) {
   std::string bindAddress = "127.0.0.1";
   std::string certificate, privateKey;
   int positional = 0;
-  if (!helion::ships::validateRegistry()) {
-    std::cerr << "invalid canonical ship registry\n";
+  if (!helion::ships::validateRegistry() || !helion::loadout::validateRegistry()) {
+    std::cerr << "invalid canonical ship or module registry\n";
     return 1;
   }
   auto number = [](const std::string& value, unsigned long maximum) -> unsigned long {

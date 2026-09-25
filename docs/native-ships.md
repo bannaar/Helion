@@ -27,7 +27,24 @@ client receives presentation frames and never prices or commits a hull.
 
 The seven core-slot entries are ordered as Power Plant, Thrusters, FSD, Life
 Support, Power Distributor, Sensors, and Fuel Tank. Mount sizes are canonical
-`SIZE_1` through `SIZE_4`. Full outfitting remains a later batch.
+`SIZE_1` through `SIZE_4`.
+
+Batch 14 extends the existing module catalogue without replacing this ship
+model. Each canonical module now declares its manufacturer, category, stable
+functional fitted address, physical slot type (`WEAPON_HARDPOINT`, `UTILITY`,
+`CORE_INTERNAL`, or `OPTIONAL_INTERNAL`), required size, grade, price, mass,
+power draw, integrity, legal status, requirements, TEST availability, and
+implemented gameplay modifiers. Core modules also identify the ordered core
+system they occupy. One shared compatibility query checks the active hull's
+hardpoints, utility mounts, ordered core slot, or optional slots and returns a
+deterministic rejection reason.
+
+Module assets remain on an individual `OwnedShip`, which is the existing
+persistent asset path: an unfitted module stays owned by that ship, while a fit
+stores the module ID at its stable functional address. This preserves existing
+save and command compatibility and keeps hull definitions immutable. Multiple
+independently addressed bays and transferable commander-level module storage
+remain a future migration rather than a parallel Batch 14 inventory.
 
 ## Playable registry and native-scale balance
 
@@ -61,6 +78,15 @@ taxonomy belongs with outfitting rather than silently inventing working Size
 Top speed, acceleration, turn rate, base hull, fuel, mass lookup, purchase cost,
 mining compatibility, and cargo capacity now come from the active definition.
 Engine/hull upgrades and fitted modules remain per owned ship.
+
+The `OUTFIT LIST` command reports the canonical module metadata, ownership,
+fitted state, active-hull compatibility, and rejection reason before the
+legacy-compatible `LOADOUT` summary. `OUTFIT BUY`, `OUTFIT FIT`, and
+`OUTFIT REMOVE` remain server-authoritative, dock-only, rollback-safe
+operations. Both purchase and fitting reject a module whose physical type or
+size is incompatible with the active hull. The client displays physical slot,
+size, implemented effect, and a compatibility preview; the server repeats the
+validation when committing the action.
 
 ## Shipyards and pads
 

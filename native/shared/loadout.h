@@ -1,19 +1,66 @@
 #pragma once
 
+#include "shared/ships.h"
+
 #include <array>
 #include <cstddef>
+#include <string>
 #include <string_view>
 
 namespace helion::loadout {
 
+// Stable fitted-instance addresses used by the current persistence and command
+// protocol. Physical slot type and size live on ModuleDefinition below.
 enum class Slot { mining = 0, engine = 1, defense = 2, weapon = 3 };
 inline constexpr std::size_t kSlotCount = 4;
 
+enum class SlotType {
+  weaponHardpoint,
+  utility,
+  coreInternal,
+  optionalInternal
+};
+
+enum class Category {
+  miningTool,
+  thrusters,
+  hullReinforcement,
+  weapon
+};
+
+enum class CoreSystem {
+  none,
+  powerPlant,
+  thrusters,
+  frameShiftDrive,
+  lifeSupport,
+  powerDistributor,
+  sensors,
+  fuelSystem
+};
+
+enum class LegalStatus { legal, restricted, illegal };
+
 struct ModuleDefinition {
   const char* id;
-  const char* name;
+  const char* displayName;
+  const char* manufacturerId;
+  Category category;
   Slot slot;
-  int price;
+  SlotType slotType;
+  ships::SlotSize size;
+  CoreSystem coreSystem;
+  char grade;
+  int purchasePrice;
+  double mass;
+  double powerDraw;
+  int integrity;
+  LegalStatus legalStatus;
+  const char* requiredFactionId;
+  int minimumReputation;
+  int minimumRank;
+  const char* requiredPermitId;
+  bool testAvailable;
   double miningCooldownMultiplier;
   double fuelConsumptionMultiplier;
   int hullBonus;
@@ -22,34 +69,31 @@ struct ModuleDefinition {
   double weaponCooldown;
 };
 
-inline constexpr std::array<ModuleDefinition, 7> kCatalogue{{
-  {"mining-basic", "Basic Extractor", Slot::mining, 0, 1.0, 1.0, 0, 0, 0, 0},
-  {"mining-mk2", "Prospector Extractor", Slot::mining, 800, 0.65, 1.0, 0, 0, 0, 0},
-  {"engine-basic", "Standard Drive", Slot::engine, 0, 1.0, 1.0, 0, 0, 0, 0},
-  {"engine-efficient", "Efficient Drive", Slot::engine, 700, 1.0, 0.65, 0, 0, 0, 0},
-  {"hull-standard", "Standard Plating", Slot::defense, 0, 1.0, 1.0, 0, 0, 0, 0},
-  {"hull-plating", "Reinforced Plating", Slot::defense, 900, 1.0, 1.0, 25, 0, 0, 0},
-  {"pulse-laser", "Pulse Laser", Slot::weapon, 650, 1.0, 1.0, 0, 240, 25, 1.0}
-}};
+inline constexpr std::size_t kCatalogueSize = 7;
+extern const std::array<ModuleDefinition, kCatalogueSize> kCatalogue;
 
-inline const ModuleDefinition* find(std::string_view id) {
-  for (const auto& module : kCatalogue)
-    if (id == module.id) return &module;
-  return nullptr;
-}
+enum class FitIssue {
+  none,
+  slotTypeUnavailable,
+  sizeTooLarge,
+  coreSystemUnavailable
+};
 
-inline constexpr const char* slotName(Slot slot) {
-  switch (slot) {
-    case Slot::mining: return "mining";
-    case Slot::engine: return "engine";
-    case Slot::defense: return "defense";
-    case Slot::weapon: return "weapon";
-  }
-  return "unknown";
-}
+struct FitCompatibility {
+  bool compatible = false;
+  FitIssue issue = FitIssue::slotTypeUnavailable;
+};
 
-inline constexpr std::size_t slotIndex(Slot slot) {
-  return static_cast<std::size_t>(slot);
-}
+const ModuleDefinition* find(std::string_view id);
+const char* slotName(Slot slot);
+const char* slotTypeName(SlotType type);
+const char* categoryName(Category category);
+const char* coreSystemName(CoreSystem system);
+const char* legalStatusName(LegalStatus status);
+const char* fitIssueName(FitIssue issue);
+std::string effectSummary(const ModuleDefinition& module);
+std::size_t slotIndex(Slot slot);
+FitCompatibility compatibility(const ModuleDefinition& module, const ships::Definition& hull);
+bool validateRegistry();
 
 } // namespace helion::loadout

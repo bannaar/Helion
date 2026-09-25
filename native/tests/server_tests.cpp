@@ -247,7 +247,11 @@ int main(int argc, char** argv) {
   command(first,"OUTFIT FIT engine-efficient","OK MODULE FIT");
   command(first,"OUTFIT FIT pulse-laser","ERR module-not-owned");
   expectPersistenceFailure(first,"OUTFIT BUY pulse-laser");
-  check(command(first,"OUTFIT LIST","LOADOUT").find("pulse-laser") == std::string::npos,
+  const auto failedPurchaseLoadout = command(first,"OUTFIT LIST","LOADOUT");
+  const auto failedLoadoutStart = failedPurchaseLoadout.find("LOADOUT ");
+  const auto failedLoadoutEnd = failedPurchaseLoadout.find('\n', failedLoadoutStart);
+  check(failedLoadoutStart != std::string::npos &&
+        failedPurchaseLoadout.substr(failedLoadoutStart, failedLoadoutEnd - failedLoadoutStart).find("pulse-laser") == std::string::npos,
         "failed module purchase rolls back ownership");
   check(command(first,"OUTFIT BUY pulse-laser","TRANSACTION MODULE_PURCHASE").find("credits=650") != std::string::npos,
         "combat module purchase is server-priced");
@@ -332,6 +336,11 @@ int main(int argc, char** argv) {
   const std::string sidewinderId = responseField(ownedBeforeSwitch.substr(sidewinderLineStart), "instance=");
   check(command(first, "SHIPYARD SWITCH " + muleId, "OK SHIP ACTIVE").find("hull=TITAN_MULE") != std::string::npos,
         "owned ship can become active at its station");
+  const auto muleOutfitting = command(first, "OUTFIT LIST", "LOADOUT");
+  check(muleOutfitting.find("MODULE id=pulse-laser") != std::string::npos &&
+        muleOutfitting.find("compatible=0 reason=slot-type-unavailable") != std::string::npos,
+        "server reports physical module compatibility for the active hull");
+  command(first, "OUTFIT BUY pulse-laser", "ERR module-incompatible reason=slot-type-unavailable");
   command(first, "BUY food 7", "OK BOUGHT");
   command(first, "BUY parts 7", "OK BOUGHT");
   command(first, "BUY food 1", "ERR cargo-full");

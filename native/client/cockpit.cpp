@@ -137,11 +137,20 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
       const auto& module = helion::loadout::kCatalogue[i];
       const bool owned = ownsModule(ui, module.id);
       const bool fitted = fittedModule(ui, module.slot, module.id);
-      const std::string row = std::string(module.id) + " / " + helion::loadout::slotName(module.slot) +
-        " / " + (owned ? (fitted ? "FITTED" : "OWNED") : std::to_string(module.price) + " CR");
+      const std::string row = std::string(module.id) + " / " + helion::loadout::slotTypeName(module.slotType) +
+        " / " + helion::ships::slotSizeName(module.size) + " / " +
+        (owned ? (fitted ? "FITTED" : "OWNED") : std::to_string(module.purchasePrice) + " CR");
       appendUiLine(batch, layout, 158 + static_cast<float>(i) * 35, static_cast<int>(i) == ui.selected, row);
     }
-    appendUiLine(batch, layout, 430, false, "B BUY  F FIT  R REMOVE SLOT  ENTER FIT/BUY", muted);
+    const auto& selected = helion::loadout::kCatalogue[static_cast<std::size_t>(
+      std::clamp(ui.selected, 0, static_cast<int>(maxRows) - 1))];
+    const auto* activeHull = helion::ships::find(ui.activeHullId);
+    const auto fit = activeHull ? helion::loadout::compatibility(selected, *activeHull) :
+      helion::loadout::FitCompatibility{};
+    appendUiLine(batch, layout, 408, false, std::string("SELECTED / ") + selected.displayName + " / " +
+      helion::loadout::effectSummary(selected) + " / " +
+      (fit.compatible ? "COMPATIBLE" : std::string("INCOMPATIBLE / ") + helion::loadout::fitIssueName(fit.issue)), muted);
+    appendUiLine(batch, layout, 430, false, "B BUY  F FIT  R REMOVE SLOT  ENTER FIT/BUY / SERVER VALIDATES", muted);
   } else if (ui.screen == UiScreen::shipyard) {
     appendUiLine(batch, layout, 112, false, snapshot.stationContext + " / SERVER-AUTHORIZED INVENTORY", teal);
     if (ui.shipyardRows.empty()) appendUiLine(batch, layout, 160, false, "NO HULLS OR OWNED SHIPS REPORTED", muted);

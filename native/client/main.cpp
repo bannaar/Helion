@@ -11,13 +11,17 @@
 #include <cstring>
 #include <deque>
 #include <iostream>
+#include <limits>
 #include <netdb.h>
+#include <optional>
 #include <poll.h>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "shared/protocol.h"
+#include "shared/binary_protocol.h"
 #include "shared/organizations.h"
 #include "shared/loadout.h"
 #include "shared/ships.h"
@@ -616,16 +620,41 @@ int main(int argc,char** argv) {
     coreRenderer.reset();
     helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return saved?0:1;
   }
-  bool running=true,greetingSeen=false,focused=true;
+  bool running=true,greetingSeen=false,protocolReady=false,binaryMode=false,focused=true;
   helion::protocol::LineDecoder decoder;
+  helion::protocol::binary::Decoder binaryDecoder;
   std::string outgoing;
+  std::uint32_t nextRequestId = 1;
+  std::uint32_t lastResponseRequestId = 0;
   std::string pendingUiAction;
   auto queue=[&](const std::string& request) {
-    if(!view.connected || !greetingSeen) { view.log.push_back("Command link not ready"); return; }
-    if(!helion::protocol::validWireLine(request) || outgoing.size()+request.size()>65536) {
+    if(!view.connected || !protocolReady) { view.log.push_back("Command link not ready"); return; }
+    if(!helion::protocol::validWireLine(request)) {
       view.log.push_back("Command queue full or invalid request"); return;
     }
-    outgoing+=request+"\n";
+    std::string encoded;
+    if (binaryMode) {
+      const auto parsed = helion::protocol::parseRequest(request);
+      std::optional<std::string> frame;
+      if (parsed.command == helion::protocol::Command::input) {
+        const auto payload = helion::protocol::binary::encodeInputPayload(
+          {parsed.thrust, parsed.turn, parsed.brake});
+        frame = helion::protocol::binary::encodeFrame(
+          helion::protocol::binary::MessageType::input, nextRequestId, payload);
+      } else {
+        frame = helion::protocol::binary::encodeFrame(
+          helion::protocol::binary::MessageType::textRequest, nextRequestId, request);
+      }
+      if (!frame || nextRequestId == std::numeric_limits<std::uint32_t>::max()) {
+        view.log.push_back("Command protocol sequence exhausted"); view.connected=false; return;
+      }
+      encoded = std::move(*frame);
+      ++nextRequestId;
+    } else encoded = request + "\n";
+    if (outgoing.size() + encoded.size() > 65536) {
+      view.log.push_back("Command queue full or invalid request"); return;
+    }
+    outgoing += encoded;
   };
   auto queueUi=[&](const std::string& request) {
     // Background INPUT/CONTACTS traffic is expected during flight and may
@@ -635,7 +664,7 @@ int main(int argc,char** argv) {
       view.ui.statusMessage = "WAIT / COMMAND IN PROGRESS";
       return false;
     }
-    if (!view.connected || !greetingSeen || !helion::protocol::validWireLine(request)) return false;
+    if (!view.connected || !protocolReady || !helion::protocol::validWireLine(request)) return false;
     queue(request);
     view.ui.commandPending = true;
     const auto firstSpace = request.find(' ');
@@ -782,7 +811,7 @@ int main(int argc,char** argv) {
       coreMode ? heldRight : keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT],
       coreMode ? heldBrake : keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN],controls);
     view.thrust=input.thrust;
-    if(view.connected && greetingSeen && now-lastInput>=0.1) {
+    if(view.connected && protocolReady && now-lastInput>=0.1) {
       if(view.authenticated) queue("INPUT "+std::to_string(input.thrust)+" "+std::to_string(input.turn)+" "+std::to_string(input.brake));
       else if(now-lastInput>=5) queue("STATE");
       if(view.authenticated || now-lastInput>=5) lastInput=now;
@@ -801,22 +830,80 @@ int main(int argc,char** argv) {
         break;
       }
       lastReply=now;
-      for(auto& frame:decoder.feed(std::string_view(bytes,static_cast<std::size_t>(count)))) {
+      struct IncomingResponse {
+        helion::protocol::Frame frame;
+        bool binaryFlight = false;
+        helion::flight::State flight;
+        int credits = 0;
+        int experience = 0;
+      };
+      std::vector<IncomingResponse> incoming;
+      if (binaryMode) {
+        for (const auto& event : binaryDecoder.feed(
+               std::string_view(bytes, static_cast<std::size_t>(count)))) {
+          if (event.kind != helion::protocol::binary::DecodeKind::frame ||
+              event.frame.requestId >= nextRequestId ||
+              (event.frame.requestId != 0 && event.frame.requestId < lastResponseRequestId)) {
+            view.connected=false; view.log.push_back("ERR malformed binary response"); break;
+          }
+          if (event.frame.requestId != 0) lastResponseRequestId = event.frame.requestId;
+          const std::string payload(event.frame.payload.begin(), event.frame.payload.end());
+          if (event.frame.type == helion::protocol::binary::MessageType::textResponse) {
+            if (!helion::protocol::validWireLine(payload)) {
+              view.connected=false; view.log.push_back("ERR malformed binary text response"); break;
+            }
+            IncomingResponse response;
+            response.frame = {helion::protocol::FrameKind::line, payload};
+            incoming.push_back(std::move(response));
+          } else if (event.frame.type == helion::protocol::binary::MessageType::flightSnapshot) {
+            IncomingResponse response;
+            response.frame = {helion::protocol::FrameKind::line, {}};
+            response.binaryFlight = true;
+            if (!helion::protocol::binary::decodeFlightSnapshotPayload(
+                  payload, response.flight, response.credits, response.experience)) {
+              view.connected=false; view.log.push_back("ERR malformed binary flight state"); break;
+            }
+            incoming.push_back(std::move(response));
+          } else {
+            view.connected=false; view.log.push_back("ERR invalid binary response direction"); break;
+          }
+        }
+      } else {
+        for (auto& frame : decoder.feed(std::string_view(bytes, static_cast<std::size_t>(count)))) {
+          IncomingResponse response;
+          response.frame = std::move(frame);
+          incoming.push_back(std::move(response));
+        }
+      }
+      for(auto& incomingResponse : incoming) {
+        auto& frame = incomingResponse.frame;
         if(!greetingSeen) {
           if(frame.kind!=helion::protocol::FrameKind::line || !helion::protocol::compatibleWelcome(frame.line)) {
             view.log.push_back("ERR incompatible server protocol"); view.connected=false; break;
           }
           greetingSeen=true;
-          view.commandReady=true;
+          outgoing += "PROTOCOL BINARY " + std::to_string(helion::protocol::binary::kVersion) + "\n";
         }
         if(frame.kind!=helion::protocol::FrameKind::line) { view.connected=false; view.log.push_back("ERR malformed response"); break; }
-        updatePresentationMetadata(view, frame.line);
-        updateUiFromLine(view, frame.line);
+        if (frame.line == "OK PROTOCOL BINARY 1") {
+          binaryMode = true;
+          protocolReady = true;
+          view.commandReady = true;
+          continue;
+        }
+        if (!protocolReady && frame.line.rfind("ERR CLIENT_UPDATE_REQUIRED", 0) == 0) {
+          view.log.push_back(frame.line); view.connected=false; break;
+        }
+        if (!incomingResponse.binaryFlight) {
+          updatePresentationMetadata(view, frame.line);
+          updateUiFromLine(view, frame.line);
+        }
         const auto& response = frame.line;
         const bool genericResult = response.rfind("OK ", 0) == 0 || response.rfind("ERR ", 0) == 0;
         const bool uiComplete = genericResult ||
           (pendingUiAction == "PROFILE" && response.rfind("PROFILE ", 0) == 0) ||
-          (pendingUiAction == "FLIGHT" && response.rfind("FLIGHT ", 0) == 0) ||
+          (pendingUiAction == "FLIGHT" &&
+            (incomingResponse.binaryFlight || response.rfind("FLIGHT ", 0) == 0)) ||
           (pendingUiAction == "GALNET" && response == "GALNET END") ||
           (pendingUiAction == "CAREER" && response.rfind("CAREER ", 0) == 0) ||
           (pendingUiAction == "OUTFIT LIST" && response.rfind("LOADOUT ", 0) == 0) ||
@@ -827,7 +914,12 @@ int main(int argc,char** argv) {
           view.ui.commandPending = false;
           pendingUiAction.clear();
         }
-        if(frame.line.rfind("FLIGHT ",0)==0) {
+        if (incomingResponse.binaryFlight) {
+          view.ship = incomingResponse.flight;
+          view.credits = incomingResponse.credits;
+          view.experience = incomingResponse.experience;
+          if (view.ship.docked) visual = view.ship;
+        } else if(frame.line.rfind("FLIGHT ",0)==0) {
           if(!helion::flight::readSnapshot(frame.line,view.ship,view.credits,view.experience)) {
             view.connected=false; view.log.push_back("ERR malformed flight state"); break;
           }

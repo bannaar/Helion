@@ -51,7 +51,22 @@ Request parseRequest(std::string_view line) {
   std::istringstream input{std::string(line)};
   std::string command;
   input >> command;
-  if (command == "CREATE" || command == "LOGIN") {
+  if (command == "PROTOCOL") {
+    std::string mode, version, extra;
+    if (!(input >> mode >> version) || mode != "BINARY" || (input >> extra) ||
+        version.empty() || version.size() > 3 ||
+        version.find_first_not_of("0123456789") != std::string::npos) {
+      request.error = "usage=PROTOCOL BINARY version";
+      return request;
+    }
+    try { request.protocolVersion = std::stoi(version); }
+    catch (...) { request.error = "usage=PROTOCOL BINARY version"; return request; }
+    if (request.protocolVersion < 1 || request.protocolVersion > 255) {
+      request.error = "usage=PROTOCOL BINARY version";
+      return request;
+    }
+    request.command = Command::protocol;
+  } else if (command == "CREATE" || command == "LOGIN") {
     input >> request.first >> request.second;
     std::getline(input, request.payload);
     if (!request.payload.empty() && request.payload.front() == ' ') request.payload.erase(0, 1);

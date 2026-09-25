@@ -21,6 +21,13 @@ int main() {
   check(helion::protocol::kVersion == 2, "protocol version");
   check(helion::protocol::compatibleWelcome("WELCOME Helion/2"), "matching protocol accepted");
   check(!helion::protocol::compatibleWelcome("WELCOME Helion/3"), "different protocol rejected");
+  const auto binaryProtocol = helion::protocol::parseRequest("PROTOCOL BINARY 1");
+  check(binaryProtocol.command == Command::protocol && binaryProtocol.protocolVersion == 1,
+        "explicit binary protocol negotiation parses");
+  check(helion::protocol::parseRequest("PROTOCOL BINARY 0").command == Command::invalid &&
+        helion::protocol::parseRequest("PROTOCOL AUTO 1").command == Command::invalid &&
+        helion::protocol::parseRequest("PROTOCOL BINARY 1 extra").command == Command::invalid,
+        "ambiguous or malformed binary negotiation rejects");
 
   LineDecoder partial;
   check(partial.feed("PRO").empty(), "partial frame waits");

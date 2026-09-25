@@ -1,15 +1,20 @@
-# Batch 14 v0.12 execution record
+# Batch 14 v0.17 execution record
 
 This file is the live implementation record for Batch 14. The repository-local
 `HELION_Batch14_Prompt_v0.11.txt` and `HELION_Codex_Goal_v0.11.txt` remain the
-baseline contract, amended by the user-approved v0.12 continuation supplied on
-2026-09-25. That continuation preserves completed M0-M2 work and makes the
-territorial/security clarification below authoritative for M3.
+baseline contract. The user-supplied
+`HELION_Batch14_Prompt_v0.17_integrated.txt` (SHA-256
+`caf73e1302604ac039a652cc08baac392dc736bd7955157ff7c9d3a5f183e7f4`), read
+from `/home/bannaar/Downloads` on 2026-09-25, is the controlling continuation.
+It preserves completed work, incorporates the approved v0.12-v0.16
+clarifications, and adds the v0.17 self-hosting/player-API direction. This is a
+continuation from the actual repository state, not a restart.
 
 ## Baseline
 
 - Branch: `batch14/implementation-v0.11`
 - Required and observed starting commit: `7d9aa976348c67ce948be80740088c10606714f8`
+- Current committed checkpoint at the v0.17 audit: `5ed777237e3a7700a72fbc82170e8179a471a950`
 - Batch 13 implementation commit: `62fc8155a9ada5ea75c99f6bb748b26d0e1d72ad`
 - Pre-existing untracked paths: `.agents/`, `plugins/` (unrelated; excluded
   from Batch 14 changes and commits)
@@ -81,29 +86,76 @@ territorial/security clarification below authoritative for M3.
   adapter exists. The browser code under `src/` is legacy reference material
   and is not a second native-game authority.
 
-## Smallest coherent milestone order
+### v0.17 continuation audit
+
+- Batch 13 already canonicalizes manufacturer, operator, visual-variant, and
+  human/Khepri/Vael technology-family profiles in `shared/ships.*`; owned ships
+  persist only stable variant/livery/wear references. Registry and persistence
+  tests prove that an illicit/operator treatment does not mutate a hull. The
+  compact `docs/native-ships.md` summary predates the full v0.17 art-direction
+  wording, so a detailed repository-local canon reference and reusable public
+  read-model projection are still required.
+- The committed `shared/galaxy.*` graph is the correct single-authority seam,
+  but its 28 systems do not meet v0.17's hard 80-system minimum. Existing IDs,
+  routes, security, sovereignty, persistence records, station mappings, and
+  tests must be extended in place. No population, settlement/infrastructure,
+  stellar/celestial, resource-distribution, or production/consumption profile
+  is present yet.
+- No physical anomaly/site registry, per-commander discovery state, survey
+  persistence, sensor capability service, or permission-filtered survey read
+  model exists. M3G must use the galaxy and existing atomic environment-bound
+  save rather than a second universe store.
+- No HTTP server, public API endpoint, OAuth/token service, companion backend,
+  or admin network service exists. Current native TLS/game services expose
+  server-owned read responses only through the gameplay connection. A future
+  API transport must consume shared read models and may initially bind only to
+  a private interface; it must not serialize complete hidden world objects.
+- The server is already self-hostable without external SaaS: bind address,
+  port, database path, environment, TLS certificate/key, and connection limit
+  are runtime inputs; systemd, LAN/Tailscale, TLS, package, backup, and restore
+  guidance exists. There are no Cloudflare, Sentry, AWS, OVHcloud, or other
+  provider SDK dependencies. Typed status/health, logging/metrics/error-sink,
+  trusted-proxy, rate-limit, maintenance, and private admin-control seams remain
+  incomplete.
+- The v0.17 audit found no reason to modify the legacy browser tree or create a
+  browser game/API authority. Native C++ server persistence and validation
+  remain authoritative.
+
+## Smallest coherent continuation order
+
+The v0.17 audit found M0-M2 stable, the original 28-system M3A-F foundation
+committed and validated, M4A committed, and M4B-D already implemented but
+uncommitted in the working tree. The smallest safe continuation is therefore
+to stabilize and commit the in-flight protocol work before expanding the
+already-correct graph model. The 28-system graph is retained as architecture
+and seed content, but it is no longer considered the complete M3 deliverable
+because v0.17 establishes a hard minimum of 80 systems and adds system profiles
+and M3G discovery state.
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
 | 0 | Audit baseline, record seams/deferrals, run relevant baseline validation | Complete |
 | 1 | Extend the existing module registry with structured physical slot/size metadata; centralize compatibility; enforce it in existing server-authoritative fit paths; preserve saves/UI/effects | Complete |
 | 2 | Add the regional seeded-market model, production-like versus TEST pricing policy, transaction safety, persistence, and economic telemetry for implemented flows | Complete |
-| 3 | Add one authoritative galaxy graph with faction territories, capitals/hubs, derived borders, route classes, exact High/Low/Null security, nullsec sovereignty, persistence, and future travel-infrastructure hooks | Complete |
-| 4 | Add explicit bounded/versioned binary framing over TLS for measured high-frequency traffic, compatibility negotiation, decoder safety tests, and benchmarks | In progress |
+| 3 | Preserve the authoritative graph/security/sovereignty foundation, expand it to the v0.17 galaxy scale and system-profile floor, integrate M2 geography, then add M3G physical-anomaly/per-commander-knowledge persistence and filtered read models | Partial: original 28-system M3A-F complete; v0.17 expansion not started |
+| 4 | Add explicit bounded/versioned binary framing over TLS for measured high-frequency traffic, compatibility negotiation, decoder safety tests, and benchmarks | In progress: M4A committed; M4B-D working tree passes focused validation |
 | 5 | Introduce a typed client engine-state controller and incrementally route connection/auth/navigation/reconnect without granting client authority | Not started |
 | 6 | Complete TEST roles, typed admin operations/audit, and TEST eligibility bypass on top of the isolated pricing policy, with production isolation tests | Not started |
-| 7 | Add the safe production operations foundation: status/lifecycle, least-privilege authorization boundaries, structured logs/metrics, backup/recovery and release documentation | Not started |
-| 8 | Full migration/regression/security review, all build/package/sanitizer gates, completion report, and Batch 15 recommendations | Not started |
+| 7 | Establish the shared Companion/Public API read-model boundary, representative versioned read surfaces, server-side knowledge filtering, bounded/scoped authorization seams, and public/admin trust separation without duplicate state | Not started |
+| 8 | Add vendor-neutral self-hosting and production-operations foundations: typed runtime configuration, status/lifecycle, least-privilege authorization boundaries, structured logs/metrics/error sinks, trusted-proxy policy, backup/recovery, and release documentation | Not started |
+| 9 | Full migration/regression/security review, all build/package/sanitizer gates, v0.17 completion report, and Batch 15 recommendations | Not started |
 
-The order keeps persistence and authority in the existing server, establishes
-data contracts before market/security/protocol consumers, and delays client
-control-flow changes until the new authoritative responses are stable.
+The order keeps persistence and authority in the existing server, finishes the
+already-open protocol transaction before touching geography, extends rather
+than replaces the graph and market contracts, establishes permission-filtered
+read models before an API transport, and delays client control-flow changes
+until authoritative responses are stable.
 
-## v0.12 canonical territorial and security clarification
+## v0.17 integrated canonical clarifications
 
-This section records the user-approved change for the next World Bible
-revision. It supersedes conflicting older wording for Batch 14 implementation
-without silently editing World Bible v0.10.
+This section records the user-approved v0.12-v0.17 changes for the next World
+Bible revision. They supersede conflicting older wording for Batch 14
+implementation without silently editing World Bible v0.10.
 
 - NPC faction territory may use only exact 0.2-step ratings from `+5.0` through
   `+0.2` (High Security) or `-0.2` through `-5.0` (Low Security). NPC faction
@@ -131,17 +183,43 @@ without silently editing World Bible v0.10.
   strategic travel infrastructure in claimed nullsec. It does not implement
   relays, bridges, tolls, fuel, access control, vulnerability, capital-jump,
   sovereignty-war, or Rift mechanics.
+- The first seeded galaxy must contain at least 80 authoritative star systems,
+  targeting approximately 90. Systems require stable non-positional IDs and
+  meaningful population, settlement/infrastructure, celestial/resource, and
+  production/consumption/import/export profiles. Resource distribution must be
+  geographically uneven. Future/inactive resource metadata must not be
+  represented as playable extraction or industry.
+- Server-owned physical anomalies/sites/resources are distinct from persistent
+  per-commander knowledge. Knowledge advances only through validated server
+  transitions `DETECTED -> CLASSIFIED -> LOCATED -> SURVEYED`; read models must
+  omit hidden fields rather than asking a client to hide them.
+- Manufacturer, hull, operator/faction treatment, illicit modification,
+  per-instance livery/wear, and fitted equipment remain separate. Existing
+  Batch 13 registry/profile data is preserved; v0.17 requires detailed canon
+  documentation and stable read-model hooks, not premature 3D/audio/procedural
+  asset systems.
+- HELION remains self-hosted and vendor-neutral. Cloudflare, Sentry, AWS,
+  OVHcloud, and similar providers are optional future adapters, never Batch 14
+  runtime dependencies. Secrets remain runtime-only.
+- One shared Companion/Public API boundary must consume authoritative,
+  permission-filtered read models. It must not duplicate gameplay state or
+  share the production ADMIN/OPS trust domain. The initial policy is
+  read-first/read-mostly; high-risk unattended gameplay automation remains
+  deferred.
 
 M3 executes as the following coherent submilestones:
 
 | Submilestone | Scope | Status |
 | --- | --- | --- |
-| M3A | Shared topology/system/region/Gate data model and graph validation | Complete |
-| M3B | NPC faction territories, capitals, commerce hubs, roles, and derived borders | Complete |
+| M3A | Shared topology/system/region/Gate data model and graph validation | Complete at original 28-system floor; model retained |
+| M3B | NPC faction territories, capitals, commerce hubs, roles, and derived borders | Complete at original 28-system floor; content expansion required |
 | M3C | Exact High/Low/Null rating model, ownership invariants, and response hooks | Complete |
-| M3D | Protected trunks plus core, secondary, frontier, and backwater routes | Complete |
+| M3D | Protected trunks plus core, secondary, frontier, and backwater routes | Complete at original 28-system floor; content expansion required |
 | M3E | Persisted unclaimed/Guild/Alliance nullsec sovereignty foundation | Complete |
 | M3F | Future player travel-infrastructure eligibility hooks and shared query seam | Complete |
+| M3A2 | Expand the existing graph to at least 80 systems (target approximately 90) without changing stable existing IDs | Not started |
+| M3B2 | Add population, settlement/infrastructure, celestial/resource, economic identity, and M2 integration data for every seeded system | Not started |
+| M3G | Add physical anomaly instances, per-commander discovery, filtered survey read models, persistence/migration, and event/companion seams | Not started |
 
 ### M3 repository audit and shared-model decisions
 

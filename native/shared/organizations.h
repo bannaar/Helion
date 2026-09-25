@@ -16,7 +16,7 @@ struct Definition {
   std::string_view wireName;
 };
 
-inline constexpr std::array<Definition, 12> kRegistry{{
+inline constexpr std::array<Definition, 13> kRegistry{{
   {"authority.kepler", "Kepler Authority", "Kepler_Authority"},
   {"corp.orion", "Orion Extraction Group", "Orion_Extraction_Group"},
   {"corp.aster", "Aster Dynamics", "Aster_Dynamics"},
@@ -28,7 +28,8 @@ inline constexpr std::array<Definition, 12> kRegistry{{
   {"faction.commonwealth", "Helion Commonwealth", "Helion_Commonwealth"},
   {"faction.compact", "Free Systems Compact", "Free_Systems_Compact"},
   {"faction.directorate", "Solar Directorate", "Solar_Directorate"},
-  {"faction.meridian", "Meridian League", "Meridian_League"}
+  {"faction.meridian", "Meridian League", "Meridian_League"},
+  {"faction.aurelian", "Aurelian Synod", "Aurelian_Synod"}
 }};
 
 const Definition* find(std::string_view id);

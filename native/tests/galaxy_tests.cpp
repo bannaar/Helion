@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <set>
 #include <string>
 
@@ -45,8 +46,62 @@ int main() {
         "security response hooks distinguish high low bands and nullsec without fake fleet behavior");
 
   auto state = seedState();
-  for (const auto& system : systems())
-    check(!system.id.empty() && findRegion(system.regionId), "every system has stable identity and a known region");
+  std::map<std::string, std::size_t> sovereignCounts;
+  std::size_t inhabited = 0, uninhabited = 0, gateMaterialSystems = 0, xenologicalSystems = 0;
+  for (const auto& system : systems()) {
+    const auto* profile = findSystemProfile(system.id);
+    check(!system.id.empty() && findRegion(system.regionId) && profile && profile->systemId == system.id,
+          "every system has stable identity region and profile");
+    check(profile && profile->planetCount >= 2 && profile->asteroidFieldCount >= 1 &&
+          profile->resources != ResourceFamily::none,
+          "every system has deterministic celestial and resource geography");
+    if (profile && profile->population == 0) {
+      ++uninhabited;
+      check(profile->settlement == SettlementScale::uninhabited &&
+            profile->infrastructure == Infrastructure::none &&
+            profile->production == CommodityFamily::none &&
+            profile->consumption == CommodityFamily::none,
+            "zero-population systems do not fabricate settlements or active economy");
+    } else if (profile) {
+      ++inhabited;
+      check(profile->settlement != SettlementScale::uninhabited &&
+            profile->infrastructure != Infrastructure::none &&
+            profile->production != CommodityFamily::none &&
+            profile->consumption != CommodityFamily::none,
+            "inhabited systems expose settlement infrastructure and economic identity");
+    }
+    gateMaterialSystems += profile && hasResource(*profile, ResourceFamily::gateMaterials);
+    xenologicalSystems += profile && hasResource(*profile, ResourceFamily::xenologicalTraces);
+    if (system.initialSovereignType == SovereignType::npcFaction)
+      ++sovereignCounts[std::string(system.initialSovereignId)];
+    else
+      ++sovereignCounts["NULL"];
+  }
+  check(systems().size() == 90 && inhabited > 50 && uninhabited > 10 &&
+        gateMaterialSystems > 0 && gateMaterialSystems < systems().size() / 2 &&
+        xenologicalSystems == 3,
+        "v0.17 galaxy scale population and rare restricted resource distribution validate");
+  check(sovereignCounts["faction.commonwealth"] == 14 &&
+        sovereignCounts["faction.compact"] == 13 &&
+        sovereignCounts["faction.directorate"] == 13 &&
+        sovereignCounts["faction.meridian"] == 12 &&
+        sovereignCounts["faction.aurelian"] == 10 && sovereignCounts["NULL"] == 28,
+        "initial 90-system distribution covers five factions and substantial nullsec");
+  const auto* keplerProfile = findSystemProfile("KEPLER");
+  check(keplerProfile && produces(*keplerProfile, CommodityFamily::food) &&
+        produces(*keplerProfile, CommodityFamily::parts) &&
+        consumes(*keplerProfile, CommodityFamily::ore) &&
+        hasInfrastructure(*keplerProfile, Infrastructure::warehouse),
+        "Kepler geography exposes the existing M2 food parts and ore market relationship");
+  const auto* aureliaProfile = findSystemProfile("AURELIA");
+  const auto* forgeProfile = findSystemProfile("FORGE_END");
+  const auto* riftwardProfile = findSystemProfile("RIFTWARD");
+  check(aureliaProfile && forgeProfile && riftwardProfile &&
+        hasResource(*aureliaProfile, ResourceFamily::gateMaterials) &&
+        hasResource(*forgeProfile, ResourceFamily::structuralMetals) &&
+        hasResource(*riftwardProfile, ResourceFamily::xenologicalTraces) &&
+        !hasResource(*forgeProfile, ResourceFamily::gateMaterials),
+        "resource geography is regionally differentiated rather than globally uniform");
   std::set<std::string> gateIds;
   std::set<std::pair<std::string, std::string>> gatePairs;
   for (const auto& gate : gateConnections()) {
@@ -90,7 +145,7 @@ int main() {
             "trunk endpoints are gateways belonging to different NPC factions");
     }
   }
-  check(topologyTrunks == 4, "canonical graph has four major inter-faction trunks");
+  check(topologyTrunks == 6, "canonical graph has six protected major inter-faction trunks");
   std::set<std::string> topologyVisited;
   std::vector<std::string> topologyPending{"CONCORDIA"};
   while (!topologyPending.empty()) {
@@ -100,8 +155,9 @@ int main() {
   }
   check(topologyVisited.size() == systems().size(), "canonical topology is connected before state validation");
   check(validateGalaxy(state), "canonical galaxy graph and seeded authoritative state validate");
-  check(systems().size() == kSystemCount && regions().size() == kRegionCount &&
-        gateConnections().size() == kGateConnectionCount, "canonical topology sizes are stable");
+  check(systems().size() == kSystemCount && systemProfiles().size() == kSystemCount &&
+        regions().size() == kRegionCount && factionTerritories().size() == kFactionTerritoryCount &&
+        gateConnections().size() == kGateConnectionCount, "canonical topology and profile sizes are stable");
 
   std::size_t high = 0, low = 0, nullSecurity = 0;
   for (const auto& system : state) {
@@ -112,7 +168,7 @@ int main() {
     check(validateSovereignty(system.securitySteps, system.sovereignty),
           "every canonical sovereignty/security pair is legal");
   }
-  check(high > 0 && low > 0 && nullSecurity == 4,
+  check(high > 0 && low > 0 && nullSecurity == 28,
         "NPC high/low territory and explicit nullsec all exist");
 
   auto illegalNpcNull = state;
@@ -169,21 +225,21 @@ int main() {
     frontier += gate.routeClass == RouteClass::frontier;
     backwater += gate.routeClass == RouteClass::backwater;
   }
-  check(trunks == 4 && core > trunks && secondary > trunks && frontier >= trunks && backwater >= trunks,
+  check(trunks == 6 && core > trunks && secondary > trunks && frontier >= trunks && backwater >= trunks,
         "major trunks remain a small subset beside core secondary frontier and backwater routes");
   for (const auto& system : systems())
     if (hasRole(system, SystemRole::deadEnd))
       check(adjacentSystems(system.id).size() == 1, "declared backwater dead ends have one permanent Gate");
 
   const auto borders = deriveBorders(state);
-  check(borders.size() == 8 && borders.front().connectionId == "TRUNK.KEPLER.FARPOINT",
+  check(borders.size() == 20 && borders.front().connectionId == "TRUNK.KEPLER.FARPOINT",
         "faction/nullsec borders derive deterministically from authoritative adjacency and sovereignty");
   auto changedBorders = state;
   check(setNullSovereignty(changedBorders, "VERGE_ANCHOR", SovereignType::playerGuild, "guild.pathfinders") &&
-        deriveBorders(changedBorders).size() == 9 &&
+        deriveBorders(changedBorders).size() == 22 &&
         setNullSovereignty(changedBorders, "PATHFINDER_REACH", SovereignType::playerGuild,
                            "guild.pathfinders") &&
-        deriveBorders(changedBorders).size() == 9,
+        deriveBorders(changedBorders).size() == 23,
         "changing nullsec sovereignty changes derived borders without changing topology or security");
 
   auto infrastructureState = state;
@@ -203,5 +259,5 @@ int main() {
         !setDiscovery(state, "DARKWARD", static_cast<DiscoveryState>(99)),
         "discovery changes independently from sovereignty");
 
-  std::cout << "galactic topology territory security border route and nullsec tests passed\n";
+  std::cout << "90-system topology population resource economy security border route and nullsec tests passed\n";
 }

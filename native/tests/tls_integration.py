@@ -6,6 +6,7 @@ import pathlib
 import signal
 import socket
 import ssl
+import struct
 import subprocess
 import tempfile
 import time
@@ -48,6 +49,27 @@ def receive_until(connection, marker):
         if marker in received:
             return received
     raise AssertionError(f'missing TLS response marker {marker!r}: {received!r}')
+
+
+def binary_frame(message_type, request_id, payload, version=1):
+    return b'HB' + struct.pack('!BBHII', version, message_type, 0, len(payload), request_id) + payload
+
+
+def receive_exact(connection, size):
+    received = b''
+    while len(received) < size:
+        chunk = connection.recv(size - len(received))
+        if not chunk:
+            raise AssertionError('truncated binary TLS response')
+        received += chunk
+    return received
+
+
+def receive_binary(connection):
+    header = receive_exact(connection, 14)
+    magic, version, message_type, flags, length, request_id = struct.unpack('!2sBBHII', header)
+    assert magic == b'HB' and version == 1 and flags == 0 and length <= 4096
+    return message_type, request_id, receive_exact(connection, length)
 
 
 def start_server(binary, root, cert, key, database='tls.db', extra=None):
@@ -118,6 +140,41 @@ def main():
                     response = b''
                 assert b'WELCOME' not in response and b'CREATED' not in response
             environment_context = ssl.create_default_context(cafile=str(cert))
+            with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
+                with environment_context.wrap_socket(raw, server_hostname='localhost') as secure:
+                    assert b'WELCOME Helion/2' in receive_until(secure, b'binary-version=1')
+                    secure.sendall(b'PROTOCOL BINARY 2\n')
+                    assert b'ERR CLIENT_UPDATE_REQUIRED binary-version=1' in receive_until(
+                        secure, b'CLIENT_UPDATE_REQUIRED')
+                    secure.sendall(b'PROTOCOL BINARY 1\n')
+                    assert b'OK PROTOCOL BINARY 1' in receive_until(secure, b'OK PROTOCOL BINARY 1')
+                    secure.sendall(binary_frame(1, 1, b'STATE'))
+                    message_type, request_id, payload = receive_binary(secure)
+                    assert message_type == 2 and request_id == 1 and payload == b'STATE profiles=0 messages=0'
+                    secure.sendall(binary_frame(
+                        1, 2, b'CREATE binarypilot synthetic-password Binary Pilot'))
+                    message_type, request_id, payload = receive_binary(secure)
+                    assert message_type == 2 and request_id == 2 and payload.startswith(
+                        b'OK CREATED user=binarypilot')
+                    secure.sendall(binary_frame(3, 3, b'\x01\xff\x00'))
+                    message_type, request_id, payload = receive_binary(secure)
+                    assert message_type == 4 and request_id == 3 and len(payload) == 57
+                    message_type, request_id, payload = receive_binary(secure)
+                    assert message_type == 2 and request_id == 3 and payload.startswith(b'ACTIVE SHIP ')
+                    secure.sendall(binary_frame(3, 4, b'\x02\x00\x00'))
+                    message_type, request_id, payload = receive_binary(secure)
+                    assert message_type == 2 and request_id == 4 and payload == b'ERR malformed-input'
+            with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
+                with environment_context.wrap_socket(raw, server_hostname='localhost') as secure:
+                    receive_until(secure, b'binary-version=1')
+                    secure.sendall(b'PROTOCOL BINARY 1\n')
+                    receive_until(secure, b'OK PROTOCOL BINARY 1')
+                    secure.sendall(binary_frame(1, 1, b'STATE'))
+                    assert receive_binary(secure)[2] == b'STATE profiles=1 messages=0'
+                    secure.sendall(binary_frame(1, 1, b'STATE'))
+                    message_type, request_id, payload = receive_binary(secure)
+                    assert message_type == 2 and request_id == 1 and payload == b'ERR replayed-request'
+            print('binary protocol: negotiation, typed input/flight, compatibility and replay rejection passed')
             with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
                 with environment_context.wrap_socket(raw, server_hostname='localhost') as secure:
                     assert b'WELCOME Helion/2' in secure.recv(4096)

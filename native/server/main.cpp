@@ -18,6 +18,7 @@
 #include <map>
 #include <mutex>
 #include <netinet/in.h>
+#include <optional>
 #include <poll.h>
 #include <sstream>
 #include <set>
@@ -37,6 +38,7 @@
 #include "server/environment.h"
 #include "shared/flight.h"
 #include "shared/combat.h"
+#include "shared/binary_protocol.h"
 #include "shared/career.h"
 #include "shared/economy.h"
 #include "shared/galaxy.h"
@@ -102,6 +104,7 @@ std::unordered_map<std::string, Profile> profiles;
 std::vector<ChatMessage> messages;
 std::vector<GalNetEvent> galnetEvents;
 std::vector<int> clients;
+std::set<int> authenticatedClients;
 bool flightStateDirty = false;
 bool ownershipMigrationPending = false;
 bool environmentMigrationPending = false;
@@ -115,6 +118,7 @@ struct Transport {
   explicit Transport(std::shared_ptr<helion::tls::Connection> value) : connection(std::move(value)) {}
   std::shared_ptr<helion::tls::Connection> connection;
   std::mutex writeMutex;
+  bool binaryMode = false;
 };
 std::unordered_map<int, std::shared_ptr<Transport>> transports;
 
@@ -267,7 +271,8 @@ std::string moduleDefinitionLine(const Profile& profile, const helion::loadout::
     " reason=" + helion::loadout::fitIssueName(fit.issue);
 }
 
-void appendOutfittingState(std::vector<std::string>& responses, const Profile& profile) {
+template <typename ResponseContainer>
+void appendOutfittingState(ResponseContainer& responses, const Profile& profile) {
   for (const auto& module : helion::loadout::kCatalogue)
     responses.push_back(moduleDefinitionLine(profile, module));
   responses.push_back(loadoutLine(profile));
@@ -322,7 +327,8 @@ std::string ownedShipLine(const Profile& profile, const helion::ships::OwnedShip
     " livery=" + ship.livery + " wear=" + ship.wearState;
 }
 
-void appendShipyardState(std::vector<std::string>& responses, const Profile& profile, bool includeOffers = true) {
+template <typename ResponseContainer>
+void appendShipyardState(ResponseContainer& responses, const Profile& profile, bool includeOffers = true) {
   const auto& current = activeShip(profile);
   const int station = current.flight.station;
   responses.push_back("SHIPYARD BEGIN station=" + std::to_string(station));
@@ -784,11 +790,19 @@ void loadState() {
       }
     }
     if (ferror(file)) throw std::runtime_error("cannot read persistence file");
-    if (!galaxyRecords.empty() && galaxyRecords.size() != helion::galaxy::kSystemCount)
+    constexpr std::size_t kLegacyGalaxySystemCount = 28;
+    bool legacyGalaxyRecords = galaxyRecords.size() == kLegacyGalaxySystemCount;
+    if (legacyGalaxyRecords) {
+      const auto& definitions = helion::galaxy::systems();
+      for (std::size_t index = 0; index < kLegacyGalaxySystemCount; ++index)
+        legacyGalaxyRecords &= galaxyRecords.count(std::string(definitions[index].id)) != 0;
+    }
+    if (!galaxyRecords.empty() && galaxyRecords.size() != helion::galaxy::kSystemCount &&
+        !legacyGalaxyRecords)
       throw std::runtime_error("incomplete galaxy persistence");
     if (!helion::galaxy::validateGalaxy(galaxyState))
       throw std::runtime_error("invalid persisted galaxy state");
-    galaxyMigrationPending = galaxyRecords.empty();
+    galaxyMigrationPending = galaxyRecords.size() != helion::galaxy::kSystemCount;
     if (!marketRecords.empty() && marketRecords.size() != helion::economy::kMarketCount)
       throw std::runtime_error("incomplete market persistence");
     if (!helion::economy::validateMarkets(regionalMarkets, pricingPolicy()))
@@ -848,6 +862,14 @@ void migrateLegacyProfiles() {
   }
 }
 
+thread_local std::uint32_t responseRequestId = 0;
+
+class ResponseRequestScope {
+ public:
+  explicit ResponseRequestScope(std::uint32_t requestId) { responseRequestId = requestId; }
+  ~ResponseRequestScope() { responseRequestId = 0; }
+};
+
 bool sendLine(int fd, const std::string& line) {
   if (!helion::protocol::validWireLine(line)) return false;
   std::shared_ptr<Transport> transport;
@@ -858,7 +880,77 @@ bool sendLine(int fd, const std::string& line) {
     transport = found->second;
   }
   std::lock_guard<std::mutex> lock(transport->writeMutex);
+  if (transport->binaryMode) {
+    const auto frame = helion::protocol::binary::encodeFrame(
+      helion::protocol::binary::MessageType::textResponse, responseRequestId, line);
+    return frame && transport->connection->sendAll(*frame);
+  }
   return transport->connection->sendAll(line + "\n");
+}
+
+bool enableBinaryTransport(int fd) {
+  std::shared_ptr<Transport> transport;
+  {
+    std::lock_guard<std::mutex> lock(transportMutex);
+    const auto found = transports.find(fd);
+    if (found == transports.end()) return false;
+    transport = found->second;
+  }
+  std::lock_guard<std::mutex> lock(transport->writeMutex);
+  if (transport->binaryMode || !transport->connection->sendAll("OK PROTOCOL BINARY 1\n")) return false;
+  transport->binaryMode = true;
+  return true;
+}
+
+struct OutboundResponse {
+  enum class Kind { text, flightSnapshot } kind = Kind::text;
+  std::string line;
+  helion::flight::State flight;
+  int credits = 0;
+  int experience = 0;
+
+  OutboundResponse(const char* value) : line(value) {}
+  OutboundResponse(std::string value) : line(std::move(value)) {}
+  static OutboundResponse snapshot(const helion::flight::State& state, int creditsValue,
+                                   int experienceValue) {
+    OutboundResponse response("");
+    response.kind = Kind::flightSnapshot;
+    response.flight = state;
+    response.credits = creditsValue;
+    response.experience = experienceValue;
+    return response;
+  }
+};
+
+bool sendResponse(int fd, const OutboundResponse& response) {
+  std::shared_ptr<Transport> transport;
+  {
+    std::lock_guard<std::mutex> lock(transportMutex);
+    const auto found = transports.find(fd);
+    if (found == transports.end()) return false;
+    transport = found->second;
+  }
+  std::lock_guard<std::mutex> lock(transport->writeMutex);
+  if (response.kind == OutboundResponse::Kind::flightSnapshot) {
+    if (!transport->binaryMode)
+      return transport->connection->sendAll(
+        helion::flight::snapshot(response.flight, response.credits, response.experience) + "\n");
+    const auto payload = helion::protocol::binary::encodeFlightSnapshotPayload(
+      response.flight, response.credits, response.experience);
+    if (!payload) return false;
+    const auto frame = helion::protocol::binary::encodeFrame(
+      helion::protocol::binary::MessageType::flightSnapshot, responseRequestId, *payload);
+    return frame && transport->connection->sendAll(*frame);
+  }
+  if (!helion::protocol::validWireLine(response.line)) return false;
+  if (transport->binaryMode) {
+    if (response.line.rfind("FUEL ", 0) == 0 || response.line.rfind("COMBAT STATUS ", 0) == 0)
+      return true; // Included in the binary flight snapshot.
+    const auto frame = helion::protocol::binary::encodeFrame(
+      helion::protocol::binary::MessageType::textResponse, responseRequestId, response.line);
+    return frame && transport->connection->sendAll(*frame);
+  }
+  return transport->connection->sendAll(response.line + "\n");
 }
 
 std::string stateLine() {
@@ -868,10 +960,10 @@ std::string stateLine() {
   return out.str();
 }
 
-void appendFlightState(std::vector<std::string>& responses, Profile& profile) {
+void appendFlightState(std::vector<OutboundResponse>& responses, Profile& profile) {
   const auto& ship = activeShip(profile);
   const auto& hull = helion::ships::definition(ship);
-  responses.push_back(helion::flight::snapshot(ship.flight, profile.credits, profile.experience));
+  responses.push_back(OutboundResponse::snapshot(ship.flight, profile.credits, profile.experience));
   responses.push_back(helion::flight::fuelLine(ship.flight));
   responses.push_back("ACTIVE SHIP instance=" + ship.instanceId + " hull=" + ship.hullId +
     " display=" + std::string(hull.model) + " manufacturer=" + std::string(hull.manufacturerId) +
@@ -893,7 +985,7 @@ void broadcast(const std::string& line) {
   std::vector<int> recipients;
   {
     std::lock_guard<std::mutex> lock(stateMutex);
-    recipients = clients;
+    recipients.assign(authenticatedClients.begin(), authenticatedClients.end());
   }
   for (const int fd : recipients) sendLine(fd, line);
 }
@@ -947,6 +1039,7 @@ void resetCombatAfterLaunch(Profile& profile) {
 
 void removeClient(int fd) {
   std::lock_guard<std::mutex> lock(stateMutex);
+  authenticatedClients.erase(fd);
   for (auto it = clients.begin(); it != clients.end(); ++it) {
     if (*it == fd) {
       clients.erase(it);
@@ -961,12 +1054,15 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET ECONOMY GALAXY CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT SHIPYARD FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=PROTOCOL CREATE LOGIN CHAT PROFILE STATE GALNET ECONOMY GALAXY CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT SHIPYARD FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT legacy-version=2 binary-version=1");
 
   std::string user;
   int authFailures = 0;
   int authRequests = 0;
   helion::protocol::LineDecoder decoder;
+  helion::protocol::binary::Decoder binaryDecoder;
+  bool binaryMode = false;
+  std::uint32_t lastBinaryRequestId = 0;
   bool running = true;
   auto lastCompleteLine = std::chrono::steady_clock::now();
   char bytes[1024];
@@ -979,13 +1075,84 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     }
     const auto now = std::chrono::steady_clock::now();
     if (now - lastCompleteLine > std::chrono::seconds(kReadTimeoutSeconds)) break;
-    for (const auto& frame : decoder.feed(std::string_view(bytes, static_cast<std::size_t>(received)))) {
+    struct IncomingFrame {
+      helion::protocol::Frame frame;
+      std::uint32_t requestId = 0;
+      std::optional<helion::protocol::Request> parsedRequest;
+    };
+    std::vector<IncomingFrame> incoming;
+    if (binaryMode) {
+      for (const auto& event : binaryDecoder.feed(
+             std::string_view(bytes, static_cast<std::size_t>(received)))) {
+        if (event.kind != helion::protocol::binary::DecodeKind::frame) {
+          sendLine(fd, std::string("ERR ") + helion::protocol::binary::decodeKindName(event.kind));
+          running = false;
+          break;
+        }
+        if (event.frame.requestId == 0 || event.frame.requestId <= lastBinaryRequestId) {
+          ResponseRequestScope responseScope(event.frame.requestId);
+          sendLine(fd, "ERR replayed-request");
+          running = false;
+          break;
+        }
+        lastBinaryRequestId = event.frame.requestId;
+        if (event.frame.type == helion::protocol::binary::MessageType::input) {
+          const auto input = helion::protocol::binary::decodeInputPayload(std::string_view(
+            reinterpret_cast<const char*>(event.frame.payload.data()), event.frame.payload.size()));
+          if (!input) {
+            ResponseRequestScope responseScope(event.frame.requestId);
+            sendLine(fd, "ERR malformed-input");
+            running = false;
+            break;
+          }
+          helion::protocol::Request request;
+          request.command = helion::protocol::Command::input;
+          request.thrust = input->thrust;
+          request.turn = input->turn;
+          request.brake = input->brake;
+          incoming.push_back({{helion::protocol::FrameKind::line, "INPUT"},
+                              event.frame.requestId, std::move(request)});
+          continue;
+        }
+        if (event.frame.type != helion::protocol::binary::MessageType::textRequest) {
+          ResponseRequestScope responseScope(event.frame.requestId);
+          sendLine(fd, "ERR invalid-message-direction");
+          running = false;
+          break;
+        }
+        std::string line(event.frame.payload.begin(), event.frame.payload.end());
+        incoming.push_back({{helion::protocol::FrameKind::line, std::move(line)},
+                            event.frame.requestId, std::nullopt});
+      }
+    } else {
+      for (auto& frame : decoder.feed(std::string_view(bytes, static_cast<std::size_t>(received))))
+        incoming.push_back({std::move(frame), 0, std::nullopt});
+    }
+    for (const auto& incomingFrame : incoming) {
+      const auto& frame = incomingFrame.frame;
+      ResponseRequestScope responseScope(incomingFrame.requestId);
       lastCompleteLine = now;
       if (frame.kind != helion::protocol::FrameKind::line) {
         sendLine(fd, frame.kind == helion::protocol::FrameKind::too_long ? "ERR line-too-long" : "ERR malformed-message");
         continue;
       }
-      const auto request = helion::protocol::parseRequest(frame.line);
+      const auto request = incomingFrame.parsedRequest ? *incomingFrame.parsedRequest :
+        helion::protocol::parseRequest(frame.line);
+      if (request.command == helion::protocol::Command::protocol) {
+        if (binaryMode || !user.empty()) { sendLine(fd, "ERR protocol-negotiation-closed"); continue; }
+        if (request.protocolVersion != helion::protocol::binary::kVersion) {
+          sendLine(fd, "ERR CLIENT_UPDATE_REQUIRED binary-version=" +
+            std::to_string(helion::protocol::binary::kVersion));
+          continue;
+        }
+        if (incoming.size() != 1 || !enableBinaryTransport(fd)) {
+          sendLine(fd, "ERR protocol-negotiation-failed");
+          running = false;
+          break;
+        }
+        binaryMode = true;
+        continue;
+      }
       const bool authRequest = request.command == helion::protocol::Command::create ||
         request.command == helion::protocol::Command::login ||
         frame.line.rfind("CREATE", 0) == 0 || frame.line.rfind("LOGIN", 0) == 0;
@@ -1040,7 +1207,11 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             }
           }
         }
-        if (created) user = name;
+        if (created) {
+          user = name;
+          std::lock_guard<std::mutex> lock(stateMutex);
+          authenticatedClients.insert(fd);
+        }
         sendLine(fd, response);
         if (tooManyFailures) { running = false; break; }
       } else if (request.command == helion::protocol::Command::login) {
@@ -1061,6 +1232,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           if (++authFailures >= kMaxAuthFailures) { sendLine(fd, "ERR too-many-auth-attempts"); running = false; break; }
         } else {
           user = name;
+          {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            authenticatedClients.insert(fd);
+          }
           sendLine(fd, "OK LOGIN user=" + name + " display=" + display);
         }
       } else if (request.command == helion::protocol::Command::chat) {
@@ -1118,17 +1293,17 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         }
       } else if (request.command == helion::protocol::Command::galnet) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           for (const auto& event : galnetEvents)
             responses.push_back("GALNET id=" + event.id + " headline=" + event.headline);
           responses.push_back("GALNET END");
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::economy) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           const auto& profile = profiles.at(user);
@@ -1146,10 +1321,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               pricingPolicy() == helion::economy::PricingPolicy::testConvenience ? "TEST_100" : "PRODUCTION_LIKE"));
           }
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::galaxy) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           const auto& ship = activeShip(profiles.at(user));
@@ -1173,10 +1348,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             " gates=" + std::to_string(helion::galaxy::gateConnections().size()) +
             " borders=" + std::to_string(borders.size()));
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::career) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
@@ -1219,7 +1394,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           responses.push_back(helion::career::status(profile.career, profile.missionStage));
           appendFlightState(responses, profile);
         }
-        for (const auto& line : responses) sendLine(fd, line);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::mission || request.command == helion::protocol::Command::accept || request.command == helion::protocol::Command::turnin) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
         std::string response;
@@ -1288,7 +1463,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
       } else if (request.command == helion::protocol::Command::fire ||
                  request.command == helion::protocol::Command::recover) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
@@ -1363,7 +1538,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                   responses.push_back(reputationLine(profile, "criminal.red_wake", -10));
                 }
               }
-              if (responses.empty() || responses.back().rfind("ERR", 0) != 0) {
+              if (responses.empty() || responses.back().line.rfind("ERR", 0) != 0) {
                 try { persistStateLocked(); }
                 catch (const std::exception& error) {
                   profile = before;
@@ -1380,10 +1555,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           responses.push_back(helion::flight::combatStatusLine(activeShip(profile).flight));
           appendFlightState(responses, profile);
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::shipyard) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
@@ -1456,11 +1631,11 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             appendFlightState(responses, profile);
           }
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::refuel ||
                  request.command == helion::protocol::Command::outfit) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
@@ -1588,10 +1763,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             appendFlightState(responses, profile);
           }
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::upgrade || request.command == helion::protocol::Command::repair) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
@@ -1647,19 +1822,19 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             appendFlightState(responses, profile);
           }
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::contacts) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           for (const auto& contact : contactsFor(user)) responses.push_back(helion::flight::contactLine(contact));
           responses.push_back("CONTACTS END");
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::buy || request.command == helion::protocol::Command::sell) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
@@ -1693,14 +1868,14 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             appendFlightState(responses, profile);
           }
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::launch ||
                  request.command == helion::protocol::Command::input ||
                  request.command == helion::protocol::Command::flight ||
                  request.command == helion::protocol::Command::mine ||
                  request.command == helion::protocol::Command::dock) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
-        std::vector<std::string> responses;
+        std::vector<OutboundResponse> responses;
         {
           std::lock_guard<std::mutex> lock(stateMutex);
           auto& profile = profiles.at(user);
@@ -1762,7 +1937,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           }
           appendFlightState(responses, profile);
         }
-        for (const auto& response : responses) sendLine(fd, response);
+        for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::state) {
         sendLine(fd, stateLine());
       } else if (request.command == helion::protocol::Command::quit) {

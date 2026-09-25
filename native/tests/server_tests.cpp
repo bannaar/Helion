@@ -395,18 +395,22 @@ int main(int argc, char** argv) {
         initialEconomy.find("starter-grants=1500") != std::string::npos &&
         initialEconomy.find("ECONOMY END policy=PRODUCTION_LIKE") != std::string::npos,
         "regional production-like market and economic telemetry expose prior committed flows");
-  const auto initialGalaxy = command(first, "GALAXY", "GALAXY END", 160);
-  check(initialGalaxy.find("GALAXY BEGIN current=KEPLER systems=28 gates=35") != std::string::npos &&
+  const auto initialGalaxy = command(first, "GALAXY", "GALAXY END", 360);
+  check(initialGalaxy.find("GALAXY BEGIN current=KEPLER systems=90 gates=133") != std::string::npos &&
         initialGalaxy.find("TERRITORY faction=faction.commonwealth capital=CONCORDIA commerce-hub=VANTAGE") != std::string::npos &&
+        initialGalaxy.find("TERRITORY faction=faction.aurelian capital=AURELIA commerce-hub=LUMEN") != std::string::npos &&
         initialGalaxy.find("SYSTEM id=KEPLER name=Kepler region=KEPLER_REACH security=+0.6 class=HIGH sovereign-type=NPC_FACTION sovereign-id=faction.commonwealth") != std::string::npos &&
+        initialGalaxy.find("economy=GATE_LOGISTICS infrastructure=STATION,WAREHOUSE,GATEWATCH,EXTRACTION,OUTPOST") != std::string::npos &&
         initialGalaxy.find("SYSTEM id=GLOAM name=Gloam region=KEPLER_REACH security=-1.0 class=LOW sovereign-type=NPC_FACTION") != std::string::npos &&
         initialGalaxy.find("SYSTEM id=PATHFINDER_REACH name=Pathfinder_Reach region=OUTER_REACH security=0.0 class=NULL sovereign-type=UNCLAIMED sovereign-id=none discovery=CHARTED roles=FRONTIER future-infrastructure=0") != std::string::npos &&
         initialGalaxy.find("SYSTEM id=DARKWARD name=Darkward region=OUTER_REACH security=0.0 class=NULL sovereign-type=UNCLAIMED sovereign-id=none discovery=UNKNOWN") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=RIFTWARD name=Riftward region=SHROUD_EXPANSE security=0.0") != std::string::npos &&
+        initialGalaxy.find("resources=RARE_METALS,ICE_VOLATILES,INDUSTRIAL_GASES,SCIENTIFIC_SAMPLES,XENOLOGICAL_TRACES_RESTRICTED") != std::string::npos &&
         initialGalaxy.find("GATE id=TRUNK.KEPLER.FARPOINT from=KEPLER to=FARPOINT route=MAJOR_INTERFACTION_TRUNK permanent=1") != std::string::npos &&
         initialGalaxy.find("GATE id=GATE.KEPLER.GLOAM from=KEPLER to=GLOAM route=BACKWATER permanent=1") != std::string::npos &&
         initialGalaxy.find("BORDER gate=TRUNK.KEPLER.FARPOINT") != std::string::npos &&
-        initialGalaxy.find("GALAXY END systems=28 gates=35 borders=8") != std::string::npos,
-        "authoritative galaxy query exposes current system territories security routes borders and nullsec hooks");
+        initialGalaxy.find("GALAXY END systems=90 gates=133 borders=20") != std::string::npos,
+        "authoritative galaxy query exposes v0.17 profiles territories security routes borders and nullsec hooks");
   command(first, "SHIPYARD BUY TITAN_MULE", "ERR insufficient-credits");
   command(first,"REPAIR","ERR hull-full");
   const auto missionOffer = command(first,"MISSION","MISSION 1 title=First Ore");
@@ -644,10 +648,10 @@ int main(int argc, char** argv) {
         restoredEconomy.find("market-transactions=5") != std::string::npos &&
         restoredEconomy.find("ore-mined=1") != std::string::npos,
         "regional market state and economic telemetry survive server restart deterministically");
-  const auto restoredGalaxy = command(restarted, "GALAXY", "GALAXY END", 160);
-  check(restoredGalaxy.find("GALAXY BEGIN current=KEPLER systems=28 gates=35") != std::string::npos &&
+  const auto restoredGalaxy = command(restarted, "GALAXY", "GALAXY END", 360);
+  check(restoredGalaxy.find("GALAXY BEGIN current=KEPLER systems=90 gates=133") != std::string::npos &&
         restoredGalaxy.find("SYSTEM id=DARKWARD name=Darkward region=OUTER_REACH security=0.0 class=NULL sovereign-type=PLAYER_ALLIANCE sovereign-id=alliance.frontier_coalition discovery=CHARTED roles=FRONTIER future-infrastructure=1") != std::string::npos &&
-        restoredGalaxy.find("GALAXY END systems=28 gates=35 borders=9") != std::string::npos,
+        restoredGalaxy.find("GALAXY END systems=90 gates=133 borders=25") != std::string::npos,
         "security sovereignty discovery infrastructure eligibility and derived borders reload exactly");
   const auto restoredWingmanLogin = command(restarted, "LOGIN wingman $legacy-pass-two", "OK LOGIN");
   check(restoredWingmanLogin.find("user=wingman") != std::string::npos,

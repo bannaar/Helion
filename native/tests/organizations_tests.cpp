@@ -17,6 +17,7 @@ int main() {
   check(find("criminal.vanta") && find("criminal.vanta")->displayName == "Vanta Syndicate", "Vanta registry entry");
   check(find("criminal.red_wake") && find("criminal.red_wake")->displayName == "Red Wake", "Red Wake registry entry");
   check(find("faction.commonwealth") && find("faction.commonwealth")->displayName == "Helion Commonwealth", "Commonwealth registry entry");
+  check(find("faction.aurelian") && find("faction.aurelian")->displayName == "Aurelian Synod", "Aurelian registry entry");
   check(find("unknown.organization") == nullptr, "unknown organization rejected");
   check(std::string(standingLabel(-100)) == "Hostile" && std::string(standingLabel(-75)) == "Hostile", "hostile threshold");
   check(std::string(standingLabel(-74)) == "Unfriendly" && std::string(standingLabel(-25)) == "Unfriendly", "unfriendly threshold");

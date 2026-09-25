@@ -101,13 +101,13 @@ int connectTo(int port, bool encrypted = true) {
   return -1;
 }
 
-std::string receiveUntil(int fd, const std::string& needle) {
+std::string receiveUntil(int fd, const std::string& needle, int maxReads = 40) {
   std::string received;
   const auto hasCompleteMatch = [&received, &needle] {
     const auto match = received.find(needle);
     return match != std::string::npos && received.find('\n', match) != std::string::npos;
   };
-  for (int i = 0; i < 40 && !hasCompleteMatch(); ++i) {
+  for (int i = 0; i < maxReads && !hasCompleteMatch(); ++i) {
     char bytes[1024];
     const ssize_t count = connections.at(fd)->receive(bytes, sizeof(bytes), 100);
     if (count < 0 && errno == ETIMEDOUT) continue;
@@ -117,10 +117,11 @@ std::string receiveUntil(int fd, const std::string& needle) {
   return received;
 }
 
-std::string command(int fd,const std::string& value,const std::string& expected) {
+std::string command(int fd,const std::string& value,const std::string& expected,
+                    int maxReads = 40) {
   const auto bytes=value+"\n";
   check(tlsSend(fd,bytes.data(),bytes.size(),0)==static_cast<ssize_t>(bytes.size()),"send gameplay command");
-  const auto response=receiveUntil(fd,expected);
+  const auto response=receiveUntil(fd,expected,maxReads);
   if (response.find(expected)==std::string::npos)
     std::cerr << "command=" << value << " expected=" << expected << " received=" << response << '\n';
   check(response.find(expected)!=std::string::npos,"expected gameplay response");
@@ -201,6 +202,7 @@ int main(int argc, char** argv) {
   check(first >= 0, "server starts after migration");
   check(receiveUntil(first, "INFO commands=").find("WELCOME Helion/2") != std::string::npos, "version greeting");
   command(first,"LAUNCH","ERR login-required");
+  command(first,"GALAXY","ERR login-required");
   // A different port must not bypass exclusive ownership of the same save.
   const std::string otherPort = std::to_string(freePort());
   competingPid = fork();
@@ -393,6 +395,18 @@ int main(int argc, char** argv) {
         initialEconomy.find("starter-grants=1500") != std::string::npos &&
         initialEconomy.find("ECONOMY END policy=PRODUCTION_LIKE") != std::string::npos,
         "regional production-like market and economic telemetry expose prior committed flows");
+  const auto initialGalaxy = command(first, "GALAXY", "GALAXY END", 160);
+  check(initialGalaxy.find("GALAXY BEGIN current=KEPLER systems=28 gates=35") != std::string::npos &&
+        initialGalaxy.find("TERRITORY faction=faction.commonwealth capital=CONCORDIA commerce-hub=VANTAGE") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=KEPLER name=Kepler region=KEPLER_REACH security=+0.6 class=HIGH sovereign-type=NPC_FACTION sovereign-id=faction.commonwealth") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=GLOAM name=Gloam region=KEPLER_REACH security=-1.0 class=LOW sovereign-type=NPC_FACTION") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=PATHFINDER_REACH name=Pathfinder_Reach region=OUTER_REACH security=0.0 class=NULL sovereign-type=UNCLAIMED sovereign-id=none discovery=CHARTED roles=FRONTIER future-infrastructure=0") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=DARKWARD name=Darkward region=OUTER_REACH security=0.0 class=NULL sovereign-type=UNCLAIMED sovereign-id=none discovery=UNKNOWN") != std::string::npos &&
+        initialGalaxy.find("GATE id=TRUNK.KEPLER.FARPOINT from=KEPLER to=FARPOINT route=MAJOR_INTERFACTION_TRUNK permanent=1") != std::string::npos &&
+        initialGalaxy.find("GATE id=GATE.KEPLER.GLOAM from=KEPLER to=GLOAM route=BACKWATER permanent=1") != std::string::npos &&
+        initialGalaxy.find("BORDER gate=TRUNK.KEPLER.FARPOINT") != std::string::npos &&
+        initialGalaxy.find("GALAXY END systems=28 gates=35 borders=8") != std::string::npos,
+        "authoritative galaxy query exposes current system territories security routes borders and nullsec hooks");
   command(first, "SHIPYARD BUY TITAN_MULE", "ERR insufficient-credits");
   command(first,"REPAIR","ERR hull-full");
   const auto missionOffer = command(first,"MISSION","MISSION 1 title=First Ore");
@@ -530,6 +544,8 @@ int main(int argc, char** argv) {
         content.find("H\twingman\t$scrypt$") != std::string::npos, "all legacy profiles migrated");
   check(content.rfind("E\tdevelopment\n", 0) == 0,
         "legacy persistence migrates to an explicit development environment");
+  check(occurrences(content, "\nY\t") == 28,
+        "legacy persistence gains one authoritative state record per canonical system");
   check(content.find("legacy-pass-one") == std::string::npos &&
         content.find("$legacy-pass-two") == std::string::npos, "plaintext removed from current data file");
   check(occurrences(content, "S\tpilot\t") == 1 && occurrences(content, "S\texplorer\t") == 1 &&
@@ -539,6 +555,7 @@ int main(int argc, char** argv) {
   check(stat((data + ".lock").c_str(), &info) == 0 && (info.st_mode & 0777) == 0600,
         "stable owner-only lock file remains after shutdown");
   bool strippedVariant = false;
+  bool changedGalaxyState = false;
   {
     std::ifstream input(data);
     std::ostringstream rewritten;
@@ -552,7 +569,17 @@ int main(int argc, char** argv) {
         if (end == std::string::npos) break;
         start = end + 1;
       }
-      if (fields.size() >= 23 && fields[0] == "H" && fields[1] == "explorer") {
+      if (fields.size() == 6 && fields[0] == "Y" && fields[1] == "DARKWARD") {
+        fields[3] = "PLAYER_ALLIANCE";
+        fields[4] = "alliance.frontier_coalition";
+        fields[5] = "CHARTED";
+        changedGalaxyState = true;
+        line.clear();
+        for (std::size_t i = 0; i < fields.size(); ++i) {
+          if (i != 0) line.push_back('\t');
+          line += fields[i];
+        }
+      } else if (fields.size() >= 23 && fields[0] == "H" && fields[1] == "explorer") {
         fields[21] = "50";
         fields[22] = "100";
         line.clear();
@@ -583,7 +610,8 @@ int main(int argc, char** argv) {
     std::ofstream output(data, std::ios::trunc);
     output << rewritten.str();
   }
-  check(strippedVariant, "old owned-ship schema fixture is present before restart");
+  check(strippedVariant && changedGalaxyState,
+        "old owned-ship fixture and valid persisted nullsec state are present before restart");
   // Restart over the retained lock inode and verify actual persisted data.
   childPid = fork();
   check(childPid >= 0, "fork restarted server");
@@ -616,6 +644,11 @@ int main(int argc, char** argv) {
         restoredEconomy.find("market-transactions=5") != std::string::npos &&
         restoredEconomy.find("ore-mined=1") != std::string::npos,
         "regional market state and economic telemetry survive server restart deterministically");
+  const auto restoredGalaxy = command(restarted, "GALAXY", "GALAXY END", 160);
+  check(restoredGalaxy.find("GALAXY BEGIN current=KEPLER systems=28 gates=35") != std::string::npos &&
+        restoredGalaxy.find("SYSTEM id=DARKWARD name=Darkward region=OUTER_REACH security=0.0 class=NULL sovereign-type=PLAYER_ALLIANCE sovereign-id=alliance.frontier_coalition discovery=CHARTED roles=FRONTIER future-infrastructure=1") != std::string::npos &&
+        restoredGalaxy.find("GALAXY END systems=28 gates=35 borders=9") != std::string::npos,
+        "security sovereignty discovery infrastructure eligibility and derived borders reload exactly");
   const auto restoredWingmanLogin = command(restarted, "LOGIN wingman $legacy-pass-two", "OK LOGIN");
   check(restoredWingmanLogin.find("user=wingman") != std::string::npos,
         "older owned-ship variant schema loads after restart");

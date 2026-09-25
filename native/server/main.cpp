@@ -39,6 +39,7 @@
 #include "shared/combat.h"
 #include "shared/career.h"
 #include "shared/economy.h"
+#include "shared/galaxy.h"
 #include "shared/loadout.h"
 #include "shared/organizations.h"
 #include "shared/owned_ship.h"
@@ -105,8 +106,10 @@ bool flightStateDirty = false;
 bool ownershipMigrationPending = false;
 bool environmentMigrationPending = false;
 bool economyMigrationPending = true;
+bool galaxyMigrationPending = true;
 helion::economy::MarketState regionalMarkets{};
 helion::economy::Telemetry economicTelemetry{};
+helion::galaxy::GalaxyState galaxyState{};
 std::mutex transportMutex;
 struct Transport {
   explicit Transport(std::shared_ptr<helion::tls::Connection> value) : connection(std::move(value)) {}
@@ -365,6 +368,11 @@ void saveStateLocked() {
   std::ostringstream snapshot;
   snapshot << std::setprecision(17);
   snapshot << "E\t" << helion::server::runtimeEnvironmentName(runtimeEnvironment) << '\n';
+  for (const auto& system : galaxyState)
+    snapshot << "Y\t" << system.systemId << '\t' << system.securitySteps << '\t'
+      << helion::galaxy::sovereignTypeName(system.sovereignty.type) << '\t'
+      << encode(system.sovereignty.id) << '\t'
+      << helion::galaxy::discoveryStateName(system.discovery) << '\n';
   for (const auto& market : regionalMarkets)
     snapshot << "K\t" << market.station << '\t' << market.commodityId << '\t' << market.stock << '\t'
       << market.demand << '\t' << market.buyBudget << '\n';
@@ -457,6 +465,7 @@ void loadState() {
   std::set<std::string> profilesWithShipRecords;
   std::set<std::string> instanceIds;
   std::set<std::string> marketRecords;
+  std::set<std::string> galaxyRecords;
   bool telemetryRecord = false;
   bool firstRecord = true;
   try {
@@ -489,7 +498,24 @@ void loadState() {
       } else if (kind == "E") {
         throw std::runtime_error("persistence environment record must be first and unique");
       }
-      if (kind == "K" && !first.empty() && !second.empty() && !third.empty()) {
+      if (kind == "Y" && !first.empty() && !second.empty() && !third.empty()) {
+        std::string sovereignId, discoveryText, extra;
+        std::getline(input, sovereignId, '\t');
+        std::getline(input, discoveryText, '\t');
+        std::getline(input, extra, '\t');
+        std::size_t used = 0;
+        const long securityValue = std::stol(second, &used);
+        const auto sovereignType = helion::galaxy::parseSovereignType(third);
+        const auto discovery = helion::galaxy::parseDiscoveryState(discoveryText);
+        auto* system = helion::galaxy::findState(galaxyState, first);
+        if (used != second.size() || !extra.empty() || !sovereignType || !discovery || !system ||
+            !galaxyRecords.emplace(first).second || securityValue < std::numeric_limits<int>::min() ||
+            securityValue > std::numeric_limits<int>::max())
+          throw std::runtime_error("malformed or duplicate galaxy state");
+        system->securitySteps = static_cast<int>(securityValue);
+        system->sovereignty = {*sovereignType, decode(sovereignId)};
+        system->discovery = *discovery;
+      } else if (kind == "K" && !first.empty() && !second.empty() && !third.empty()) {
         std::string demandText, budgetText, extra;
         std::getline(input, demandText, '\t');
         std::getline(input, budgetText, '\t');
@@ -758,6 +784,11 @@ void loadState() {
       }
     }
     if (ferror(file)) throw std::runtime_error("cannot read persistence file");
+    if (!galaxyRecords.empty() && galaxyRecords.size() != helion::galaxy::kSystemCount)
+      throw std::runtime_error("incomplete galaxy persistence");
+    if (!helion::galaxy::validateGalaxy(galaxyState))
+      throw std::runtime_error("invalid persisted galaxy state");
+    galaxyMigrationPending = galaxyRecords.empty();
     if (!marketRecords.empty() && marketRecords.size() != helion::economy::kMarketCount)
       throw std::runtime_error("incomplete market persistence");
     if (!helion::economy::validateMarkets(regionalMarkets, pricingPolicy()))
@@ -792,7 +823,8 @@ void loadState() {
 
 void migrateLegacyProfiles() {
   auto migrated = profiles;
-  bool changed = ownershipMigrationPending || environmentMigrationPending || economyMigrationPending;
+  bool changed = ownershipMigrationPending || environmentMigrationPending || economyMigrationPending ||
+                 galaxyMigrationPending;
   for (auto& [name, profile] : migrated) {
     (void)name;
     if (helion::security::migrateLegacyCredential(profile.passwordHash, profile.legacyCredential)) {
@@ -807,6 +839,7 @@ void migrateLegacyProfiles() {
     ownershipMigrationPending = false;
     environmentMigrationPending = false;
     economyMigrationPending = false;
+    galaxyMigrationPending = false;
   }
   catch (...) { profiles.swap(migrated); throw; }
   for (auto& [name, profile] : migrated) {
@@ -928,7 +961,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET ECONOMY CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT SHIPYARD FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET ECONOMY GALAXY CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT SHIPYARD FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -1112,6 +1145,33 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             responses.push_back("ECONOMY END policy=" + std::string(
               pricingPolicy() == helion::economy::PricingPolicy::testConvenience ? "TEST_100" : "PRODUCTION_LIKE"));
           }
+        }
+        for (const auto& response : responses) sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::galaxy) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          const auto& ship = activeShip(profiles.at(user));
+          const auto station = static_cast<std::size_t>(ship.flight.station);
+          const std::string currentSystem = station < helion::flight::kStations.size() ?
+            helion::flight::kStations[station].systemId : "UNKNOWN";
+          const auto borders = helion::galaxy::deriveBorders(galaxyState);
+          responses.push_back("GALAXY BEGIN current=" + currentSystem +
+            " systems=" + std::to_string(helion::galaxy::systems().size()) +
+            " gates=" + std::to_string(helion::galaxy::gateConnections().size()));
+          for (const auto& territory : helion::galaxy::factionTerritories())
+            responses.push_back(helion::galaxy::territoryLine(territory));
+          for (const auto& definition : helion::galaxy::systems()) {
+            const auto* state = helion::galaxy::findState(galaxyState, definition.id);
+            if (state) responses.push_back(helion::galaxy::systemLine(definition, *state));
+          }
+          for (const auto& connection : helion::galaxy::gateConnections())
+            responses.push_back(helion::galaxy::gateLine(connection));
+          for (const auto& border : borders) responses.push_back(helion::galaxy::borderLine(border));
+          responses.push_back("GALAXY END systems=" + std::to_string(helion::galaxy::systems().size()) +
+            " gates=" + std::to_string(helion::galaxy::gateConnections().size()) +
+            " borders=" + std::to_string(borders.size()));
         }
         for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::career) {
@@ -1724,8 +1784,9 @@ int main(int argc, char** argv) {
   std::string bindAddress = "127.0.0.1";
   std::string certificate, privateKey;
   int positional = 0;
-  if (!helion::ships::validateRegistry() || !helion::loadout::validateRegistry()) {
-    std::cerr << "invalid canonical ship or module registry\n";
+  if (!helion::ships::validateRegistry() || !helion::loadout::validateRegistry() ||
+      !helion::galaxy::validateGalaxy(helion::galaxy::seedState())) {
+    std::cerr << "invalid canonical ship, module, or galaxy registry\n";
     return 1;
   }
   auto number = [](const std::string& value, unsigned long maximum) -> unsigned long {
@@ -1756,6 +1817,7 @@ int main(int argc, char** argv) {
     return 2;
   }
   regionalMarkets = helion::economy::seedMarkets(pricingPolicy());
+  galaxyState = helion::galaxy::seedState();
   sockaddr_in address{};
   address.sin_family = AF_INET;
   address.sin_port = htons(static_cast<uint16_t>(port));

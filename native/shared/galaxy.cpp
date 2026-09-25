@@ -80,10 +80,10 @@ const std::array<SystemDefinition, kSystemCount> kSystems{{
 
   {"VERGE_ANCHOR", "Verge Anchor", "OUTER_REACH", 0, SovereignType::unclaimed,
    "", DiscoveryState::charted, SystemRole::frontier, true},
-  {"PATHFINDER_REACH", "Pathfinder Reach", "OUTER_REACH", 0, SovereignType::playerGuild,
-   "guild.pathfinders", DiscoveryState::charted, SystemRole::frontier, true},
-  {"COALITION_MARCH", "Coalition March", "OUTER_REACH", 0, SovereignType::playerAlliance,
-   "alliance.frontier_coalition", DiscoveryState::charted, SystemRole::frontier, true},
+  {"PATHFINDER_REACH", "Pathfinder Reach", "OUTER_REACH", 0, SovereignType::unclaimed,
+   "", DiscoveryState::charted, SystemRole::frontier, true},
+  {"COALITION_MARCH", "Coalition March", "OUTER_REACH", 0, SovereignType::unclaimed,
+   "", DiscoveryState::charted, SystemRole::frontier, true},
   {"DARKWARD", "Darkward", "OUTER_REACH", 0, SovereignType::unclaimed,
    "", DiscoveryState::unknown, SystemRole::frontier, true}
 }};
@@ -140,6 +140,14 @@ const std::array<GateConnection, kGateConnectionCount> kConnections{{
 
 bool sameSovereignty(const Sovereignty& left, const Sovereignty& right) {
   return left.type == right.type && left.id == right.id;
+}
+
+bool validPlayerSovereignId(std::string_view id, std::string_view prefix) {
+  if (id.size() <= prefix.size() || id.size() > 64 || id.substr(0, prefix.size()) != prefix) return false;
+  return std::all_of(id.begin(), id.end(), [](unsigned char character) {
+    return (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '.' ||
+      character == '_' || character == '-';
+  });
 }
 
 std::string rolesText(const SystemDefinition& definition) {
@@ -398,8 +406,11 @@ bool validateSovereignty(int securitySteps, const Sovereignty& sovereignty) {
   if (securitySteps == 0) {
     if (sovereignty.type == SovereignType::npcFaction) return false;
     if (sovereignty.type == SovereignType::unclaimed) return sovereignty.id.empty();
-    return (sovereignty.type == SovereignType::playerGuild ||
-            sovereignty.type == SovereignType::playerAlliance) && !sovereignty.id.empty();
+    if (sovereignty.type == SovereignType::playerGuild)
+      return validPlayerSovereignId(sovereignty.id, "guild.");
+    if (sovereignty.type == SovereignType::playerAlliance)
+      return validPlayerSovereignId(sovereignty.id, "alliance.");
+    return false;
   }
   return sovereignty.type == SovereignType::npcFaction && !sovereignty.id.empty() &&
     findTerritory(sovereignty.id) != nullptr;
@@ -415,6 +426,9 @@ bool validateGalaxy(const GalaxyState& state) {
         !validateSovereignty(current.securitySteps, current.sovereignty) ||
         (current.discovery != DiscoveryState::unknown &&
          current.discovery != DiscoveryState::charted)) return false;
+    if (current.discovery == DiscoveryState::unknown &&
+        (current.sovereignty.type == SovereignType::playerGuild ||
+         current.sovereignty.type == SovereignType::playerAlliance)) return false;
     if (current.sovereignty.type == SovereignType::npcFaction &&
         current.sovereignty.id != definition->initialSovereignId) return false;
   }
@@ -443,6 +457,9 @@ bool setNullSovereignty(GalaxyState& state, std::string_view systemId,
 bool setDiscovery(GalaxyState& state, std::string_view systemId, DiscoveryState discovery) {
   auto* current = findState(state, systemId);
   if (!current || (discovery != DiscoveryState::unknown && discovery != DiscoveryState::charted)) return false;
+  if (discovery == DiscoveryState::unknown &&
+      (current->sovereignty.type == SovereignType::playerGuild ||
+       current->sovereignty.type == SovereignType::playerAlliance)) return false;
   current->discovery = discovery;
   return true;
 }
@@ -492,6 +509,12 @@ std::string systemLine(const SystemDefinition& definition, const SystemState& st
     " sovereign-id=" + (state.sovereignty.id.empty() ? std::string("none") : state.sovereignty.id) +
     " discovery=" + discoveryStateName(state.discovery) + " roles=" + rolesText(definition) +
     " future-infrastructure=" + std::to_string(canHostFuturePlayerInfrastructure(definition, state));
+}
+
+std::string territoryLine(const FactionTerritory& territory) {
+  return "TERRITORY faction=" + std::string(territory.factionId) +
+    " capital=" + std::string(territory.capitalSystemId) +
+    " commerce-hub=" + std::string(territory.commerceHubSystemId);
 }
 
 std::string gateLine(const GateConnection& connection) {

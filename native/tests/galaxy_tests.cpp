@@ -136,8 +136,13 @@ int main() {
         "unclaimed Guild and Alliance nullsec claims preserve 0.0 and reject NPC/non-null claims");
   check(!setNullSovereignty(claims, "DARKWARD", SovereignType::playerGuild, "guild.test") &&
         setDiscovery(claims, "DARKWARD", DiscoveryState::charted) &&
-        setNullSovereignty(claims, "DARKWARD", SovereignType::playerGuild, "guild.test"),
+        setNullSovereignty(claims, "DARKWARD", SovereignType::playerGuild, "guild.test") &&
+        !setDiscovery(claims, "DARKWARD", DiscoveryState::unknown),
         "unknown nullsec must be charted before a player sovereignty claim");
+  check(!validateSovereignty(0, {SovereignType::playerGuild, "alliance.wrong"}) &&
+        !validateSovereignty(0, {SovereignType::playerAlliance, "alliance.bad\nwire"}) &&
+        validateSovereignty(0, {SovereignType::playerGuild, "guild.valid-id_1"}),
+        "player sovereignty identifiers are typed and safe bounded wire tokens");
 
   for (const auto& territory : factionTerritories()) {
     const auto* capital = findSystem(territory.capitalSystemId);
@@ -171,18 +176,26 @@ int main() {
       check(adjacentSystems(system.id).size() == 1, "declared backwater dead ends have one permanent Gate");
 
   const auto borders = deriveBorders(state);
-  check(borders.size() == 11 && borders.front().connectionId == "TRUNK.KEPLER.FARPOINT",
+  check(borders.size() == 8 && borders.front().connectionId == "TRUNK.KEPLER.FARPOINT",
         "faction/nullsec borders derive deterministically from authoritative adjacency and sovereignty");
   auto changedBorders = state;
   check(setNullSovereignty(changedBorders, "VERGE_ANCHOR", SovereignType::playerGuild, "guild.pathfinders") &&
-        deriveBorders(changedBorders).size() == 10,
+        deriveBorders(changedBorders).size() == 9 &&
+        setNullSovereignty(changedBorders, "PATHFINDER_REACH", SovereignType::playerGuild,
+                           "guild.pathfinders") &&
+        deriveBorders(changedBorders).size() == 9,
         "changing nullsec sovereignty changes derived borders without changing topology or security");
 
+  auto infrastructureState = state;
+  check(setNullSovereignty(infrastructureState, "PATHFINDER_REACH", SovereignType::playerGuild,
+                           "guild.pathfinders"),
+        "charted eligible nullsec accepts a future Guild infrastructure owner");
   const auto* pathfinderDefinition = findSystem("PATHFINDER_REACH");
-  const auto* pathfinderState = findState(state, "PATHFINDER_REACH");
+  const auto* pathfinderState = findState(infrastructureState, "PATHFINDER_REACH");
   check(pathfinderDefinition && pathfinderState &&
         canHostFuturePlayerInfrastructure(*pathfinderDefinition, *pathfinderState) &&
-        !canHostFuturePlayerInfrastructure(*findSystem("VERGE_ANCHOR"), *findState(state, "VERGE_ANCHOR")) &&
+        !canHostFuturePlayerInfrastructure(*findSystem("VERGE_ANCHOR"),
+                                           *findState(infrastructureState, "VERGE_ANCHOR")) &&
         !canHostFuturePlayerInfrastructure(*findSystem("KEPLER"), *findState(state, "KEPLER")),
         "future strategic travel hook requires player sovereignty in eligible 0.0");
   check(setDiscovery(state, "DARKWARD", DiscoveryState::charted) &&

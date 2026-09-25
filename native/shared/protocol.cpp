@@ -155,11 +155,13 @@ Request parseRequest(std::string_view line) {
     if (input >> extra) { request.error = "malformed-message"; return request; }
     request.command = command == "LAUNCH" ? Command::launch : command == "FLIGHT" ? Command::flight :
       command == "MINE" ? Command::mine : command == "CONTACTS" ? Command::contacts : Command::dock;
-  } else if (command == "PROFILE" || command == "STATE" || command == "GALNET" || command == "ECONOMY" || command == "QUIT") {
+  } else if (command == "PROFILE" || command == "STATE" || command == "GALNET" || command == "ECONOMY" ||
+             command == "GALAXY" || command == "QUIT") {
     std::string extra;
     if (input >> extra) { request.error = "malformed-message"; return request; }
     request.command = command == "PROFILE" ? Command::profile : command == "STATE" ? Command::state :
-      command == "GALNET" ? Command::galnet : command == "ECONOMY" ? Command::economy : Command::quit;
+      command == "GALNET" ? Command::galnet : command == "ECONOMY" ? Command::economy :
+      command == "GALAXY" ? Command::galaxy : Command::quit;
   } else {
     request.error = command.empty() ? "malformed-message" : "unknown-command";
   }

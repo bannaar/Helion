@@ -88,7 +88,7 @@ territorial/security clarification below authoritative for M3.
 | 0 | Audit baseline, record seams/deferrals, run relevant baseline validation | Complete |
 | 1 | Extend the existing module registry with structured physical slot/size metadata; centralize compatibility; enforce it in existing server-authoritative fit paths; preserve saves/UI/effects | Complete |
 | 2 | Add the regional seeded-market model, production-like versus TEST pricing policy, transaction safety, persistence, and economic telemetry for implemented flows | Complete |
-| 3 | Add one authoritative galaxy graph with faction territories, capitals/hubs, derived borders, route classes, exact High/Low/Null security, nullsec sovereignty, persistence, and future travel-infrastructure hooks | In progress |
+| 3 | Add one authoritative galaxy graph with faction territories, capitals/hubs, derived borders, route classes, exact High/Low/Null security, nullsec sovereignty, persistence, and future travel-infrastructure hooks | Complete |
 | 4 | Add explicit bounded/versioned binary framing over TLS for measured high-frequency traffic, compatibility negotiation, decoder safety tests, and benchmarks | Not started |
 | 5 | Introduce a typed client engine-state controller and incrementally route connection/auth/navigation/reconnect without granting client authority | Not started |
 | 6 | Complete TEST roles, typed admin operations/audit, and TEST eligibility bypass on top of the isolated pricing policy, with production isolation tests | Not started |
@@ -140,8 +140,8 @@ M3 executes as the following coherent submilestones:
 | M3B | NPC faction territories, capitals, commerce hubs, roles, and derived borders | Complete |
 | M3C | Exact High/Low/Null rating model, ownership invariants, and response hooks | Complete |
 | M3D | Protected trunks plus core, secondary, frontier, and backwater routes | Complete |
-| M3E | Persisted unclaimed/Guild/Alliance nullsec sovereignty foundation | Not started |
-| M3F | Future player travel-infrastructure eligibility hooks and shared query seam | Not started |
+| M3E | Persisted unclaimed/Guild/Alliance nullsec sovereignty foundation | Complete |
+| M3F | Future player travel-infrastructure eligibility hooks and shared query seam | Complete |
 
 ### M3 repository audit and shared-model decisions
 
@@ -168,7 +168,8 @@ M3 executes as the following coherent submilestones:
 - Mutable `SystemState` keeps `securitySteps`, `SovereignType`/ID, and
   `DiscoveryState` as separate fields. Controlled helpers reject NPC-owned
   nullsec, null security inside NPC territory, player claims outside nullsec,
-  and claims of unknown space before charting. Guild/Alliance claims never
+  claims of unknown space before charting, and regression from claimed space
+  to unknown. Guild/Alliance IDs are typed, bounded safe tokens; claims never
   modify the security field.
 - The initial graph has 28 systems in six regions and 35 permanent Gates. Four
   major protected trunks connect faction border gateways in a ring; faction
@@ -184,6 +185,22 @@ M3 executes as the following coherent submilestones:
 - Existing Kepler and Cinder station indices are unchanged. Both now explicitly
   map to system `KEPLER`; market validation proves its `KEPLER_REACH` region
   comes from the authoritative galaxy registry.
+- Canonical nullsec seeds unclaimed; M3 does not fabricate player organizations
+  or production claims. The typed state accepts charted Guild/Alliance claims,
+  and live restart coverage persists a representative Alliance claim while
+  preserving security `0.0`. A future organization service can bind real IDs
+  without changing the geography or persistence shape.
+- One `Y` record per canonical system extends the existing atomic,
+  environment-bound save with exact security steps, sovereignty type/ID, and
+  discovery state. Legacy saves migrate to deterministic seed state. Loading
+  rejects unknown, duplicate, incomplete, malformed, or invariant-breaking
+  galaxy state before the server accepts clients.
+- Authenticated `GALAXY` is an additive read-only query over the shared model.
+  It exposes current system, territory capital/hub metadata, systems, permanent
+  Gate route classes, derived borders, discovery, sovereignty, and future
+  infrastructure eligibility. It grants no claim, security, movement, or
+  infrastructure mutation authority and is a reusable server read-model seam
+  for the native client and future Companion Service.
 
 ## Milestone 1 decisions
 
@@ -342,12 +359,17 @@ Development/production never select TEST prices or supply. Protocol changes
 are additive text responses, and no player matching, manufacturing, economic
 AI, arbitrary fee, admin surface, or unrelated world feature entered scope.
 
-### Milestone 3A-D
+### Milestone 3A-F
 
 - Warnings-as-errors Debug rebuild in `/tmp/helion-b14-debug`: passed.
 - `ctest --test-dir /tmp/helion-b14-debug -R
-  'helion_(galaxy|economy|flight|ships|career)_tests' --output-on-failure`:
-  5/5 passed.
+  'helion_(galaxy|protocol)_tests|^helion_tls_integration$'
+  --output-on-failure`: 3/3 passed in 33.86 seconds after final invariant
+  hardening. The preceding broader M3 regression selection passed 8/8.
+- `ctest --test-dir /tmp/helion-b14-debug --output-on-failure`: 24/24
+  passed in 173.66 seconds after the final repair, including live TLS/server
+  persistence, security, install smoke, core gameplay, graphical acceptance,
+  render-state, and renderer-fallback gates.
 - `git diff --check`: passed.
 
 Implemented evidence:
@@ -363,14 +385,27 @@ Implemented evidence:
   edges, overall and per-faction connectivity, distinct adjacent capitals and
   commerce hubs, territory role completeness, gateway-to-hub distance,
   one-Gate dead ends, all route classes, and exactly four major trunks.
-- Border tests derive 11 initial ownership boundaries from Gate adjacency and
-  prove a nullsec ownership change updates border results without modifying
-  topology or security.
+- Border tests derive eight initial ownership boundaries from Gate adjacency
+  and prove a nullsec ownership change updates border results without modifying
+  topology or security. All initial nullsec is unclaimed; tests exercise both
+  Guild and Alliance ownership without adding phantom organizations.
 - Future strategic-travel eligibility is true only for Guild/Alliance-owned,
   eligible `0.0`; no relay, toll, fuel, bridge, access-control, warfare, or
   Rift mechanic exists.
 - Existing flight, career, ship, and economy tests remain green after stations
   and markets were linked to authoritative Kepler system/region identity.
+- Live TLS coverage verifies `GALAXY` requires authentication, legacy saves
+  gain exactly 28 system records, a valid charted Alliance claim survives
+  shutdown/restart/reconnect, its rating remains `0.0`, infrastructure
+  eligibility is derived rather than persisted separately, and borders are
+  re-derived from the restored sovereignty state.
+
+Milestone review: `shared/galaxy.*` is the only topology/territory/security
+model. Persistence extends the existing save and lock path, and the query is
+read-only and additive. No client declares ownership, discovery, security, or
+route truth. Environment selection and prior outfitting/economy behavior are
+unchanged. No player-organization backend, claim warfare, travel mechanic,
+parallel map, companion backend, or browser authority was introduced.
 
 ## Deferred work
 

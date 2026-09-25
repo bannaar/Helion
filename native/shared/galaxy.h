@@ -135,6 +135,7 @@ bool canHostFuturePlayerInfrastructure(const SystemDefinition& definition,
                                        const SystemState& state);
 
 std::string systemLine(const SystemDefinition& definition, const SystemState& state);
+std::string territoryLine(const FactionTerritory& territory);
 std::string gateLine(const GateConnection& connection);
 std::string borderLine(const Border& border);
 

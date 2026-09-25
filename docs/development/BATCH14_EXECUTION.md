@@ -1,8 +1,10 @@
-# Batch 14 execution record
+# Batch 14 v0.12 execution record
 
-This file is the live implementation record for Batch 14 v0.11. The
-authoritative requirements remain `HELION_Batch14_Prompt_v0.11.txt` and
-`HELION_Codex_Goal_v0.11.txt`.
+This file is the live implementation record for Batch 14. The repository-local
+`HELION_Batch14_Prompt_v0.11.txt` and `HELION_Codex_Goal_v0.11.txt` remain the
+baseline contract, amended by the user-approved v0.12 continuation supplied on
+2026-09-25. That continuation preserves completed M0-M2 work and makes the
+territorial/security clarification below authoritative for M3.
 
 ## Baseline
 
@@ -86,7 +88,7 @@ authoritative requirements remain `HELION_Batch14_Prompt_v0.11.txt` and
 | 0 | Audit baseline, record seams/deferrals, run relevant baseline validation | Complete |
 | 1 | Extend the existing module registry with structured physical slot/size metadata; centralize compatibility; enforce it in existing server-authoritative fit paths; preserve saves/UI/effects | Complete |
 | 2 | Add the regional seeded-market model, production-like versus TEST pricing policy, transaction safety, persistence, and economic telemetry for implemented flows | Complete |
-| 3 | Add canonical normalized system-security ratings, classifications, controlled mutation, and crime/response query hooks without fake fleet AI | Not started |
+| 3 | Add one authoritative galaxy graph with faction territories, capitals/hubs, derived borders, route classes, exact High/Low/Null security, nullsec sovereignty, persistence, and future travel-infrastructure hooks | In progress |
 | 4 | Add explicit bounded/versioned binary framing over TLS for measured high-frequency traffic, compatibility negotiation, decoder safety tests, and benchmarks | Not started |
 | 5 | Introduce a typed client engine-state controller and incrementally route connection/auth/navigation/reconnect without granting client authority | Not started |
 | 6 | Complete TEST roles, typed admin operations/audit, and TEST eligibility bypass on top of the isolated pricing policy, with production isolation tests | Not started |
@@ -96,6 +98,92 @@ authoritative requirements remain `HELION_Batch14_Prompt_v0.11.txt` and
 The order keeps persistence and authority in the existing server, establishes
 data contracts before market/security/protocol consumers, and delays client
 control-flow changes until the new authoritative responses are stable.
+
+## v0.12 canonical territorial and security clarification
+
+This section records the user-approved change for the next World Bible
+revision. It supersedes conflicting older wording for Batch 14 implementation
+without silently editing World Bible v0.10.
+
+- NPC faction territory may use only exact 0.2-step ratings from `+5.0` through
+  `+0.2` (High Security) or `-0.2` through `-5.0` (Low Security). NPC faction
+  territory must never contain `0.0`.
+- `0.0` is Null Security. Nullsec may be unclaimed or claimed by a player Guild
+  or player Alliance. A claim changes sovereignty only; security remains
+  exactly `0.0`.
+- Security rating, sovereignty type, sovereign identifier, and
+  discovery/charting state are separate authoritative fields. Unknown space is
+  not an ownership type, and a charted system is not necessarily claimed.
+- The galaxy requires one shared graph of stable systems, regions, permanent
+  Gate connections, and route classes. Adjacency comes from that graph;
+  faction and nullsec borders derive from adjacent sovereignty rather than
+  from security value.
+- Each implemented major NPC faction requires one capital, one distinct
+  dominant commerce hub near it, developed interior and resource systems,
+  frontier systems, low-security backwaters, border gateways, and
+  secondary/dead-end routes.
+- Inter-faction civilian traffic concentrates through a deliberately small
+  set of protected major trunk starlanes joining border gateways and feeding
+  toward faction commerce hubs. Trunks do not replace secondary routes,
+  loops, frontier branches, resource routes, dangerous low-security
+  alternatives, backwaters, or dead ends.
+- M3 adds typed eligibility and endpoint seams for future player-built
+  strategic travel infrastructure in claimed nullsec. It does not implement
+  relays, bridges, tolls, fuel, access control, vulnerability, capital-jump,
+  sovereignty-war, or Rift mechanics.
+
+M3 executes as the following coherent submilestones:
+
+| Submilestone | Scope | Status |
+| --- | --- | --- |
+| M3A | Shared topology/system/region/Gate data model and graph validation | Complete |
+| M3B | NPC faction territories, capitals, commerce hubs, roles, and derived borders | Complete |
+| M3C | Exact High/Low/Null rating model, ownership invariants, and response hooks | Complete |
+| M3D | Protected trunks plus core, secondary, frontier, and backwater routes | Complete |
+| M3E | Persisted unclaimed/Guild/Alliance nullsec sovereignty foundation | Not started |
+| M3F | Future player travel-infrastructure eligibility hooks and shared query seam | Not started |
+
+### M3 repository audit and shared-model decisions
+
+- Before M3, no galaxy graph, region registry, Gate adjacency, territorial
+  ownership, border representation, discovery state, or system security model
+  existed. The only spatial data was the two-station Kepler flight map.
+  `flight::State::station` and the `kStations` array drive current docking,
+  markets, shipyards, recovery, rendering, and saves; they must remain stable.
+- `organizations.*` already owns stable IDs for the Commonwealth, Compact,
+  Directorate, and Meridian major factions. M3 reuses those IDs rather than
+  adding a second faction catalogue. Kepler Authority remains a local
+  organization and market owner inside Commonwealth-sovereign Kepler; market
+  ownership and system sovereignty are intentionally distinct.
+- `shared/galaxy.*` is the single topology model. It owns stable systems,
+  regions, permanent Gate edges, route classes, major-faction capital/hub
+  metadata, canonical initial security/sovereignty/discovery state, border
+  derivation, response-policy hooks, and future infrastructure eligibility.
+  UI, markets, future routing, crime, missions, and companion read models must
+  query this model rather than hard-code independent maps.
+- Security is stored as integer steps `-25..+25`; one step is exactly `0.2`.
+  Parsing rejects other increments and out-of-range values. Positive values
+  classify High, negative values Low, and only zero classifies Null. The older
+  supported/deep/extreme Low Security bands remain secondary response hooks.
+- Mutable `SystemState` keeps `securitySteps`, `SovereignType`/ID, and
+  `DiscoveryState` as separate fields. Controlled helpers reject NPC-owned
+  nullsec, null security inside NPC territory, player claims outside nullsec,
+  and claims of unknown space before charting. Guild/Alliance claims never
+  modify the security field.
+- The initial graph has 28 systems in six regions and 35 permanent Gates. Four
+  major protected trunks connect faction border gateways in a ring; faction
+  core, secondary loops, resource/frontier links, low-security branches, and
+  one-Gate backwaters remain independently represented. Each faction territory
+  is connected, its commerce hub is adjacent to its distinct capital, and its
+  trunk gateway is no more than two faction-local hops from the hub.
+- Commonwealth `Concordia`, Directorate `Solaris`, and Meridian
+  `Meridian Prime` retain World Bible identities. The new Compact capital
+  `Freestead`, Compact hub `Crossroads`, Directorate hub `Helios Exchange`, and
+  Meridian political capital `Meridian Forum` are implementation names to
+  confirm in the next World Bible revision; they are not silent edits to v0.10.
+- Existing Kepler and Cinder station indices are unchanged. Both now explicitly
+  map to system `KEPLER`; market validation proves its `KEPLER_REACH` region
+  comes from the authoritative galaxy registry.
 
 ## Milestone 1 decisions
 
@@ -253,6 +341,36 @@ or transaction outcome. The save migration is additive and environment-bound.
 Development/production never select TEST prices or supply. Protocol changes
 are additive text responses, and no player matching, manufacturing, economic
 AI, arbitrary fee, admin surface, or unrelated world feature entered scope.
+
+### Milestone 3A-D
+
+- Warnings-as-errors Debug rebuild in `/tmp/helion-b14-debug`: passed.
+- `ctest --test-dir /tmp/helion-b14-debug -R
+  'helion_(galaxy|economy|flight|ships|career)_tests' --output-on-failure`:
+  5/5 passed.
+- `git diff --check`: passed.
+
+Implemented evidence:
+
+- All 51 exact security values from `-5.0` through `+5.0` round-trip in `0.2`
+  steps. Outer and inner High/Low/Null boundaries, malformed values, and the
+  supported/deep/extreme Low Security hook boundaries are deterministic.
+- Tests reject NPC ownership of `0.0`, reject `0.0` inside NPC territory,
+  accept charted Guild and Alliance nullsec claims, preserve security at
+  `0.0`, require discovery before claims, and keep discovery independent from
+  sovereignty.
+- Registry validation covers stable IDs, known regions, unique undirected Gate
+  edges, overall and per-faction connectivity, distinct adjacent capitals and
+  commerce hubs, territory role completeness, gateway-to-hub distance,
+  one-Gate dead ends, all route classes, and exactly four major trunks.
+- Border tests derive 11 initial ownership boundaries from Gate adjacency and
+  prove a nullsec ownership change updates border results without modifying
+  topology or security.
+- Future strategic-travel eligibility is true only for Guild/Alliance-owned,
+  eligible `0.0`; no relay, toll, fuel, bridge, access-control, warfare, or
+  Rift mechanic exists.
+- Existing flight, career, ship, and economy tests remain green after stations
+  and markets were linked to authoritative Kepler system/region identity.
 
 ## Deferred work
 

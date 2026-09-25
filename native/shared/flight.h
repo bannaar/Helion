@@ -24,13 +24,14 @@ inline constexpr std::array<Rock, 7> kRocks{{
 }};
 struct Station {
   const char* name;
+  const char* systemId;
   double x, y;
   int foodBuy, foodSell, partsBuy, partsSell, oreSell, fuelPrice;
   ships::PadSize maximumPad;
 };
 inline constexpr std::array<Station,2> kStations{{
-  {"KEPLER",0,0,20,16,65,52,60,2,ships::PadSize::medium},
-  {"CINDER",650,0,40,32,40,32,75,3,ships::PadSize::medium}
+  {"KEPLER","KEPLER",0,0,20,16,65,52,60,2,ships::PadSize::medium},
+  {"CINDER","KEPLER",650,0,40,32,40,32,75,3,ships::PadSize::medium}
 }};
 struct Contact {
   std::string id, kind;

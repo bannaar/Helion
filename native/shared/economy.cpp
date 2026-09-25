@@ -1,5 +1,7 @@
 #include "shared/economy.h"
 
+#include "shared/galaxy.h"
+
 #include <algorithm>
 #include <limits>
 #include <sstream>
@@ -84,8 +86,12 @@ bool validateMarkets(const MarketState& state, PricingPolicy policy) {
   std::unordered_set<std::string> keys;
   for (const auto& order : state) {
     const auto* definition = findDefinition(order.station, order.commodityId);
+    const auto* system = definition ? galaxy::findSystem(definition->systemId) : nullptr;
     const std::string key = std::to_string(order.station) + ":" + order.commodityId;
-    if (!definition || !keys.emplace(key).second || order.stock < 0 || order.demand < 0 ||
+    if (!definition || !system || system->regionId != definition->regionId || order.station < 0 ||
+        order.station >= static_cast<int>(flight::kStations.size()) ||
+        flight::kStations[static_cast<std::size_t>(order.station)].systemId != definition->systemId ||
+        !keys.emplace(key).second || order.stock < 0 || order.demand < 0 ||
         order.buyBudget < 0 || order.stock > std::max(1000000, targetStock(*definition, policy) * 10) ||
         order.demand > std::max(1000000, targetDemand(*definition, policy) * 10) ||
         order.buyBudget > std::max<std::int64_t>(1000000000, targetBudget(*definition, policy) * 10)) return false;

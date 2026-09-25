@@ -1,5 +1,6 @@
 #include "shared/economy.h"
 #include "shared/flight.h"
+#include "shared/galaxy.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -27,6 +28,11 @@ int main() {
   check(keplerFood && cinderFood && keplerOre && keplerFood->ownerId == "authority.kepler" &&
         keplerOre->ownerId == "corp.orion" && keplerFood->regionId == "KEPLER_REACH",
         "markets have station system region and owner identity");
+  check(galaxy::findSystem(keplerFood->systemId) &&
+        galaxy::findSystem(keplerFood->systemId)->regionId == keplerFood->regionId &&
+        std::string_view(flight::kStations[0].systemId) == keplerFood->systemId &&
+        std::string_view(flight::kStations[1].systemId) == cinderFood->systemId,
+        "station markets reference the authoritative galaxy system and region");
   check(economy::npcSellPrice(*keplerFood, PricingPolicy::productionLike) == 20 &&
         economy::npcSellPrice(*cinderFood, PricingPolicy::productionLike) == 40 &&
         economy::npcBuyPrice(*keplerOre, PricingPolicy::productionLike) == 60,

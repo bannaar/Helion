@@ -89,7 +89,7 @@ territorial/security clarification below authoritative for M3.
 | 1 | Extend the existing module registry with structured physical slot/size metadata; centralize compatibility; enforce it in existing server-authoritative fit paths; preserve saves/UI/effects | Complete |
 | 2 | Add the regional seeded-market model, production-like versus TEST pricing policy, transaction safety, persistence, and economic telemetry for implemented flows | Complete |
 | 3 | Add one authoritative galaxy graph with faction territories, capitals/hubs, derived borders, route classes, exact High/Low/Null security, nullsec sovereignty, persistence, and future travel-infrastructure hooks | Complete |
-| 4 | Add explicit bounded/versioned binary framing over TLS for measured high-frequency traffic, compatibility negotiation, decoder safety tests, and benchmarks | Not started |
+| 4 | Add explicit bounded/versioned binary framing over TLS for measured high-frequency traffic, compatibility negotiation, decoder safety tests, and benchmarks | In progress |
 | 5 | Introduce a typed client engine-state controller and incrementally route connection/auth/navigation/reconnect without granting client authority | Not started |
 | 6 | Complete TEST roles, typed admin operations/audit, and TEST eligibility bypass on top of the isolated pricing policy, with production isolation tests | Not started |
 | 7 | Add the safe production operations foundation: status/lifecycle, least-privilege authorization boundaries, structured logs/metrics, backup/recovery and release documentation | Not started |
@@ -406,6 +406,60 @@ read-only and additive. No client declares ownership, discovery, security, or
 route truth. Environment selection and prior outfitting/economy behavior are
 unchanged. No player-organization backend, claim warfare, travel mechanic,
 parallel map, companion backend, or browser authority was introduced.
+
+## Milestone 4 protocol audit and execution map
+
+- TLS 1.2+ remains the transport. The current application protocol is version
+  2, bounded to 4096 bytes per newline frame, and incrementally decodes partial
+  or coalesced reads. Client and server reject malformed lines; the native
+  client requires an exact `WELCOME Helion/2` before sending commands.
+- The native client submits `INPUT` at 10 Hz while authenticated and polls
+  `CONTACTS` at 1 Hz. Every accepted `INPUT` currently causes text `FLIGHT`,
+  `FUEL`, and `ACTIVE SHIP` responses, so flight replication—not login or
+  station commands—is the first useful binary target.
+- A binary `INPUT` frame with a full safe header is not automatically smaller
+  than the compact 12–13 byte text command. It will be benchmarked rather than
+  assumed to be a bandwidth win. The flight snapshot can combine fixed-width
+  flight, fuel, destruction, and cooldown fields and is expected to produce a
+  material byte reduction, subject to measurement.
+- The existing line protocol remains an explicit compatibility mode during
+  migration. Binary mode will require an explicit version negotiation; the
+  server will not permanently guess protocol mode from arbitrary bytes. Low
+  frequency commands may use a bounded typed text-command envelope so gameplay
+  continues through one server handler rather than a second authority.
+
+M4 executes as the following coherent submilestones:
+
+| Submilestone | Scope | Status |
+| --- | --- | --- |
+| M4A | ABI-independent binary header, incremental bounded decoder, explicit field codecs, malformed/fuzz tests | Complete |
+| M4B | Explicit binary-mode negotiation and deterministic update-required path while retaining bounded legacy mode | Not started |
+| M4C | Migrate representative authoritative input/flight traffic without duplicating gameplay handlers | Not started |
+| M4D | Measure bytes/encode/decode cost on realistic intervals; retain text where binary has no material benefit | Not started |
+
+### M4A decisions and validation
+
+- `shared/binary_protocol.*` defines a 14-byte wire header: two-byte magic,
+  binary schema version, stable one-byte message type, two-byte flags,
+  four-byte payload length, and four-byte request/correlation ID. Integers are
+  big-endian and no C++ object layout, enum width, padding, pointer, or native
+  boolean representation is sent.
+- Payloads are capped at 4096 bytes. The decoder buffers at most one bounded
+  frame, supports partial and multiple frames per read, and fails closed on
+  bad magic, incompatible version, unknown type, nonzero unknown flags,
+  oversized length, or truncated end-of-stream input.
+- Representative codecs include explicit three-byte control input and a
+  57-byte flight snapshot containing fixed-width IEEE-754 fields plus bounded
+  cargo, credits, experience, station, hull, fuel, destruction, and cooldown
+  state. Semantic validation occurs before encode and after decode.
+- Warnings-as-errors build of `helion_binary_protocol_tests`,
+  `helion_protocol_tests`, and `helion_flight_tests`: passed.
+- `ctest --test-dir /tmp/helion-b14-debug -R
+  'helion_(binary_protocol|protocol|flight)_tests' --output-on-failure`: 3/3
+  passed. Coverage includes explicit header bytes, partial/coalesced frames,
+  maximum/oversized payloads, malformed input and snapshot fields, deterministic
+  update-required classification, and 2,000 deterministic random byte streams.
+- `git diff --check`: passed.
 
 ## Deferred work
 

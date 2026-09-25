@@ -383,6 +383,16 @@ int main(int argc, char** argv) {
         neutralProfile.find("corp.orion=0:Neutral") != std::string::npos &&
         neutralProfile.find("criminal.vanta=0:Neutral") != std::string::npos,
         "new commander receives neutral multi-organization standings");
+  const auto initialEconomy = command(first, "ECONOMY", "ECONOMY END");
+  check(initialEconomy.find("MARKET station=KEPLER station-id=0 system=KEPLER region=KEPLER_REACH owner=authority.kepler commodity=food sell-price=20 buy-price=16 stock=113") != std::string::npos &&
+        initialEconomy.find("owner=authority.kepler commodity=parts sell-price=65 buy-price=52 stock=43") != std::string::npos &&
+        initialEconomy.find("owner=corp.orion commodity=ore sell-price=0 buy-price=60 stock=0 demand=300 npc-buy-budget=18000") != std::string::npos &&
+        initialEconomy.find("credits-transferred=595") != std::string::npos &&
+        initialEconomy.find("npc-sell-volume=14 npc-sell-value=595") != std::string::npos &&
+        initialEconomy.find("market-transactions=2") != std::string::npos &&
+        initialEconomy.find("starter-grants=1500") != std::string::npos &&
+        initialEconomy.find("ECONOMY END policy=PRODUCTION_LIKE") != std::string::npos,
+        "regional production-like market and economic telemetry expose prior committed flows");
   command(first, "SHIPYARD BUY TITAN_MULE", "ERR insufficient-credits");
   command(first,"REPAIR","ERR hull-full");
   const auto missionOffer = command(first,"MISSION","MISSION 1 title=First Ore");
@@ -405,9 +415,22 @@ int main(int argc, char** argv) {
         "mission availability publishes one GalNet event");
   command(first,"TURNIN","ERR objective-incomplete");
   command(first,"BUY food 2","OK BOUGHT food quantity=2 total=40");
+  const auto economyBeforeFailedTrade = command(first, "ECONOMY", "ECONOMY END");
   expectPersistenceFailure(first,"BUY parts 1");
   check(command(first,"PROFILE","PROFILE").find("credits=1460") != std::string::npos,
         "failed trade rolls back credits");
+  const auto economyAfterFailedTrade = command(first, "ECONOMY", "ECONOMY END");
+  check(economyBeforeFailedTrade.find("commodity=food sell-price=20 buy-price=16 stock=111 demand=80 npc-buy-budget=1280") != std::string::npos &&
+        economyBeforeFailedTrade.find("commodity=parts sell-price=65 buy-price=52 stock=43 demand=80 npc-buy-budget=4160") != std::string::npos &&
+        economyBeforeFailedTrade.find("credits-transferred=635") != std::string::npos &&
+        economyBeforeFailedTrade.find("npc-sell-volume=16 npc-sell-value=635") != std::string::npos &&
+        economyBeforeFailedTrade.find("market-transactions=3") != std::string::npos &&
+        economyAfterFailedTrade.find("commodity=food sell-price=20 buy-price=16 stock=111 demand=80 npc-buy-budget=1280") != std::string::npos &&
+        economyAfterFailedTrade.find("commodity=parts sell-price=65 buy-price=52 stock=43 demand=80 npc-buy-budget=4160") != std::string::npos &&
+        economyAfterFailedTrade.find("credits-transferred=635") != std::string::npos &&
+        economyAfterFailedTrade.find("npc-sell-volume=16 npc-sell-value=635") != std::string::npos &&
+        economyAfterFailedTrade.find("market-transactions=3") != std::string::npos,
+        "failed trade rolls back market state and economic telemetry");
   command(first,"SELL food 1","OK SOLD food quantity=1 total=16");
   check(command(first,"CONTACTS","CONTACTS END").find("CONTACT HAULER-7 hauler") != std::string::npos,
         "moving hauler contact stream");
@@ -439,6 +462,16 @@ int main(int argc, char** argv) {
         "server reports authoritative dock sale result");
   check(command(first,"PROFILE","PROFILE").find("credits=1536 experience=5") != std::string::npos,
         "sale commits credits and experience");
+  const auto committedEconomy = command(first, "ECONOMY", "ECONOMY END");
+  check(committedEconomy.find("commodity=food sell-price=20 buy-price=16 stock=112 demand=79 npc-buy-budget=1264") != std::string::npos &&
+        committedEconomy.find("commodity=parts sell-price=65 buy-price=52 stock=43 demand=80 npc-buy-budget=4160") != std::string::npos &&
+        committedEconomy.find("commodity=ore sell-price=0 buy-price=60 stock=1 demand=299 npc-buy-budget=17940") != std::string::npos &&
+        committedEconomy.find("credits-transferred=711") != std::string::npos &&
+        committedEconomy.find("npc-buy-volume=2 npc-buy-value=76") != std::string::npos &&
+        committedEconomy.find("npc-sell-volume=16 npc-sell-value=635") != std::string::npos &&
+        committedEconomy.find("market-transactions=5") != std::string::npos &&
+        committedEconomy.find("ore-mined=1") != std::string::npos,
+        "commodity and ore transfers update the regional order book and economic telemetry atomically");
   check(flightState(first).docked,"docked live ship");
   const std::string chat = "CHAT Ready for launch\n";
   check(tlsSend(first, chat.data(), chat.size(), 0) == static_cast<ssize_t>(chat.size()), "send durable chat");
@@ -574,6 +607,15 @@ int main(int argc, char** argv) {
   const auto restoredFlight = flightState(restarted);
   check(restoredFlight.docked && restoredFlight.cargo == 0 && restoredFlight.hull == 50,
         "docked sold state survives reconnect");
+  const auto restoredEconomy = command(restarted, "ECONOMY", "ECONOMY END");
+  check(restoredEconomy.find("commodity=food sell-price=20 buy-price=16 stock=112 demand=79 npc-buy-budget=1264") != std::string::npos &&
+        restoredEconomy.find("commodity=ore sell-price=0 buy-price=60 stock=1 demand=299 npc-buy-budget=17940") != std::string::npos &&
+        restoredEconomy.find("credits-transferred=711") != std::string::npos &&
+        restoredEconomy.find("npc-buy-volume=2 npc-buy-value=76") != std::string::npos &&
+        restoredEconomy.find("npc-sell-volume=16 npc-sell-value=635") != std::string::npos &&
+        restoredEconomy.find("market-transactions=5") != std::string::npos &&
+        restoredEconomy.find("ore-mined=1") != std::string::npos,
+        "regional market state and economic telemetry survive server restart deterministically");
   const auto restoredWingmanLogin = command(restarted, "LOGIN wingman $legacy-pass-two", "OK LOGIN");
   check(restoredWingmanLogin.find("user=wingman") != std::string::npos,
         "older owned-ship variant schema loads after restart");

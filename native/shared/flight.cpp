@@ -151,13 +151,20 @@ std::string mine(State& s, int cargoCapacity, bool miningEnabled, double cooldow
 }
 
 std::string dock(State& s, int& credits, int& experience, DockTransaction* transaction) {
+  const int station = nearestStation(s);
+  return dockAtPrice(s, credits, experience, kStations[station].oreSell, transaction);
+}
+
+std::string dockAtPrice(State& s, int& credits, int& experience, int oreUnitPrice,
+                        DockTransaction* transaction) {
   if (s.destroyed) return "ERR recovery-required";
   if (s.docked) return "ERR already-docked";
   const int station=nearestStation(s);
   if (std::hypot(s.x-kStations[station].x, s.y-kStations[station].y) > kDockRange) return "ERR station-out-of-range";
   if (speed(s) > kWorkSpeed) return "ERR slow-down";
   const int cargoSold = s.cargo;
-  const int unitPrice = kStations[station].oreSell;
+  if (oreUnitPrice < 0 || oreUnitPrice > 100000) return "ERR invalid-market-price";
+  const int unitPrice = oreUnitPrice;
   const int earned = cargoSold * unitPrice;
   const int experienceEarned = cargoSold * 5;
   if (credits > std::numeric_limits<int>::max() - earned ||
@@ -361,13 +368,22 @@ std::string trade(State& s, int& credits, bool buying, const std::string& commod
 
 std::string trade(State& s, int& credits, bool buying, const std::string& commodity, int quantity,
                   int cargoCapacity) {
+  if (s.station < 0 || s.station >= static_cast<int>(kStations.size())) return "ERR invalid-station";
+  const auto& market=kStations[static_cast<std::size_t>(s.station)];
+  const int price=commodity=="food" ? (buying?market.foodBuy:market.foodSell) :
+    commodity=="parts" ? (buying?market.partsBuy:market.partsSell) : 0;
+  return tradeAtPrice(s, credits, buying, commodity, quantity, cargoCapacity, price);
+}
+
+std::string tradeAtPrice(State& s, int& credits, bool buying, const std::string& commodity, int quantity,
+                         int cargoCapacity, int unitPrice) {
   if (!s.docked) return "ERR dock-required";
   if (quantity<1 || quantity>cargoCapacity) return "ERR invalid-quantity";
   if (commodity!="food" && commodity!="parts") return "ERR unknown-commodity";
+  if (unitPrice <= 0 || unitPrice > 100000 || quantity > std::numeric_limits<int>::max() / unitPrice)
+    return "ERR invalid-market-price";
   int& inventory=commodity=="food" ? s.food : s.parts;
-  const auto& market=kStations[s.station];
-  const int price=commodity=="food" ? (buying?market.foodBuy:market.foodSell) : (buying?market.partsBuy:market.partsSell);
-  const int total=price*quantity;
+  const int total=unitPrice*quantity;
   if (buying) {
     if (cargoUsed(s)+quantity>cargoCapacity) return "ERR cargo-full";
     if (credits<total) return "ERR insufficient-credits";

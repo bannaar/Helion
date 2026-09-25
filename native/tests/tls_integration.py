@@ -167,6 +167,19 @@ def main():
                     assert b'WELCOME Helion/2' in secure.recv(4096)
                     secure.sendall(b'CREATE testidentity synthetic-password Test Identity\n')
                     receive_until(secure, b'OK CREATED user=testidentity')
+                    secure.sendall(b'ECONOMY\n')
+                    test_economy = receive_until(secure, b'ECONOMY END policy=TEST_100')
+                    assert b'commodity=food sell-price=100 buy-price=80 stock=100000' in test_economy
+                    secure.sendall(b'BUY food 1\n')
+                    assert b'OK BOUGHT food quantity=1 total=100' in receive_until(secure, b'ACTIVE SHIP')
+                    secure.sendall(b'OUTFIT LIST\n')
+                    test_outfit = receive_until(secure, b'LOADOUT ')
+                    assert b'MODULE id=pulse-laser' in test_outfit
+                    assert b'price=100 canonical-price=650' in test_outfit
+                    secure.sendall(b'SHIPYARD LIST\n')
+                    test_shipyard = receive_until(secure, b'SHIPYARD END')
+                    assert b'SHIPDEF id=TITAN_MULE' in test_shipyard
+                    assert b'price=100 canonical-price=2800' in test_shipyard
                     secure.sendall(b'QUIT\n')
         finally:
             stop(process)

@@ -38,6 +38,7 @@
 #include "shared/flight.h"
 #include "shared/combat.h"
 #include "shared/career.h"
+#include "shared/economy.h"
 #include "shared/loadout.h"
 #include "shared/organizations.h"
 #include "shared/owned_ship.h"
@@ -53,6 +54,7 @@ constexpr int kWriteTimeoutSeconds = 5;
 constexpr int kMaxAuthFailures = 5;
 constexpr int kMaxAuthRequests = 10;
 constexpr double kFlightCheckpointSeconds = 1.0;
+constexpr double kMarketRestockSeconds = 60.0;
 std::string dataPath = "helion-server.db";
 helion::server::RuntimeEnvironment runtimeEnvironment = helion::server::RuntimeEnvironment::development;
 std::string dummyPasswordHash;
@@ -102,6 +104,9 @@ std::vector<int> clients;
 bool flightStateDirty = false;
 bool ownershipMigrationPending = false;
 bool environmentMigrationPending = false;
+bool economyMigrationPending = true;
+helion::economy::MarketState regionalMarkets{};
+helion::economy::Telemetry economicTelemetry{};
 std::mutex transportMutex;
 struct Transport {
   explicit Transport(std::shared_ptr<helion::tls::Connection> value) : connection(std::move(value)) {}
@@ -109,6 +114,26 @@ struct Transport {
   std::mutex writeMutex;
 };
 std::unordered_map<int, std::shared_ptr<Transport>> transports;
+
+helion::economy::PricingPolicy pricingPolicy() {
+  return helion::server::usesTestEconomy(runtimeEnvironment) ?
+    helion::economy::PricingPolicy::testConvenience : helion::economy::PricingPolicy::productionLike;
+}
+
+int configuredPurchasePrice(int canonicalPrice, bool testAvailable = true) {
+  const auto price = helion::server::purchasePrice(runtimeEnvironment, canonicalPrice, testAvailable);
+  if (!price) throw std::logic_error("invalid runtime economy policy");
+  return *price;
+}
+
+std::int64_t creditsInCirculation() {
+  std::int64_t total = 0;
+  for (const auto& [name, profile] : profiles) {
+    (void)name;
+    total += profile.credits;
+  }
+  return total;
+}
 
 helion::ships::OwnedShip& activeShip(Profile& profile) {
   const auto found = std::find_if(profile.ownedShips.begin(), profile.ownedShips.end(),
@@ -227,7 +252,8 @@ std::string moduleDefinitionLine(const Profile& profile, const helion::loadout::
     " slot=" + helion::loadout::slotName(module.slot) +
     " slot-type=" + helion::loadout::slotTypeName(module.slotType) +
     " size=" + helion::ships::slotSizeName(module.size) + " grade=" + std::string(1, module.grade) +
-    " price=" + std::to_string(module.purchasePrice) + " mass=" + std::to_string(module.mass) +
+    " price=" + std::to_string(configuredPurchasePrice(module.purchasePrice, module.testAvailable)) +
+    " canonical-price=" + std::to_string(module.purchasePrice) + " mass=" + std::to_string(module.mass) +
     " power=" + std::to_string(module.powerDraw) + " integrity=" + std::to_string(module.integrity) +
     " legal=" + helion::loadout::legalStatusName(module.legalStatus) +
     " effect=" + helion::loadout::effectSummary(module) +
@@ -264,7 +290,9 @@ std::string shipDefinitionLine(const helion::ships::Definition& hull) {
     " operator-id=" + std::string(hull.operatorId) + " model=" + wireToken(hull.model) +
     " name=" + wireToken(hull.displayName) + " class=" + wireToken(hull.shipClass) +
     " role=" + wireToken(hull.role) + " pad=" + helion::ships::padSizeName(hull.padSize) +
-    " price=" + std::to_string(hull.purchasePrice) + " mass=" + std::to_string(static_cast<int>(hull.mass)) +
+    " price=" + std::to_string(configuredPurchasePrice(hull.purchasePrice)) +
+    " canonical-price=" + std::to_string(hull.purchasePrice) +
+    " mass=" + std::to_string(static_cast<int>(hull.mass)) +
     " speed=" + std::to_string(static_cast<int>(hull.topSpeed)) +
     " boost=" + std::to_string(static_cast<int>(hull.boostSpeed)) +
     " acceleration=" + std::to_string(static_cast<int>(hull.acceleration)) +
@@ -337,6 +365,10 @@ void saveStateLocked() {
   std::ostringstream snapshot;
   snapshot << std::setprecision(17);
   snapshot << "E\t" << helion::server::runtimeEnvironmentName(runtimeEnvironment) << '\n';
+  for (const auto& market : regionalMarkets)
+    snapshot << "K\t" << market.station << '\t' << market.commodityId << '\t' << market.stock << '\t'
+      << market.demand << '\t' << market.buyBudget << '\n';
+  snapshot << "T\t" << helion::economy::serializeTelemetry(economicTelemetry) << '\n';
   for (const auto& [name, profile] : profiles) {
     const auto& ship = activeShip(profile);
     const auto& flight = ship.flight;
@@ -424,6 +456,8 @@ void loadState() {
   std::size_t capacity = 0;
   std::set<std::string> profilesWithShipRecords;
   std::set<std::string> instanceIds;
+  std::set<std::string> marketRecords;
+  bool telemetryRecord = false;
   bool firstRecord = true;
   try {
     ssize_t length;
@@ -455,7 +489,38 @@ void loadState() {
       } else if (kind == "E") {
         throw std::runtime_error("persistence environment record must be first and unique");
       }
-      if ((kind == "P" || kind == "H") && !first.empty() && !second.empty() && !third.empty()) {
+      if (kind == "K" && !first.empty() && !second.empty() && !third.empty()) {
+        std::string demandText, budgetText, extra;
+        std::getline(input, demandText, '\t');
+        std::getline(input, budgetText, '\t');
+        std::getline(input, extra, '\t');
+        auto parseInteger = [](const std::string& value) {
+          std::size_t used = 0;
+          const long long result = std::stoll(value, &used);
+          if (used != value.size()) throw std::runtime_error("malformed market number");
+          return result;
+        };
+        const long long stationValue = parseInteger(first);
+        const long long stockValue = parseInteger(third);
+        const long long demandValue = parseInteger(demandText);
+        const long long budgetValue = parseInteger(budgetText);
+        if (!extra.empty() || stationValue < 0 || stationValue > std::numeric_limits<int>::max() ||
+            stockValue < 0 || stockValue > std::numeric_limits<int>::max() || demandValue < 0 ||
+            demandValue > std::numeric_limits<int>::max() || budgetValue < 0)
+          throw std::runtime_error("malformed market state");
+        const std::string key = first + ":" + second;
+        auto* market = helion::economy::findOrder(regionalMarkets, static_cast<int>(stationValue), second);
+        if (!market || !marketRecords.emplace(key).second) throw std::runtime_error("unknown or duplicate market state");
+        market->stock = static_cast<int>(stockValue);
+        market->demand = static_cast<int>(demandValue);
+        market->buyBudget = budgetValue;
+      } else if (kind == "T" && !first.empty() && second.empty() && third.empty()) {
+        if (telemetryRecord) throw std::runtime_error("duplicate economic telemetry");
+        const auto parsed = helion::economy::parseTelemetry(first);
+        if (!parsed) throw std::runtime_error("malformed economic telemetry");
+        economicTelemetry = *parsed;
+        telemetryRecord = true;
+      } else if ((kind == "P" || kind == "H") && !first.empty() && !second.empty() && !third.empty()) {
         std::string faction, ship, creditsText, experienceText;
         std::getline(input, faction, '\t');
         std::getline(input, ship, '\t');
@@ -693,6 +758,11 @@ void loadState() {
       }
     }
     if (ferror(file)) throw std::runtime_error("cannot read persistence file");
+    if (!marketRecords.empty() && marketRecords.size() != helion::economy::kMarketCount)
+      throw std::runtime_error("incomplete market persistence");
+    if (!helion::economy::validateMarkets(regionalMarkets, pricingPolicy()))
+      throw std::runtime_error("invalid persisted market state");
+    economyMigrationPending = marketRecords.empty() || !telemetryRecord;
     instanceIds.clear();
     for (auto& [name, profile] : profiles) {
       if (profilesWithShipRecords.count(name) == 0) {
@@ -722,7 +792,7 @@ void loadState() {
 
 void migrateLegacyProfiles() {
   auto migrated = profiles;
-  bool changed = ownershipMigrationPending || environmentMigrationPending;
+  bool changed = ownershipMigrationPending || environmentMigrationPending || economyMigrationPending;
   for (auto& [name, profile] : migrated) {
     (void)name;
     if (helion::security::migrateLegacyCredential(profile.passwordHash, profile.legacyCredential)) {
@@ -736,6 +806,7 @@ void migrateLegacyProfiles() {
     saveStateLocked();
     ownershipMigrationPending = false;
     environmentMigrationPending = false;
+    economyMigrationPending = false;
   }
   catch (...) { profiles.swap(migrated); throw; }
   for (auto& [name, profile] : migrated) {
@@ -857,7 +928,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT SHIPYARD FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE GALNET ECONOMY CONTACTS BUY SELL MISSION ACCEPT TURNIN CAREER UPGRADE REPAIR REFUEL OUTFIT SHIPYARD FIRE RECOVER LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
   int authFailures = 0;
@@ -921,12 +992,16 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             profile.display = display;
             addStarterShip(profile, name);
             profiles.emplace(name, std::move(profile));
+            const auto telemetryBefore = economicTelemetry;
+            helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::faucet, 1500);
+            economicTelemetry.starterGrants += 1500;
             try {
               persistStateLocked();
               response = "OK CREATED user=" + name + " display=" + display;
               created = true;
             } catch (const std::exception& error) {
               profiles.erase(name);
+              economicTelemetry = telemetryBefore;
               response = "ERR persistence-failed";
               std::cerr << error.what() << '\n';
             }
@@ -1018,6 +1093,27 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           responses.push_back("GALNET END");
         }
         for (const auto& response : responses) sendLine(fd, response);
+      } else if (request.command == helion::protocol::Command::economy) {
+        if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
+        std::vector<std::string> responses;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          const auto& profile = profiles.at(user);
+          const auto& ship = activeShip(profile);
+          if (!ship.flight.docked) responses.push_back("ERR dock-required");
+          else {
+            for (const auto& definition : helion::economy::marketDefinitions()) {
+              if (definition.station != ship.flight.station) continue;
+              const auto* order = helion::economy::findOrder(regionalMarkets, definition.station,
+                                                              definition.commodityId);
+              if (order) responses.push_back(helion::economy::marketLine(definition, *order, pricingPolicy()));
+            }
+            responses.push_back(helion::economy::telemetryLine(economicTelemetry, creditsInCirculation()));
+            responses.push_back("ECONOMY END policy=" + std::string(
+              pricingPolicy() == helion::economy::PricingPolicy::testConvenience ? "TEST_100" : "PRODUCTION_LIKE"));
+          }
+        }
+        for (const auto& response : responses) sendLine(fd, response);
       } else if (request.command == helion::protocol::Command::career) {
         if (user.empty()) { sendLine(fd, "ERR login-required"); continue; }
         std::vector<std::string> responses;
@@ -1028,11 +1124,17 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
             const auto galnetBefore = galnetEvents;
+            const auto telemetryBefore = economicTelemetry;
             const auto result = helion::career::act(profile.career, profile.missionStage, activeShip(profile).flight,
               profile.credits, profile.experience, fittedModule(profile, helion::loadout::Slot::weapon) != nullptr,
               request.first, request.second);
             if (result.line.rfind("OK", 0) == 0) {
               try {
+                const int payout = profile.credits - before.credits;
+                if (payout > 0) {
+                  helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::faucet, payout);
+                  economicTelemetry.missionPayouts += payout;
+                }
                 if (result.keplerDelta) changeStanding(profile, "authority.kepler", result.keplerDelta);
                 if (request.first == "ACCEPT" && request.second == helion::career::kSupply)
                   addGalNetEvent("kepler-supply-request", "Kepler Authority requests two industrial parts from Cinder after Red Wake disruption.");
@@ -1048,6 +1150,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 if (result.keplerDelta) responses.push_back(reputationLine(profile, "authority.kepler", result.keplerDelta));
               } catch (const std::exception& error) {
                 profile = before; flightStateDirty = dirtyBefore; galnetEvents = galnetBefore;
+                economicTelemetry = telemetryBefore;
                 responses.push_back("ERR persistence-failed");
                 std::cerr << error.what() << '\n';
               }
@@ -1096,11 +1199,14 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
             const auto galnetBefore = galnetEvents;
+            const auto telemetryBefore = economicTelemetry;
             profile.missionStage = 2;
             profile.missionOreMined = false;
             profile.credits += 250;
             profile.experience += 25;
             try {
+              helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::faucet, 250);
+              economicTelemetry.missionPayouts += 250;
               changeStanding(profile, "corp.orion", 10);
               changeStanding(profile, "authority.kepler", 5);
               addGalNetEvent("orion-first-ore-completed", "Orion Extraction Group reports a successful First Ore delivery in Kepler.");
@@ -1112,6 +1218,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
               profile = before;
               flightStateDirty = dirtyBefore;
               galnetEvents = galnetBefore;
+              economicTelemetry = telemetryBefore;
               response = "ERR persistence-failed";
               std::cerr << error.what() << '\n';
             }
@@ -1128,6 +1235,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           const auto before = profile;
           const bool dirtyBefore = flightStateDirty;
           const auto galnetBefore = galnetEvents;
+          const auto telemetryBefore = economicTelemetry;
           if (request.command == helion::protocol::Command::recover) {
             const auto result = helion::flight::recover(activeShip(profile).flight);
             if (result.rfind("OK", 0) == 0) {
@@ -1176,6 +1284,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                   profile.credits += kCredits;
                   profile.experience += kExperience;
                   ++profile.salvage;
+                  helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::faucet, kCredits);
+                  economicTelemetry.combatPayouts += kCredits;
                   responses.push_back("COMBAT DESTROYED target=" + profile.hostile.id);
                   responses.push_back("TRANSACTION COMBAT_REWARD target=" + profile.hostile.id +
                     " credits=" + std::to_string(kCredits) +
@@ -1199,6 +1309,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                   profile = before;
                   flightStateDirty = dirtyBefore;
                   galnetEvents = galnetBefore;
+                  economicTelemetry = telemetryBefore;
                   responses.clear();
                   responses.push_back("ERR persistence-failed");
                   std::cerr << error.what() << '\n';
@@ -1224,6 +1335,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           } else if (request.first == "BUY") {
             const auto* hull = helion::ships::find(request.second);
             const int station = current.flight.station;
+            const int price = hull ? configuredPurchasePrice(hull->purchasePrice) : 0;
             if (!hull) responses.push_back("ERR unknown-hull");
             else if (!helion::shipyard::available(station,
               helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad,
@@ -1231,22 +1343,26 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             else if (std::any_of(profile.ownedShips.begin(), profile.ownedShips.end(),
               [hull](const auto& owned) { return owned.hullId == hull->id; }))
               responses.push_back("ERR ship-already-owned");
-            else if (profile.credits < hull->purchasePrice) responses.push_back("ERR insufficient-credits");
+            else if (profile.credits < price) responses.push_back("ERR insufficient-credits");
             else {
               const auto before = profile;
               const bool dirtyBefore = flightStateDirty;
+              const auto telemetryBefore = economicTelemetry;
               const std::string instance = helion::ships::deterministicInstanceId(user, profile.nextShipSequence++);
-              profile.credits -= hull->purchasePrice;
+              profile.credits -= price;
               profile.ownedShips.push_back(helion::ships::makePurchasedShip(instance, *hull, station));
+              helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::sink, price);
+              economicTelemetry.shipPurchaseValue += price;
               try {
                 persistStateLocked();
                 responses.push_back("OK SHIP PURCHASED instance=" + instance + " hull=" + std::string(hull->id) +
-                  " cost=" + std::to_string(hull->purchasePrice));
+                  " cost=" + std::to_string(price));
                 responses.push_back("TRANSACTION SHIP_PURCHASE instance=" + instance + " hull=" +
                   std::string(hull->id) + " station=" + std::to_string(station) +
-                  " credits=" + std::to_string(hull->purchasePrice));
+                  " credits=" + std::to_string(price));
               } catch (const std::exception& error) {
                 profile = before; flightStateDirty = dirtyBefore;
+                economicTelemetry = telemetryBefore;
                 responses.push_back("ERR persistence-failed");
                 std::cerr << error.what() << '\n';
               }
@@ -1293,13 +1409,18 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             else {
               const auto before = profile;
               const bool dirtyBefore = flightStateDirty;
+              const auto telemetryBefore = economicTelemetry;
               helion::flight::FuelTransaction transaction;
               const auto result = helion::flight::refuel(activeShip(profile).flight, profile.credits, &transaction);
               if (result.rfind("OK", 0) == 0) {
+                helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::sink,
+                                                transaction.creditsSpent);
+                economicTelemetry.serviceValue += transaction.creditsSpent;
                 try { persistStateLocked(); }
                 catch (const std::exception& error) {
                   profile = before;
                   flightStateDirty = dirtyBefore;
+                  economicTelemetry = telemetryBefore;
                   responses.push_back("ERR persistence-failed");
                   std::cerr << error.what() << '\n';
                 }
@@ -1347,26 +1468,31 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             } else if (request.first == "BUY") {
               const auto fit = helion::loadout::compatibility(*module,
                 helion::ships::definition(activeShip(profile)));
+              const int price = configuredPurchasePrice(module->purchasePrice, module->testAvailable);
               if (ownsModule(profile, request.second)) responses.push_back("ERR module-owned");
               else if (!fit.compatible) responses.push_back("ERR module-incompatible reason=" +
                 std::string(helion::loadout::fitIssueName(fit.issue)));
-              else if (profile.credits < module->purchasePrice) responses.push_back("ERR insufficient-credits");
+              else if (profile.credits < price) responses.push_back("ERR insufficient-credits");
               else {
                 const auto before = profile;
                 const bool dirtyBefore = flightStateDirty;
-                profile.credits -= module->purchasePrice;
+                const auto telemetryBefore = economicTelemetry;
+                profile.credits -= price;
                 activeShip(profile).ownedModules.push_back(module->id);
+                helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::sink, price);
+                economicTelemetry.modulePurchaseValue += price;
                 try {
                   persistStateLocked();
                   responses.push_back("OK MODULE BOUGHT module=" + std::string(module->id) +
                                      " slot=" + helion::loadout::slotName(module->slot) +
-                                     " cost=" + std::to_string(module->purchasePrice));
+                                     " cost=" + std::to_string(price));
                   responses.push_back("TRANSACTION MODULE_PURCHASE module=" + std::string(module->id) +
                                      " slot=" + helion::loadout::slotName(module->slot) +
-                                     " credits=" + std::to_string(module->purchasePrice));
+                                     " credits=" + std::to_string(price));
                 } catch (const std::exception& error) {
                   profile = before;
                   flightStateDirty = dirtyBefore;
+                  economicTelemetry = telemetryBefore;
                   responses.push_back("ERR persistence-failed");
                   std::cerr << error.what() << '\n';
                 }
@@ -1414,14 +1540,19 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           else if (request.command == helion::protocol::Command::repair) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
+            const auto telemetryBefore = economicTelemetry;
             const auto* defense = fittedModule(profile, helion::loadout::Slot::defense);
             const auto result = helion::flight::repairToCapacity(owned.flight, profile.credits,
               helion::ships::hullCapacity(owned, defense ? defense->hullBonus : 0));
             if (result.rfind("OK", 0) == 0) {
+              const int spent = before.credits - profile.credits;
+              helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::sink, spent);
+              economicTelemetry.serviceValue += spent;
               try { persistStateLocked(); }
               catch (const std::exception& error) {
                 profile = before;
                 flightStateDirty = dirtyBefore;
+                economicTelemetry = telemetryBefore;
                 responses.push_back("ERR persistence-failed");
                 std::cerr << error.what() << '\n';
               }
@@ -1436,15 +1567,19 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             else {
               const auto before = profile;
               const bool dirtyBefore = flightStateDirty;
+              const auto telemetryBefore = economicTelemetry;
               profile.credits -= cost;
               ++level;
               refreshDerivedShipState(profile);
+              helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::sink, cost);
+              economicTelemetry.serviceValue += cost;
               try {
                 persistStateLocked();
                 responses.push_back("OK UPGRADE " + request.first + " level=" + std::to_string(level) + " cost=" + std::to_string(cost));
               } catch (const std::exception& error) {
                 profile = before;
                 flightStateDirty = dirtyBefore;
+                economicTelemetry = telemetryBefore;
                 responses.push_back("ERR persistence-failed");
                 std::cerr << error.what() << '\n';
               }
@@ -1474,22 +1609,27 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           if (responses.empty()) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
+            const auto marketsBefore = regionalMarkets;
+            const auto telemetryBefore = economicTelemetry;
             auto& owned = activeShip(profile);
-            const auto result = helion::flight::trade(owned.flight, profile.credits,
+            const auto transaction = helion::economy::trade(regionalMarkets, owned.flight, profile.credits,
               request.command == helion::protocol::Command::buy, request.first, quantity,
-              helion::ships::cargoCapacity(owned));
-            if (result.rfind("OK", 0) == 0) {
+              helion::ships::cargoCapacity(owned), pricingPolicy());
+            if (transaction.committed) {
               if (request.command == helion::protocol::Command::buy)
                 helion::career::purchased(profile.career, owned.flight.station, request.first, quantity);
+              helion::economy::recordMarketTrade(economicTelemetry, transaction);
               try { persistStateLocked(); }
               catch (const std::exception& error) {
                 profile = before;
                 flightStateDirty = dirtyBefore;
+                regionalMarkets = marketsBefore;
+                economicTelemetry = telemetryBefore;
                 responses.push_back("ERR persistence-failed");
                 std::cerr << error.what() << '\n';
               }
             }
-            if (responses.empty()) responses.push_back(result);
+            if (responses.empty()) responses.push_back(transaction.line);
             appendFlightState(responses, profile);
           }
         }
@@ -1516,6 +1656,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             const auto before = profile;
             const bool dirtyBefore = flightStateDirty;
             const auto galnetBefore = galnetEvents;
+            const auto marketsBefore = regionalMarkets;
+            const auto telemetryBefore = economicTelemetry;
             const bool docking = request.command == helion::protocol::Command::dock;
             helion::flight::DockTransaction transaction;
             std::string result;
@@ -1526,21 +1668,28 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 helion::flight::mine(flight, helion::ships::cargoCapacity(owned), true, mining->miningCooldownMultiplier) :
                 "ERR mining-module-required";
             } else {
-              result = helion::flight::dock(flight, profile.credits, profile.experience,
-                                            docking ? &transaction : nullptr);
+              const auto sale = helion::economy::dockAndSellOre(regionalMarkets, flight, profile.credits,
+                                                                profile.experience, pricingPolicy());
+              result = sale.line;
+              transaction = sale.transaction;
             }
             if (result.rfind("OK", 0) == 0) {
               if (request.command == helion::protocol::Command::launch) {
                 resetCombatAfterLaunch(profile);
                 addGalNetEvent("red-wake-kepler-activity", "Kepler Authority warns of Red Wake activity in the mining sector.");
               }
-              if (request.command == helion::protocol::Command::mine && profile.missionStage == 1)
-                profile.missionOreMined = true;
+              if (request.command == helion::protocol::Command::mine) {
+                ++economicTelemetry.oreMined;
+                if (profile.missionStage == 1) profile.missionOreMined = true;
+              }
+              if (docking) helion::economy::recordOreSale(economicTelemetry, transaction);
               try { persistStateLocked(); }
               catch (const std::exception& error) {
                 profile = before;
                 flightStateDirty = dirtyBefore;
                 galnetEvents = galnetBefore;
+                regionalMarkets = marketsBefore;
+                economicTelemetry = telemetryBefore;
                 responses.push_back("ERR persistence-failed");
                 std::cerr << error.what() << '\n';
               }
@@ -1606,6 +1755,7 @@ int main(int argc, char** argv) {
     std::cerr << "usage: helion_server [port] [data-file] [--environment development|test|production] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem\n";
     return 2;
   }
+  regionalMarkets = helion::economy::seedMarkets(pricingPolicy());
   sockaddr_in address{};
   address.sin_family = AF_INET;
   address.sin_port = htons(static_cast<uint16_t>(port));
@@ -1654,6 +1804,7 @@ int main(int argc, char** argv) {
   };
   auto lastTick = std::chrono::steady_clock::now();
   auto nextCheckpoint = lastTick + std::chrono::duration<double>(kFlightCheckpointSeconds);
+  auto nextMarketRestock = lastTick + std::chrono::duration<double>(kMarketRestockSeconds);
   double accumulator = 0;
   while (!stopping) {
     const auto now = std::chrono::steady_clock::now();
@@ -1692,6 +1843,22 @@ int main(int argc, char** argv) {
         catch (const std::exception& error) { std::cerr << "flight checkpoint failed: " << error.what() << '\n'; }
       }
       nextCheckpoint = checkpointNow + std::chrono::duration<double>(kFlightCheckpointSeconds);
+    }
+    if (checkpointNow >= nextMarketRestock) {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      const auto marketsBefore = regionalMarkets;
+      const auto telemetryBefore = economicTelemetry;
+      const auto result = helion::economy::restock(regionalMarkets, pricingPolicy());
+      if (result.unitsAdded || result.demandAdded || result.budgetAdded) {
+        helion::economy::recordRestock(economicTelemetry, result);
+        try { persistStateLocked(); }
+        catch (const std::exception& error) {
+          regionalMarkets = marketsBefore;
+          economicTelemetry = telemetryBefore;
+          std::cerr << "market restock checkpoint failed: " << error.what() << '\n';
+        }
+      }
+      nextMarketRestock = checkpointNow + std::chrono::duration<double>(kMarketRestockSeconds);
     }
     reap();
     pollfd ready{server, POLLIN, 0};

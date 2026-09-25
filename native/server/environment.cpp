@@ -18,4 +18,14 @@ std::string_view runtimeEnvironmentName(RuntimeEnvironment environment) {
   return "unknown";
 }
 
+bool usesTestEconomy(RuntimeEnvironment environment) {
+  return environment == RuntimeEnvironment::private_test;
+}
+
+std::optional<int> purchasePrice(RuntimeEnvironment environment, int canonicalPrice, bool testAvailable) {
+  if (canonicalPrice < 0 || runtimeEnvironmentName(environment) == "unknown") return std::nullopt;
+  if (environment == RuntimeEnvironment::private_test && testAvailable) return 100;
+  return canonicalPrice;
+}
+
 } // namespace helion::server

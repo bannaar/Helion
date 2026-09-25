@@ -85,11 +85,11 @@ authoritative requirements remain `HELION_Batch14_Prompt_v0.11.txt` and
 | --- | --- | --- |
 | 0 | Audit baseline, record seams/deferrals, run relevant baseline validation | Complete |
 | 1 | Extend the existing module registry with structured physical slot/size metadata; centralize compatibility; enforce it in existing server-authoritative fit paths; preserve saves/UI/effects | Complete |
-| 2 | Add the regional seeded-market model, production-like versus TEST pricing policy, transaction safety, persistence, and economic telemetry for implemented flows | Not started |
+| 2 | Add the regional seeded-market model, production-like versus TEST pricing policy, transaction safety, persistence, and economic telemetry for implemented flows | Complete |
 | 3 | Add canonical normalized system-security ratings, classifications, controlled mutation, and crime/response query hooks without fake fleet AI | Not started |
 | 4 | Add explicit bounded/versioned binary framing over TLS for measured high-frequency traffic, compatibility negotiation, decoder safety tests, and benchmarks | Not started |
 | 5 | Introduce a typed client engine-state controller and incrementally route connection/auth/navigation/reconnect without granting client authority | Not started |
-| 6 | Complete centralized environment policy, TEST roles/typed admin operations/audit, 100-credit policy, and TEST eligibility bypass with production isolation tests | Not started |
+| 6 | Complete TEST roles, typed admin operations/audit, and TEST eligibility bypass on top of the isolated pricing policy, with production isolation tests | Not started |
 | 7 | Add the safe production operations foundation: status/lifecycle, least-privilege authorization boundaries, structured logs/metrics, backup/recovery and release documentation | Not started |
 | 8 | Full migration/regression/security review, all build/package/sanitizer gates, completion report, and Batch 15 recommendations | Not started |
 
@@ -117,6 +117,59 @@ control-flow changes until the new authoritative responses are stable.
   active mechanics.
 - Preserve `H` and `S` persistence compatibility. No persistence migration is
   required merely to add immutable definition metadata.
+
+## Milestone 2 decisions
+
+- Evolve `flight::State` cargo, `Profile::credits`, the existing atomic server
+  save, and existing station prices. The market does not own a second copy of
+  player inventory or currency. Shared `tradeAtPrice` and `dockAtPrice` entry
+  points let the regional service supply an authoritative price while retaining
+  legacy `trade` and `dock` behavior.
+- Model six initial NPC orders: food, parts, and ore at Kepler and Cinder.
+  Every definition has a station, system, region, organization owner, buy/sell
+  capability, canonical price, target stock/demand/budget, and deterministic
+  replenishment step. Kepler Authority seeds Kepler essentials; Orion owns the
+  initial ore demand and Cinder market surface. Player order matching remains
+  deferred rather than being simulated by a second inventory system.
+- Treat development and production as production-like. They retain the exact
+  existing commodity, ore, ship, and module prices for save/gameplay
+  compatibility. Only private TEST selects abundant seeded inventory and the
+  100-credit purchase policy for eligible commodities, ships, and modules.
+  TEST NPC purchases from players use 80 credits, preventing an immediate
+  same-station buy/sell inversion. Canonical prices remain independently
+  queryable and immutable.
+- Use finite production-like targets and a 60-second deterministic restock.
+  NPC purchases are bounded by both demand and a per-order currency budget.
+  Restock runs with zero connected players and atomically persists its result;
+  save failure restores both order state and restock telemetry.
+- Add `K` market records and one `T` telemetry record to the existing
+  environment-bound save. Loading rejects unknown, duplicate, incomplete,
+  negative, oversized, or malformed economic state. A legacy save receives
+  deterministic seeded markets and zero historical counters through an
+  additive migration; current credits in circulation are calculated from
+  profiles so migration does not invent historical flows.
+- Classify starter grants, mission/career payouts, and combat rewards as
+  faucets; ship/module purchases and fuel/repair/upgrade services as sinks;
+  and bounded NPC commodity/ore trades as transfers. Persist cumulative
+  source/sink/transfer, purchase/service, market volume/value, mining, and
+  restock counters. Fees and taxes report zero because neither exists yet; no
+  arbitrary charge was added for telemetry completeness.
+- Add the authenticated, dock-only `ECONOMY` query as an additive protocol
+  surface. It reports the current station's location/owner/order state,
+  effective policy, cumulative implemented-flow telemetry, and live player
+  credits in circulation. All mutations remain in existing server handlers
+  and save boundaries.
+- For every implemented credit/cargo/market mutation, snapshot the affected
+  profile, regional orders, GalNet state where relevant, dirty flag, and
+  telemetry before persistence. A failed save restores prior state and emits
+  no transaction result. Existing duplicate ship-purchase rejection and
+  module ownership checks remain replay protection for those asset purchases.
+
+Milestone decomposition changed only at Milestone 6: the isolated TEST
+100-credit price policy is complete in Milestone 2 as required. Milestone 6
+retains TEST roles, typed admin/audit operations, eligibility bypass, and their
+production-isolation checks; it must reuse this policy rather than add a second
+environment switch.
 
 ## Validation log
 
@@ -158,6 +211,49 @@ protocol compatibility is additive; the client preview cannot commit a fit;
 TEST/PRODUCTION policy is untouched; no parallel inventory, market, protocol,
 or browser authority was introduced.
 
+### Milestone 2
+
+- Warnings-as-errors Debug rebuild in `/tmp/helion-b14-debug`: passed.
+- `ctest --test-dir /tmp/helion-b14-debug -R
+  'helion_(economy|environment|flight|protocol)_tests' --output-on-failure`:
+  4/4 passed.
+- `ctest --test-dir /tmp/helion-b14-debug -R '^helion_tls_integration$'
+  --output-on-failure`: 1/1 passed in 32.34 seconds with live development and
+  TEST economy assertions. The all-suite run also passed the live suite in
+  33.59 seconds before the final TEST assertions were added; the focused rerun
+  above validates those additions.
+- `ctest --test-dir /tmp/helion-b14-debug --output-on-failure`: 23/23 passed
+  in 152.68 seconds, including TLS/server persistence, install smoke, core
+  gameplay, graphical acceptance, render-state, and renderer-fallback gates.
+- `git diff --check`: passed.
+
+Implemented evidence:
+
+- Shared tests cover regional ownership, canonical Kepler/Cinder pricing,
+  TEST-only 100-credit purchases, non-inverted TEST resale, finite stock,
+  demand/budget rejection without mutation, deterministic restock, bounded ore
+  sales, telemetry serialization, and malformed telemetry rejection.
+- Environment tests prove development and production retain canonical prices,
+  only private TEST selects convenience policy, non-TEST-eligible items retain
+  canonical price, and ambiguous environments fail closed. Live TLS coverage
+  additionally verifies a TEST commodity purchase and advertised ship/module
+  prices are 100 while their canonical prices remain unchanged.
+- Live TLS tests exercise production-like starter progression and existing
+  commodity/ship/module/service flows. They verify exact regional order and
+  telemetry deltas, induce a persistence failure during a purchase and observe
+  unchanged credits/market/telemetry, then restart the server and verify the
+  committed order book and counters were neither reset nor duplicated.
+- Existing ship replay rejection, cargo capacity, insufficient credits,
+  mining, ore sale, mission, combat, service rollback, reconnect, legacy save,
+  and environment mismatch coverage remains green.
+
+Milestone review: there is one shared market service and one existing player
+cargo/credits path; no client can set price, stock, demand, budget, telemetry,
+or transaction outcome. The save migration is additive and environment-bound.
+Development/production never select TEST prices or supply. Protocol changes
+are additive text responses, and no player matching, manufacturing, economic
+AI, arbitrary fee, admin surface, or unrelated world feature entered scope.
+
 ## Deferred work
 
 - Multiple independently addressed hardpoints/optional bays and module wear or
@@ -166,3 +262,11 @@ or browser authority was introduced.
 - Full player order matching, manufacturing, autonomous market optimization,
   police/GDF fleet AI, INSA/Gatewatch campaigns, character creation, launcher,
   CDN, public admin UI, and cloud provisioning remain explicitly out of scope.
+- Production-like balance is exercised and observable but is not declared
+  ready for ordinary-player handoff. Longer-duration earning-rate, stockout,
+  replenishment, wealth-distribution, and replacement-cost trials remain a
+  later validation gate; the 100-credit TEST configuration is not evidence for
+  that gate.
+- Historical economic counters cannot be reconstructed from legacy saves.
+  Migration intentionally begins cumulative counters at zero while reporting
+  current credits in circulation from authoritative profiles.

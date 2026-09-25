@@ -65,6 +65,9 @@ int main() {
   check(helion::protocol::parseRequest("CAREER TURNIN career.red_wake_response").command == Command::career,
     "career action remains domain-validated");
   check(helion::protocol::parseRequest("OUTFIT LIST").command == Command::outfit, "OUTFIT LIST accepted");
+  check(helion::protocol::parseRequest("ECONOMY").command == Command::economy, "ECONOMY accepted");
+  check(helion::protocol::parseRequest("ECONOMY extra").command == Command::invalid,
+        "ECONOMY rejects unexpected fields");
   check(helion::protocol::parseRequest("OUTFIT BUY mining-mk2").command == Command::outfit, "OUTFIT BUY accepted");
   check(helion::protocol::parseRequest("SHIPYARD LIST").command == Command::shipyard, "SHIPYARD LIST accepted");
   const auto shipPurchase = helion::protocol::parseRequest("SHIPYARD BUY TITAN_MULE");

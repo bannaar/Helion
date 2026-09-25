@@ -81,12 +81,16 @@ int cargoUsed(const State& state);
 std::string trade(State& state, int& credits, bool buying, const std::string& commodity, int quantity);
 std::string trade(State& state, int& credits, bool buying, const std::string& commodity, int quantity,
                   int cargoCapacity);
+std::string tradeAtPrice(State& state, int& credits, bool buying, const std::string& commodity, int quantity,
+                         int cargoCapacity, int unitPrice);
 std::string launch(State& state);
 std::string recover(State& state);
 std::string mine(State& state, bool miningEnabled = true, double cooldownMultiplier = 1.0);
 std::string mine(State& state, int cargoCapacity, bool miningEnabled = true,
                  double cooldownMultiplier = 1.0);
 std::string dock(State& state, int& credits, int& experience, DockTransaction* transaction = nullptr);
+std::string dockAtPrice(State& state, int& credits, int& experience, int oreUnitPrice,
+                        DockTransaction* transaction = nullptr);
 std::string dockTransactionLine(const DockTransaction& transaction);
 bool readDockTransaction(const std::string& line, DockTransaction& transaction);
 std::string refuel(State& state, int& credits, FuelTransaction* transaction = nullptr);

@@ -63,6 +63,26 @@ Request parseRequest(std::string_view line) {
       return request;
     }
     request.command = command == "CREATE" ? Command::create : Command::login;
+  } else if (command == "COMPANION") {
+    std::string action, argument, extra;
+    input >> action;
+    if (action == "ISSUE" || action == "LIST") {
+      if (input >> extra) {
+        request.error = "usage=COMPANION ISSUE|AUTH token|LIST|REVOKE id";
+        return request;
+      }
+      request.command = action == "ISSUE" ? Command::companion_issue : Command::companion_list;
+    } else if (action == "AUTH" || action == "REVOKE") {
+      if (!(input >> argument) || (input >> extra) || argument.size() > 128) {
+        request.error = "usage=COMPANION ISSUE|AUTH token|LIST|REVOKE id";
+        return request;
+      }
+      request.second = argument;
+      request.command = action == "AUTH" ? Command::companion_auth : Command::companion_revoke;
+    } else {
+      request.error = "usage=COMPANION ISSUE|AUTH token|LIST|REVOKE id";
+      return request;
+    }
   } else if (command == "CHAT") {
     std::getline(input, request.payload);
     if (!request.payload.empty() && request.payload.front() == ' ') request.payload.erase(0, 1);

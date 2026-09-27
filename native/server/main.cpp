@@ -8,6 +8,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+#include <cstdint>
+#include <ctime>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
@@ -37,6 +39,9 @@ constexpr int kReadTimeoutSeconds = 30;
 constexpr int kWriteTimeoutSeconds = 5;
 constexpr int kMaxAuthFailures = 5;
 constexpr int kMaxAuthRequests = 10;
+constexpr std::size_t kMaxCompanionTokensPerUser = 8;
+constexpr std::int64_t kCompanionTokenLifetimeSeconds = 30LL * 24 * 60 * 60;
+constexpr const char* kCompanionProfileReadScope = "profile.read";
 constexpr double kFlightCheckpointSeconds = 1.0;
 std::string dataPath = "helion-server.db";
 std::string dummyPasswordHash;
@@ -64,8 +69,19 @@ struct ChatMessage {
   std::string text;
 };
 
+struct CompanionTokenRecord {
+  std::string id;
+  std::string user;
+  std::string tokenHash;
+  std::int64_t expiresAt = 0;
+  std::string scope = kCompanionProfileReadScope;
+};
+
+enum class AuthKind { none, player, companion };
+
 std::mutex stateMutex;
 std::unordered_map<std::string, Profile> profiles;
+std::unordered_map<std::string, CompanionTokenRecord> companionTokens;
 std::vector<ChatMessage> messages;
 std::vector<int> clients;
 bool flightStateDirty = false;

@@ -303,6 +303,8 @@ int main(int argc, char** argv) {
   command(replacement, "BUY food 1", "ERR scope-denied");
   command(replacement, "CHAT forbidden", "ERR scope-denied");
   command(replacement, "COMPANION ISSUE", "ERR scope-denied");
+  command(replacement, "LOGIN explorer synthetic-password", "ERR scope-denied");
+  command(replacement, "CREATE tokenescape synthetic-password Token Escape", "ERR scope-denied");
   closeConnection(replacement);
 
   kill(child, SIGTERM);

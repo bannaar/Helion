@@ -131,6 +131,13 @@ void saveStateLocked() {
          << profile.flight.parts << '\t' << profile.flight.station << '\t' << profile.flight.hull << '\t'
          << profile.flight.maxHull << '\t' << profile.missionOreMined << '\n';
   }
+  const auto now = static_cast<std::int64_t>(std::time(nullptr));
+  for (const auto& [id, token] : companionTokens) {
+    if (token.expiresAt <= now) continue;
+    snapshot << "T\t" << encode(id) << '\t' << encode(token.user) << '\t'
+         << encode(token.tokenHash) << '\t' << token.expiresAt << '\t'
+         << encode(token.scope) << '\n';
+  }
   for (const auto& message : messages) {
     snapshot << "M\t" << encode(message.user) << '\t' << encode(message.text) << '\n';
   }
@@ -242,6 +249,29 @@ void loadState() {
         profile.flight.inputAge = 1;
         if (!profiles.emplace(decode(first), std::move(profile)).second)
           throw std::runtime_error("duplicate profile in persistence file");
+      } else if (kind == "T" && !first.empty() && !second.empty() && !third.empty()) {
+        std::string expiresText, scopeText, trailing;
+        std::getline(input, expiresText, '\t');
+        std::getline(input, scopeText, '\t');
+        if (expiresText.empty() || scopeText.empty() || std::getline(input, trailing))
+          throw std::runtime_error("malformed companion token record");
+        std::size_t used = 0;
+        const auto expiresAt = std::stoll(expiresText, &used);
+        if (used != expiresText.size() || expiresAt <= 0)
+          throw std::runtime_error("malformed companion token expiry");
+        CompanionTokenRecord token{
+          decode(first),
+          decode(second),
+          decode(third),
+          expiresAt,
+          decode(scopeText)
+        };
+        if (!helion::security::isEncodedCompanionTokenHash(token.tokenHash) ||
+            token.id.size() != helion::security::kCompanionTokenIdBytes * 2 ||
+            token.scope != kCompanionProfileReadScope ||
+            !companionTokens.emplace(token.id, std::move(token)).second) {
+          throw std::runtime_error("malformed companion token record");
+        }
       } else if (kind == "M" && !first.empty() && !second.empty()) {
         messages.push_back({decode(first), decode(second)});
       } else if (!line.empty()) {
@@ -249,6 +279,13 @@ void loadState() {
       }
     }
     if (ferror(file)) throw std::runtime_error("cannot read persistence file");
+    const auto now = static_cast<std::int64_t>(std::time(nullptr));
+    for (auto it = companionTokens.begin(); it != companionTokens.end();) {
+      if (profiles.count(it->second.user) == 0)
+        throw std::runtime_error("companion token references missing profile");
+      if (it->second.expiresAt <= now) it = companionTokens.erase(it);
+      else ++it;
+    }
   } catch (...) {
     free(buffer);
     fclose(file);

@@ -48,6 +48,8 @@ int main() {
   check(companion.id.size() == helion::security::kCompanionTokenIdBytes * 2, "companion token id length");
   check(companion.token.rfind("hc1." + companion.id + ".", 0) == 0, "companion token embeds public id");
   check(helion::security::isEncodedCompanionTokenHash(companion.hash), "companion token hash recognized");
+  check(helion::security::companionTokenId(companion.token) == companion.id, "companion token id parses");
+  check(helion::security::companionTokenId("hc1.bad.token").empty(), "malformed companion token id rejected");
   check(helion::security::verifyCompanionToken(companion.token, companion.id, companion.hash),
         "issued companion token verifies");
   check(!helion::security::verifyCompanionToken(companion2.token, companion.id, companion.hash),

@@ -62,6 +62,10 @@ reopen the console and Escape to return to flight. Use:
 ```text
 /create username password display
 /login username password
+/companion issue
+/companion list
+/companion revoke token-id
+/companion auth bearer-token
 /chat hello pilots
 /profile
 /state
@@ -71,6 +75,10 @@ reopen the console and Escape to return to flight. Use:
 /dock
 /quit
 ```
+
+The `COMPANION` commands provide the development pairing foundation for
+HELION Commander. Bearer tokens are secrets; graphical command echo redacts
+`COMPANION AUTH` token values. See `docs/companion-auth.md`.
 
 The client expects the versioned `WELCOME Helion/2` greeting. The shared
 protocol decoder buffers split network reads, separates multiple lines in one

@@ -49,7 +49,8 @@ For the retained command-line mode, use
 `./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt --terminal`.
 
 The client commands are `/create username password display`, `/login username
-password`, `/chat message`, `/profile`, `/state`, `/contacts`, `/buy food 1`,
+password`, `/companion issue`, `/companion auth token`, `/companion list`,
+`/companion revoke id`, `/chat message`, `/profile`, `/state`, `/contacts`, `/buy food 1`,
 `/sell parts 1`, `/mission`, `/accept`, `/turnin`, `/upgrade engine|hull`,
 `/repair`, `/launch`, `/flight`, `/input thrust turn brake`, `/mine`, `/dock`,
 and `/quit`.
@@ -118,12 +119,15 @@ The server sends `WELCOME Helion/2` and `INFO` lines on connect. Protocol versio
 2 is defined in `shared/protocol.h`; the client rejects a different greeting.
 Requests are one
 newline-terminated line: `CREATE username password display`, `LOGIN username
-password`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
+password`, `COMPANION ISSUE`, `COMPANION AUTH token`, `COMPANION LIST`,
+`COMPANION REVOKE id`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
 `MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `REPAIR`, `LAUNCH`, `INPUT`, `FLIGHT`,
 `MINE`, `DOCK`, or `QUIT`. Responses are newline-terminated
 `OK`, `ERR`, `PROFILE`, `STATE`, and `CHAT` records. The server stores salted
 scrypt password hashes, migrates existing plaintext profile records on startup,
-and creates owner-only data files. New passwords must be 12–128 bytes. The connection requires TLS 1.2 or newer. Clients verify the certificate
+and creates owner-only data files. New passwords must be 12–128 bytes. Companion bearer tokens are random,
+expire after 30 days, are stored only as SHA-256 verifiers, and initially grant only `profile.read`.
+See [the companion credential foundation](../docs/companion-auth.md). The connection requires TLS 1.2 or newer. Clients verify the certificate
 chain, expiration, and DNS/IP Subject Alternative Name using OS trust roots
 or an explicit `--ca` file. There is no plaintext fallback or insecure bypass.
 

@@ -8,6 +8,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+#include <cstdint>
+#include <ctime>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
@@ -37,6 +39,9 @@ constexpr int kReadTimeoutSeconds = 30;
 constexpr int kWriteTimeoutSeconds = 5;
 constexpr int kMaxAuthFailures = 5;
 constexpr int kMaxAuthRequests = 10;
+constexpr std::size_t kMaxCompanionTokensPerUser = 8;
+constexpr std::int64_t kCompanionTokenLifetimeSeconds = 30LL * 24 * 60 * 60;
+constexpr const char* kCompanionProfileReadScope = "profile.read";
 constexpr double kFlightCheckpointSeconds = 1.0;
 std::string dataPath = "helion-server.db";
 std::string dummyPasswordHash;
@@ -64,8 +69,19 @@ struct ChatMessage {
   std::string text;
 };
 
+struct CompanionTokenRecord {
+  std::string id;
+  std::string user;
+  std::string tokenHash;
+  std::int64_t expiresAt = 0;
+  std::string scope = kCompanionProfileReadScope;
+};
+
+enum class AuthKind { none, player, companion };
+
 std::mutex stateMutex;
 std::unordered_map<std::string, Profile> profiles;
+std::unordered_map<std::string, CompanionTokenRecord> companionTokens;
 std::vector<ChatMessage> messages;
 std::vector<int> clients;
 bool flightStateDirty = false;
@@ -114,6 +130,13 @@ void saveStateLocked() {
          << profile.flight.docked << '\t' << profile.flight.cargo << '\t' << profile.flight.food << '\t'
          << profile.flight.parts << '\t' << profile.flight.station << '\t' << profile.flight.hull << '\t'
          << profile.flight.maxHull << '\t' << profile.missionOreMined << '\n';
+  }
+  const auto now = static_cast<std::int64_t>(std::time(nullptr));
+  for (const auto& [id, token] : companionTokens) {
+    if (token.expiresAt <= now) continue;
+    snapshot << "T\t" << encode(id) << '\t' << encode(token.user) << '\t'
+         << encode(token.tokenHash) << '\t' << token.expiresAt << '\t'
+         << encode(token.scope) << '\n';
   }
   for (const auto& message : messages) {
     snapshot << "M\t" << encode(message.user) << '\t' << encode(message.text) << '\n';
@@ -226,6 +249,29 @@ void loadState() {
         profile.flight.inputAge = 1;
         if (!profiles.emplace(decode(first), std::move(profile)).second)
           throw std::runtime_error("duplicate profile in persistence file");
+      } else if (kind == "T" && !first.empty() && !second.empty() && !third.empty()) {
+        std::string expiresText, scopeText, trailing;
+        std::getline(input, expiresText, '\t');
+        std::getline(input, scopeText, '\t');
+        if (expiresText.empty() || scopeText.empty() || std::getline(input, trailing))
+          throw std::runtime_error("malformed companion token record");
+        std::size_t used = 0;
+        const auto expiresAt = std::stoll(expiresText, &used);
+        if (used != expiresText.size() || expiresAt <= 0)
+          throw std::runtime_error("malformed companion token expiry");
+        CompanionTokenRecord token{
+          decode(first),
+          decode(second),
+          decode(third),
+          expiresAt,
+          decode(scopeText)
+        };
+        if (!helion::security::isEncodedCompanionTokenHash(token.tokenHash) ||
+            token.id.size() != helion::security::kCompanionTokenIdBytes * 2 ||
+            token.scope != kCompanionProfileReadScope ||
+            !companionTokens.emplace(token.id, std::move(token)).second) {
+          throw std::runtime_error("malformed companion token record");
+        }
       } else if (kind == "M" && !first.empty() && !second.empty()) {
         messages.push_back({decode(first), decode(second)});
       } else if (!line.empty()) {
@@ -233,6 +279,13 @@ void loadState() {
       }
     }
     if (ferror(file)) throw std::runtime_error("cannot read persistence file");
+    const auto now = static_cast<std::int64_t>(std::time(nullptr));
+    for (auto it = companionTokens.begin(); it != companionTokens.end();) {
+      if (profiles.count(it->second.user) == 0)
+        throw std::runtime_error("companion token references missing profile");
+      if (it->second.expiresAt <= now) it = companionTokens.erase(it);
+      else ++it;
+    }
   } catch (...) {
     free(buffer);
     fclose(file);
@@ -318,9 +371,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
     clients.push_back(fd);
   }
   sendLine(fd, helion::protocol::welcomeLine());
-  sendLine(fd, "INFO commands=CREATE LOGIN CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR LAUNCH INPUT FLIGHT MINE DOCK QUIT");
+  sendLine(fd, "INFO commands=CREATE LOGIN COMPANION CHAT PROFILE STATE CONTACTS BUY SELL MISSION ACCEPT TURNIN UPGRADE REPAIR LAUNCH INPUT FLIGHT MINE DOCK QUIT");
 
   std::string user;
+  AuthKind authKind = AuthKind::none;
   int authFailures = 0;
   int authRequests = 0;
   helion::protocol::LineDecoder decoder;
@@ -345,7 +399,9 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
       const auto request = helion::protocol::parseRequest(frame.line);
       const bool authRequest = request.command == helion::protocol::Command::create ||
         request.command == helion::protocol::Command::login ||
-        frame.line.rfind("CREATE", 0) == 0 || frame.line.rfind("LOGIN", 0) == 0;
+        request.command == helion::protocol::Command::companion_auth ||
+        frame.line.rfind("CREATE", 0) == 0 || frame.line.rfind("LOGIN", 0) == 0 ||
+        frame.line.rfind("COMPANION AUTH", 0) == 0;
       if (authRequest && ++authRequests > kMaxAuthRequests) {
         sendLine(fd, "ERR too-many-auth-attempts");
         running = false;
@@ -353,6 +409,13 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
       }
       if (request.command == helion::protocol::Command::invalid) {
         sendLine(fd, "ERR " + request.error);
+        continue;
+      }
+      if (authKind == AuthKind::companion &&
+          request.command != helion::protocol::Command::profile &&
+          request.command != helion::protocol::Command::state &&
+          request.command != helion::protocol::Command::quit) {
+        sendLine(fd, "ERR scope-denied");
         continue;
       }
       if (request.command == helion::protocol::Command::create) {
@@ -388,7 +451,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             }
           }
         }
-        if (created) user = name;
+        if (created) {
+          user = name;
+          authKind = AuthKind::player;
+        }
         sendLine(fd, response);
         if (tooManyFailures) { running = false; break; }
       } else if (request.command == helion::protocol::Command::login) {
@@ -409,7 +475,143 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           if (++authFailures >= kMaxAuthFailures) { sendLine(fd, "ERR too-many-auth-attempts"); running = false; break; }
         } else {
           user = name;
+          authKind = AuthKind::player;
           sendLine(fd, "OK LOGIN user=" + name + " display=" + display);
+        }
+      } else if (request.command == helion::protocol::Command::companion_auth) {
+        const auto tokenId = helion::security::companionTokenId(request.second);
+        bool authenticated = false;
+        bool expired = false;
+        std::string tokenUser;
+        std::string display;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          const auto token = companionTokens.find(tokenId);
+          if (token != companionTokens.end()) {
+            expired = token->second.expiresAt <= static_cast<std::int64_t>(std::time(nullptr));
+            if (!expired && helion::security::verifyCompanionToken(
+                    request.second, token->second.id, token->second.tokenHash)) {
+              const auto profile = profiles.find(token->second.user);
+              if (profile != profiles.end()) {
+                authenticated = true;
+                tokenUser = token->second.user;
+                display = profile->second.display;
+              }
+            }
+          }
+        }
+        if (!authenticated) {
+          sendLine(fd, expired ? "ERR companion-token-expired" : "ERR invalid-companion-token");
+          if (++authFailures >= kMaxAuthFailures) {
+            sendLine(fd, "ERR too-many-auth-attempts");
+            running = false;
+            break;
+          }
+        } else {
+          user = tokenUser;
+          authKind = AuthKind::companion;
+          sendLine(fd, "OK COMPANION AUTH user=" + user + " display=" + display +
+            " scope=" + kCompanionProfileReadScope);
+        }
+      } else if (request.command == helion::protocol::Command::companion_issue) {
+        if (user.empty()) {
+          sendLine(fd, "ERR login-required");
+        } else if (authKind != AuthKind::player) {
+          sendLine(fd, "ERR scope-denied");
+        } else {
+          std::string response;
+          try {
+            auto material = helion::security::issueCompanionToken();
+            const auto expiresAt = static_cast<std::int64_t>(std::time(nullptr)) + kCompanionTokenLifetimeSeconds;
+            bool saved = false;
+            {
+              std::lock_guard<std::mutex> lock(stateMutex);
+              std::size_t activeForUser = 0;
+              const auto nowEpoch = static_cast<std::int64_t>(std::time(nullptr));
+              for (const auto& [id, token] : companionTokens) {
+                (void)id;
+                if (token.user == user && token.expiresAt > nowEpoch) ++activeForUser;
+              }
+              if (activeForUser >= kMaxCompanionTokensPerUser) {
+                response = "ERR companion-token-limit";
+              } else if (companionTokens.count(material.id) != 0) {
+                response = "ERR companion-token-generation";
+              } else {
+                CompanionTokenRecord record{
+                  material.id,
+                  user,
+                  material.hash,
+                  expiresAt,
+                  kCompanionProfileReadScope
+                };
+                companionTokens.emplace(material.id, record);
+                try {
+                  persistStateLocked();
+                  saved = true;
+                } catch (const std::exception& error) {
+                  companionTokens.erase(material.id);
+                  std::cerr << error.what() << '\n';
+                  response = "ERR persistence-failed";
+                }
+              }
+            }
+            if (saved) {
+              response = "OK COMPANION ISSUED id=" + material.id + " token=" + material.token +
+                " expires=" + std::to_string(expiresAt) + " scope=" + kCompanionProfileReadScope;
+            }
+            std::fill(material.token.begin(), material.token.end(), '\0');
+          } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            response = "ERR companion-token-generation";
+          }
+          sendLine(fd, response);
+        }
+      } else if (request.command == helion::protocol::Command::companion_list) {
+        if (user.empty()) {
+          sendLine(fd, "ERR login-required");
+        } else if (authKind != AuthKind::player) {
+          sendLine(fd, "ERR scope-denied");
+        } else {
+          std::vector<std::string> responses;
+          {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            const auto nowEpoch = static_cast<std::int64_t>(std::time(nullptr));
+            for (const auto& [id, token] : companionTokens) {
+              if (token.user == user && token.expiresAt > nowEpoch) {
+                responses.push_back("COMPANION TOKEN id=" + id +
+                  " expires=" + std::to_string(token.expiresAt) + " scope=" + token.scope);
+              }
+            }
+          }
+          responses.push_back("COMPANION END");
+          for (const auto& response : responses) sendLine(fd, response);
+        }
+      } else if (request.command == helion::protocol::Command::companion_revoke) {
+        if (user.empty()) {
+          sendLine(fd, "ERR login-required");
+        } else if (authKind != AuthKind::player) {
+          sendLine(fd, "ERR scope-denied");
+        } else {
+          std::string response;
+          {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            const auto found = companionTokens.find(request.second);
+            if (found == companionTokens.end() || found->second.user != user) {
+              response = "ERR companion-token-not-found";
+            } else {
+              const auto removed = found->second;
+              companionTokens.erase(found);
+              try {
+                persistStateLocked();
+                response = "OK COMPANION REVOKED id=" + request.second;
+              } catch (const std::exception& error) {
+                companionTokens.emplace(removed.id, removed);
+                response = "ERR persistence-failed";
+                std::cerr << error.what() << '\n';
+              }
+            }
+          }
+          sendLine(fd, response);
         }
       } else if (request.command == helion::protocol::Command::chat) {
         const auto& text = request.payload;

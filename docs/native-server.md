@@ -205,7 +205,29 @@ Then enter:
 Expected profile output includes the initial `sidewinder`, faction, credits,
 and experience fields.
 
-## 7. Persistence and security limitations
+## 7. Companion credentials
+
+A normal password-authenticated player session can issue a separate companion
+credential with `COMPANION ISSUE`. The plaintext bearer token is returned once;
+the persistence file stores only its SHA-256 verifier, owner, public ID, expiry,
+and fixed initial `profile.read` scope.
+
+Companion tokens expire after 30 days. Each account may have at most eight
+active tokens. Use `COMPANION LIST` to inspect active token IDs/expiry and
+`COMPANION REVOKE id` from a normal player session to revoke one.
+
+A new TLS connection may use `COMPANION AUTH token` instead of a password.
+A companion-authenticated connection may read `PROFILE` but receives
+`ERR scope-denied` for account creation, password login, token management,
+chat, trading, flight, missions, upgrades, repairs, and other gameplay
+mutations. The server never upgrades a companion token into full player
+authority.
+
+This is the server-side foundation for HELION Commander pairing. The eventual
+launcher/QR/device-code experience can wrap it without storing the game
+password on the companion device. See `docs/companion-auth.md`.
+
+## 8. Persistence and security limitations
 
 The line-oriented data file contains profile records and chat messages. New
 passwords must be 12–128 bytes; migrated legacy passwords may be shorter and
@@ -226,7 +248,7 @@ Before public deployment, add:
    contact records and deterministic NPC traffic are available to clients, but
    full shared ship replication remains future work.
 
-## 8. Logs and shutdown
+## 9. Logs and shutdown
 
 The reference server logs persistence failures to stderr. Under systemd:
 
@@ -240,7 +262,7 @@ Stop cleanly with `Ctrl-C` in the foreground or:
 sudo systemctl stop helion-server
 ```
 
-## 9. Mining gameplay
+## 10. Mining gameplay
 
 The native client now flies a Sidewinder in Kepler Reach. Authenticated
 `LAUNCH`, `INPUT`, `FLIGHT`, `MINE`, `DOCK`, and `REPAIR` commands implement the

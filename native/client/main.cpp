@@ -54,7 +54,7 @@ bool saveFrame(const std::string& path,int width,int height) {
   SDL_FreeSurface(surface); return saved;
 }
 int terminalClient(int fd, helion::tls::Connection& connection) {
-  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
+  std::cout<<"Commands: /create, /login, /companion issue|auth|list|revoke, /chat, /profile, /mission, /accept, /turnin, /upgrade engine|hull, /repair, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
   helion::protocol::LineDecoder decoder;
   bool greeted=false, running=true, stdinClosed=false, quitQueued=false;
   std::string outgoing, typed;

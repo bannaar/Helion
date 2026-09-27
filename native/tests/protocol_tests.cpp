@@ -46,6 +46,18 @@ int main() {
 
   check(helion::protocol::parseRequest("CREATE pilot pass Cmdr Pilot").command == Command::create, "CREATE preserved");
   check(helion::protocol::parseRequest("LOGIN pilot pass").command == Command::login, "LOGIN preserved");
+  check(helion::protocol::parseRequest("COMPANION ISSUE").command == Command::companion_issue, "COMPANION ISSUE accepted");
+  const auto companionAuth = helion::protocol::parseRequest("COMPANION AUTH hc1.0123456789abcdef.secret");
+  check(companionAuth.command == Command::companion_auth &&
+        companionAuth.second == "hc1.0123456789abcdef.secret", "COMPANION AUTH accepted");
+  check(helion::protocol::parseRequest("COMPANION LIST").command == Command::companion_list, "COMPANION LIST accepted");
+  const auto companionRevoke = helion::protocol::parseRequest("COMPANION REVOKE 0123456789abcdef");
+  check(companionRevoke.command == Command::companion_revoke &&
+        companionRevoke.second == "0123456789abcdef", "COMPANION REVOKE accepted");
+  for (const auto* invalidCompanion : {"COMPANION", "COMPANION ISSUE extra", "COMPANION AUTH",
+                                        "COMPANION LIST extra", "COMPANION REVOKE", "COMPANION UNKNOWN"})
+    check(helion::protocol::parseRequest(invalidCompanion).command == Command::invalid,
+          "invalid companion command rejected");
   check(helion::protocol::parseRequest("CHAT hello pilots").command == Command::chat, "CHAT preserved");
   check(helion::protocol::parseRequest("PROFILE").command == Command::profile, "PROFILE preserved");
   check(helion::protocol::parseRequest("STATE").command == Command::state, "STATE preserved");

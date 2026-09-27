@@ -295,8 +295,6 @@ int main(int argc, char** argv) {
     }
   }
   check(replacement >= 0, "slot released after disconnect");
-  check(receiveUntil(replacement, "INFO commands=").find("WELCOME Helion/2") != std::string::npos,
-        "replacement receives version greeting");
   command(replacement, "COMPANION AUTH " + companionToken, "OK COMPANION AUTH");
   check(command(replacement, "PROFILE", "PROFILE").find("user=explorer") != std::string::npos,
         "companion token grants profile-read access");

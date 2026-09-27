@@ -107,6 +107,15 @@ std::string command(int fd,const std::string& value,const std::string& expected)
   return response;
 }
 
+std::string responseField(const std::string& response, const std::string& key) {
+  const std::string prefix = key + "=";
+  const auto start = response.find(prefix);
+  if (start == std::string::npos) return {};
+  const auto valueStart = start + prefix.size();
+  const auto end = response.find_first_of(" \r\n", valueStart);
+  return response.substr(valueStart, end == std::string::npos ? std::string::npos : end - valueStart);
+}
+
 void expectPersistenceFailure(int fd, const std::string& value) {
   const std::string movedDirectory = testDirectory + ".away";
   check(rename(testDirectory.c_str(), movedDirectory.c_str()) == 0, "make save unavailable for rollback");
@@ -208,6 +217,17 @@ int main(int argc, char** argv) {
   check(tlsSend(first, create.data(), create.size(), 0) == static_cast<ssize_t>(create.size()), "create durable profile");
   check(receiveUntil(first, "OK CREATED").find("OK CREATED user=explorer") != std::string::npos,
         "profile saved successfully");
+  expectPersistenceFailure(first, "COMPANION ISSUE");
+  const auto issuedCompanion = command(first, "COMPANION ISSUE", "OK COMPANION ISSUED");
+  const std::string companionToken = responseField(issuedCompanion, "token");
+  const std::string companionTokenId = responseField(issuedCompanion, "id");
+  check(companionToken.rfind("hc1." + companionTokenId + ".", 0) == 0 &&
+        responseField(issuedCompanion, "scope") == "profile.read",
+        "companion token issued once with profile-read scope");
+  const auto companionList = command(first, "COMPANION LIST", "COMPANION END");
+  check(companionList.find("COMPANION TOKEN id=" + companionTokenId) != std::string::npos &&
+        companionList.find("scope=profile.read") != std::string::npos,
+        "full player session lists active companion token metadata");
   command(first,"REPAIR","ERR hull-full");
   command(first,"MISSION","MISSION 1 title=First Ore");
   expectPersistenceFailure(first,"ACCEPT");
@@ -275,6 +295,14 @@ int main(int argc, char** argv) {
     }
   }
   check(replacement >= 0, "slot released after disconnect");
+  check(receiveUntil(replacement, "INFO commands=").find("WELCOME Helion/2") != std::string::npos,
+        "replacement receives version greeting");
+  command(replacement, "COMPANION AUTH " + companionToken, "OK COMPANION AUTH");
+  check(command(replacement, "PROFILE", "PROFILE").find("user=explorer") != std::string::npos,
+        "companion token grants profile-read access");
+  command(replacement, "BUY food 1", "ERR scope-denied");
+  command(replacement, "CHAT forbidden", "ERR scope-denied");
+  command(replacement, "COMPANION ISSUE", "ERR scope-denied");
   closeConnection(replacement);
 
   kill(child, SIGTERM);
@@ -289,6 +317,9 @@ int main(int argc, char** argv) {
         content.find("H\twingman\t$scrypt$") != std::string::npos, "all legacy profiles migrated");
   check(content.find("legacy-pass-one") == std::string::npos &&
         content.find("$legacy-pass-two") == std::string::npos, "plaintext removed from current data file");
+  check(content.find("T\t" + companionTokenId + "\texplorer\t$sha256$") != std::string::npos,
+        "companion token verifier persists with owner");
+  check(content.find(companionToken) == std::string::npos, "plaintext companion bearer token is never persisted");
 
   check(stat((data + ".lock").c_str(), &info) == 0 && (info.st_mode & 0777) == 0600,
         "stable owner-only lock file remains after shutdown");
@@ -339,6 +370,15 @@ int main(int argc, char** argv) {
         "send restored login");
   check(receiveUntil(restarted, "OK LOGIN").find("OK LOGIN user=explorer display=Explorer One") != std::string::npos,
         "created account survives restart");
+  const auto restoredTokens = command(restarted, "COMPANION LIST", "COMPANION END");
+  check(restoredTokens.find("id=" + companionTokenId) != std::string::npos,
+        "companion token metadata survives restart");
+  expectPersistenceFailure(restarted, "COMPANION REVOKE " + companionTokenId);
+  check(command(restarted, "COMPANION LIST", "COMPANION END").find("id=" + companionTokenId) != std::string::npos,
+        "failed companion revocation rolls back");
+  command(restarted, "COMPANION REVOKE " + companionTokenId, "OK COMPANION REVOKED");
+  check(command(restarted, "COMPANION LIST", "COMPANION END").find("id=" + companionTokenId) == std::string::npos,
+        "companion token removed after durable revocation");
   expectPersistenceFailure(restarted,"REPAIR");
   const auto failedRepairProfile = command(restarted,"PROFILE","PROFILE");
   check(failedRepairProfile.find("credits=1536") != std::string::npos &&
@@ -388,6 +428,7 @@ int main(int argc, char** argv) {
   }
   check(slow >= 0, "slow-client server accepts first TLS client");
   check(receiveUntil(slow, "INFO commands=").find("WELCOME Helion/2") != std::string::npos, "slow-client greeting");
+  command(slow, "COMPANION AUTH " + companionToken, "ERR invalid-companion-token");
   command(slow,"LOGIN explorer synthetic-password","OK LOGIN");
   command(slow,"TURNIN","ERR mission-not-active");
   int receiveBuffer = 1024;

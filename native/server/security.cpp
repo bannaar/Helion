@@ -140,20 +140,26 @@ bool isEncodedCompanionTokenHash(std::string_view value) {
   return fromHex(value.substr(kCompanionHashPrefix.size()), decoded.data(), decoded.size());
 }
 
+std::string companionTokenId(std::string_view token) {
+  constexpr std::string_view tokenPrefix = "hc1.";
+  const auto expectedSize = tokenPrefix.size() + kCompanionTokenIdBytes * 2 + 1 + kCompanionTokenSecretBytes * 2;
+  if (token.size() != expectedSize || token.substr(0, tokenPrefix.size()) != tokenPrefix) return {};
+  const auto idStart = tokenPrefix.size();
+  const auto separator = token.find('.', idStart);
+  if (separator != idStart + kCompanionTokenIdBytes * 2) return {};
+  const auto id = token.substr(idStart, separator - idStart);
+  for (const char ch : id) {
+    if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return {};
+  }
+  return std::string(id);
+}
+
 bool verifyCompanionToken(
     std::string_view token,
     std::string_view expectedId,
     std::string_view encodedHash) {
-  constexpr std::string_view tokenPrefix = "hc1.";
-  if (token.substr(0, tokenPrefix.size()) != tokenPrefix ||
+  if (companionTokenId(token) != expectedId ||
       encodedHash.substr(0, kCompanionHashPrefix.size()) != kCompanionHashPrefix) return false;
-
-  const auto idStart = tokenPrefix.size();
-  const auto separator = token.find('.', idStart);
-  if (separator == std::string_view::npos || token.substr(idStart, separator - idStart) != expectedId ||
-      token.size() != tokenPrefix.size() + kCompanionTokenIdBytes * 2 + 1 + kCompanionTokenSecretBytes * 2) {
-    return false;
-  }
 
   std::array<unsigned char, 32> expected{};
   if (!fromHex(encodedHash.substr(kCompanionHashPrefix.size()), expected.data(), expected.size())) return false;

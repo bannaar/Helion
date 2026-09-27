@@ -28,6 +28,7 @@ bool migrateLegacyCredential(std::string& credential, bool legacyRecord);
 // Companion bearer tokens are random 256-bit secrets. Only their SHA-256
 // verifier is persisted; the plaintext token is returned once at issuance.
 CompanionTokenMaterial issueCompanionToken();
+std::string companionTokenId(std::string_view token);
 bool verifyCompanionToken(std::string_view token, std::string_view expectedId, std::string_view encodedHash);
 bool isEncodedCompanionTokenHash(std::string_view value);
 

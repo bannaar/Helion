@@ -411,6 +411,13 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         sendLine(fd, "ERR " + request.error);
         continue;
       }
+      if (authKind == AuthKind::companion &&
+          request.command != helion::protocol::Command::profile &&
+          request.command != helion::protocol::Command::state &&
+          request.command != helion::protocol::Command::quit) {
+        sendLine(fd, "ERR scope-denied");
+        continue;
+      }
       if (request.command == helion::protocol::Command::create) {
         const auto& name = request.first;
         const auto& password = request.second;
@@ -606,11 +613,6 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           }
           sendLine(fd, response);
         }
-      } else if (authKind == AuthKind::companion &&
-                 request.command != helion::protocol::Command::profile &&
-                 request.command != helion::protocol::Command::state &&
-                 request.command != helion::protocol::Command::quit) {
-        sendLine(fd, "ERR scope-denied");
       } else if (request.command == helion::protocol::Command::chat) {
         const auto& text = request.payload;
         if (user.empty()) sendLine(fd, "ERR login-required");

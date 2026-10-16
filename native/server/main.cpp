@@ -85,6 +85,7 @@ struct Profile {
   int combatTargetGeneration = 1;
   bool combatTargetDefeated = false;
   std::map<std::string, int> reputation;
+  helion::galaxy::KnowledgeState galaxyKnowledge{};
   std::deque<std::string> combatEvents;
   helion::combat::Hostile hostile{};
 };
@@ -110,6 +111,7 @@ bool ownershipMigrationPending = false;
 bool environmentMigrationPending = false;
 bool economyMigrationPending = true;
 bool galaxyMigrationPending = true;
+bool knowledgeMigrationPending = true;
 helion::economy::MarketState regionalMarkets{};
 helion::economy::Telemetry economicTelemetry{};
 helion::galaxy::GalaxyState galaxyState{};
@@ -374,6 +376,7 @@ void saveStateLocked() {
   std::ostringstream snapshot;
   snapshot << std::setprecision(17);
   snapshot << "E\t" << helion::server::runtimeEnvironmentName(runtimeEnvironment) << '\n';
+  snapshot << "V\tGALAXY_KNOWLEDGE\t1\n";
   for (const auto& system : galaxyState)
     snapshot << "Y\t" << system.systemId << '\t' << system.securitySteps << '\t'
       << helion::galaxy::sovereignTypeName(system.sovereignty.type) << '\t'
@@ -383,7 +386,14 @@ void saveStateLocked() {
     snapshot << "K\t" << market.station << '\t' << market.commodityId << '\t' << market.stock << '\t'
       << market.demand << '\t' << market.buyBudget << '\n';
   snapshot << "T\t" << helion::economy::serializeTelemetry(economicTelemetry) << '\n';
-  for (const auto& [name, profile] : profiles) {
+  std::vector<std::string> commanderNames;
+  commanderNames.reserve(profiles.size());
+  for (const auto& entry : profiles) commanderNames.push_back(entry.first);
+  std::sort(commanderNames.begin(), commanderNames.end());
+  for (const auto& name : commanderNames) {
+    const auto& profile = profiles.at(name);
+    if (!helion::galaxy::validateKnowledge(profile.galaxyKnowledge))
+      throw std::runtime_error("invalid commander galaxy knowledge");
     const auto& ship = activeShip(profile);
     const auto& flight = ship.flight;
     snapshot << "H\t" << encode(name) << '\t' << encode(profile.passwordHash) << '\t'
@@ -416,12 +426,18 @@ void saveStateLocked() {
       snapshot << '\t' << encode(owned.livery) << '\t' << owned.wearState << '\t' << owned.stored
         << '\t' << (owned.instanceId == profile.activeShipId) << '\t' << owned.visualVariantId << '\n';
     }
+    for (const auto& knowledge : profile.galaxyKnowledge)
+      snapshot << "D\t" << encode(name) << '\t' << knowledge.systemId << '\t'
+        << helion::galaxy::knowledgeLevelName(knowledge.level) << '\n';
   }
   for (const auto& event : galnetEvents)
     snapshot << "G\t" << encode(event.id) << '\t' << encode(event.headline) << '\n';
   for (const auto& message : messages) {
     snapshot << "M\t" << encode(message.user) << '\t' << encode(message.text) << '\n';
   }
+  const std::string records = snapshot.str();
+  snapshot << "Z\tGALAXY_END\t" << galaxyState.size() << '\t' << profiles.size() << '\t'
+    << std::count(records.begin(), records.end(), '\n') << '\n';
   std::string temp = dataPath + ".tmp.XXXXXX";
   const int fd = mkstemp(temp.data());
   if (fd < 0) throw std::runtime_error("cannot create persistence file");
@@ -472,7 +488,11 @@ void loadState() {
   std::set<std::string> instanceIds;
   std::set<std::string> marketRecords;
   std::set<std::string> galaxyRecords;
+  std::map<std::string, std::set<std::string>> knowledgeRecords;
   bool telemetryRecord = false;
+  bool knowledgeVersionRecord = false;
+  std::string galaxyEndRecord;
+  std::size_t persistenceRecords = 0;
   bool firstRecord = true;
   try {
     ssize_t length;
@@ -480,6 +500,8 @@ void loadState() {
       std::string line(buffer, static_cast<std::size_t>(length));
       if (!line.empty() && line.back() == '\n') line.pop_back();
       if (!line.empty() && line.back() == '\r') line.pop_back();
+      if (!galaxyEndRecord.empty()) throw std::runtime_error("records after persistence terminator");
+      ++persistenceRecords;
       std::istringstream input(line);
       std::string kind, first, second, third;
       std::getline(input, kind, '\t');
@@ -504,7 +526,14 @@ void loadState() {
       } else if (kind == "E") {
         throw std::runtime_error("persistence environment record must be first and unique");
       }
-      if (kind == "Y" && !first.empty() && !second.empty() && !third.empty()) {
+      if (kind == "Z") {
+        if (!knowledgeVersionRecord) throw std::runtime_error("unexpected persistence terminator");
+        galaxyEndRecord = line;
+      } else if (kind == "V") {
+        if (knowledgeVersionRecord || line != "V\tGALAXY_KNOWLEDGE\t1")
+          throw std::runtime_error("invalid or duplicate knowledge schema version");
+        knowledgeVersionRecord = true;
+      } else if (kind == "Y" && !first.empty() && !second.empty() && !third.empty()) {
         std::string sovereignId, discoveryText, extra;
         std::getline(input, sovereignId, '\t');
         std::getline(input, discoveryText, '\t');
@@ -514,7 +543,8 @@ void loadState() {
         const auto sovereignType = helion::galaxy::parseSovereignType(third);
         const auto discovery = helion::galaxy::parseDiscoveryState(discoveryText);
         auto* system = helion::galaxy::findState(galaxyState, first);
-        if (used != second.size() || !extra.empty() || !sovereignType || !discovery || !system ||
+        if (std::count(line.begin(), line.end(), '\t') != 5 ||
+            used != second.size() || !extra.empty() || !sovereignType || !discovery || !system ||
             !galaxyRecords.emplace(first).second || securityValue < std::numeric_limits<int>::min() ||
             securityValue > std::numeric_limits<int>::max())
           throw std::runtime_error("malformed or duplicate galaxy state");
@@ -559,6 +589,7 @@ void loadState() {
         std::getline(input, creditsText, '\t');
         std::getline(input, experienceText, '\t');
         Profile profile;
+        profile.galaxyKnowledge = helion::galaxy::seedKnowledge(galaxyState);
         helion::flight::State legacyFlight;
         int legacyHullLevel = 1;
         int legacyEngineLevel = 1;
@@ -779,6 +810,19 @@ void loadState() {
         }
         profile.ownedShips.push_back(std::move(owned));
         profile.nextShipSequence = static_cast<unsigned>(profile.ownedShips.size() + 1);
+      } else if (kind == "D" && !first.empty() && !second.empty() && !third.empty()) {
+        std::string extra;
+        std::getline(input, extra, '\t');
+        const std::string commander = decode(first);
+        const auto profile = profiles.find(commander);
+        const auto level = helion::galaxy::parseKnowledgeLevel(third);
+        if (std::count(line.begin(), line.end(), '\t') != 3 ||
+            !extra.empty() || profile == profiles.end() || !level ||
+            !knowledgeRecords[commander].emplace(second).second)
+          throw std::runtime_error("malformed or duplicate commander galaxy knowledge");
+        auto* record = helion::galaxy::findKnowledge(profile->second.galaxyKnowledge, second);
+        if (!record) throw std::runtime_error("unknown commander galaxy knowledge system");
+        record->level = *level;
       } else if (kind == "M" && !first.empty() && !second.empty()) {
         messages.push_back({decode(first), decode(second)});
       } else if (kind == "G" && !first.empty() && !second.empty() && third.empty()) {
@@ -790,13 +834,18 @@ void loadState() {
       }
     }
     if (ferror(file)) throw std::runtime_error("cannot read persistence file");
-    constexpr std::size_t kLegacyGalaxySystemCount = 28;
-    bool legacyGalaxyRecords = galaxyRecords.size() == kLegacyGalaxySystemCount;
-    if (legacyGalaxyRecords) {
+    if (knowledgeVersionRecord && galaxyEndRecord != "Z\tGALAXY_END\t" +
+        std::to_string(helion::galaxy::kSystemCount) + '\t' + std::to_string(profiles.size()) + '\t' +
+        std::to_string(persistenceRecords - 1))
+      throw std::runtime_error("missing or invalid persistence terminator");
+    const auto matchesLegacyGalaxyPrefix = [&](std::size_t legacyCount) {
+      if (galaxyRecords.size() != legacyCount) return false;
       const auto& definitions = helion::galaxy::systems();
-      for (std::size_t index = 0; index < kLegacyGalaxySystemCount; ++index)
-        legacyGalaxyRecords &= galaxyRecords.count(std::string(definitions[index].id)) != 0;
-    }
+      for (std::size_t index = 0; index < legacyCount; ++index)
+        if (galaxyRecords.count(std::string(definitions[index].id)) == 0) return false;
+      return true;
+    };
+    const bool legacyGalaxyRecords = matchesLegacyGalaxyPrefix(28) || matchesLegacyGalaxyPrefix(90);
     if (!galaxyRecords.empty() && galaxyRecords.size() != helion::galaxy::kSystemCount &&
         !legacyGalaxyRecords)
       throw std::runtime_error("incomplete galaxy persistence");
@@ -808,8 +857,22 @@ void loadState() {
     if (!helion::economy::validateMarkets(regionalMarkets, pricingPolicy()))
       throw std::runtime_error("invalid persisted market state");
     economyMigrationPending = marketRecords.empty() || !telemetryRecord;
+    if ((knowledgeVersionRecord || !knowledgeRecords.empty()) &&
+        galaxyRecords.size() != helion::galaxy::kSystemCount)
+      throw std::runtime_error("incomplete current-format galaxy persistence");
+    const bool legacyKnowledgeRecords = !knowledgeVersionRecord && knowledgeRecords.empty();
+    knowledgeMigrationPending = !knowledgeVersionRecord;
     instanceIds.clear();
     for (auto& [name, profile] : profiles) {
+      const auto knowledge = knowledgeRecords.find(name);
+      // Seed only after every physical record has loaded; legacy row order must
+      // not change the commander's public knowledge baseline.
+      if (legacyKnowledgeRecords) profile.galaxyKnowledge = helion::galaxy::seedKnowledge(galaxyState);
+      if (!legacyKnowledgeRecords &&
+          (knowledge == knowledgeRecords.end() ||
+           knowledge->second.size() != helion::galaxy::kSystemCount ||
+           !helion::galaxy::validateKnowledge(profile.galaxyKnowledge)))
+        throw std::runtime_error("incomplete commander galaxy knowledge");
       if (profilesWithShipRecords.count(name) == 0) {
         if (profile.legacyProjectionOverFuel) throw std::runtime_error("malformed persisted fuel state");
         ownershipMigrationPending = true;
@@ -838,7 +901,7 @@ void loadState() {
 void migrateLegacyProfiles() {
   auto migrated = profiles;
   bool changed = ownershipMigrationPending || environmentMigrationPending || economyMigrationPending ||
-                 galaxyMigrationPending;
+                 galaxyMigrationPending || knowledgeMigrationPending;
   for (auto& [name, profile] : migrated) {
     (void)name;
     if (helion::security::migrateLegacyCredential(profile.passwordHash, profile.legacyCredential)) {
@@ -854,6 +917,7 @@ void migrateLegacyProfiles() {
     environmentMigrationPending = false;
     economyMigrationPending = false;
     galaxyMigrationPending = false;
+    knowledgeMigrationPending = false;
   }
   catch (...) { profiles.swap(migrated); throw; }
   for (auto& [name, profile] : migrated) {
@@ -1188,6 +1252,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           } else {
             Profile profile;
             initializeReputation(profile);
+            profile.galaxyKnowledge = helion::galaxy::seedKnowledge(galaxyState);
             profile.passwordHash = encoded;
             profile.display = display;
             addStarterShip(profile, name);
@@ -1331,22 +1396,56 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           const auto station = static_cast<std::size_t>(ship.flight.station);
           const std::string currentSystem = station < helion::flight::kStations.size() ?
             helion::flight::kStations[station].systemId : "UNKNOWN";
-          const auto borders = helion::galaxy::deriveBorders(galaxyState);
+          const auto& knowledge = profiles.at(user).galaxyKnowledge;
+          std::set<std::string_view> locatedSystems;
+          std::size_t knownSystems = 0;
+          for (const auto& record : knowledge) {
+            knownSystems += record.level != helion::galaxy::KnowledgeLevel::undetected;
+            if (record.level == helion::galaxy::KnowledgeLevel::located ||
+                record.level == helion::galaxy::KnowledgeLevel::surveyed)
+              locatedSystems.emplace(record.systemId);
+          }
+          const auto physicalBorders = helion::galaxy::deriveBorders(galaxyState);
+          std::vector<helion::galaxy::Border> visibleBorders;
+          for (const auto& border : physicalBorders)
+            if (locatedSystems.count(border.firstSystemId) != 0 &&
+                locatedSystems.count(border.secondSystemId) != 0)
+              visibleBorders.push_back(border);
+          std::size_t visibleGates = 0;
+          for (const auto& connection : helion::galaxy::gateConnections())
+            visibleGates += locatedSystems.count(connection.firstSystemId) != 0 &&
+                            locatedSystems.count(connection.secondSystemId) != 0;
           responses.push_back("GALAXY BEGIN current=" + currentSystem +
-            " systems=" + std::to_string(helion::galaxy::systems().size()) +
-            " gates=" + std::to_string(helion::galaxy::gateConnections().size()));
+            " known-space-systems=" + std::to_string(helion::galaxy::systems().size()) +
+            " known-systems=" + std::to_string(knownSystems) +
+            " located-systems=" + std::to_string(locatedSystems.size()) +
+            " visible-gates=" + std::to_string(visibleGates) +
+            " systems=" + std::to_string(knownSystems) + " gates=" + std::to_string(visibleGates));
           for (const auto& territory : helion::galaxy::factionTerritories())
-            responses.push_back(helion::galaxy::territoryLine(territory));
+            if (locatedSystems.count(territory.capitalSystemId) != 0 &&
+                locatedSystems.count(territory.commerceHubSystemId) != 0)
+              responses.push_back(helion::galaxy::territoryLine(territory));
           for (const auto& definition : helion::galaxy::systems()) {
             const auto* state = helion::galaxy::findState(galaxyState, definition.id);
-            if (state) responses.push_back(helion::galaxy::systemLine(definition, *state));
+            const auto* record = helion::galaxy::findKnowledge(knowledge, definition.id);
+            if (!state || !record) continue;
+            const auto line = helion::galaxy::authorizedSystemLine(definition, *state, *record);
+            if (line) responses.push_back(*line);
           }
           for (const auto& connection : helion::galaxy::gateConnections())
-            responses.push_back(helion::galaxy::gateLine(connection));
-          for (const auto& border : borders) responses.push_back(helion::galaxy::borderLine(border));
-          responses.push_back("GALAXY END systems=" + std::to_string(helion::galaxy::systems().size()) +
-            " gates=" + std::to_string(helion::galaxy::gateConnections().size()) +
-            " borders=" + std::to_string(borders.size()));
+            if (locatedSystems.count(connection.firstSystemId) != 0 &&
+                locatedSystems.count(connection.secondSystemId) != 0)
+              responses.push_back(helion::galaxy::gateLine(connection));
+          for (const auto& border : visibleBorders)
+            responses.push_back(helion::galaxy::borderLine(border));
+          responses.push_back("GALAXY END known-space-systems=" +
+            std::to_string(helion::galaxy::systems().size()) +
+            " known-systems=" + std::to_string(knownSystems) +
+            " located-systems=" + std::to_string(locatedSystems.size()) +
+            " visible-gates=" + std::to_string(visibleGates) +
+            " visible-borders=" + std::to_string(visibleBorders.size()) +
+            " systems=" + std::to_string(knownSystems) + " gates=" + std::to_string(visibleGates) +
+            " borders=" + std::to_string(visibleBorders.size()));
         }
         for (const auto& response : responses) sendResponse(fd, response);
       } else if (request.command == helion::protocol::Command::career) {

@@ -30,7 +30,7 @@ int main() {
           "every exact -5.0..+5.0 0.2-step security value round-trips");
   }
   check(classifySecurity(25) == SecurityClass::high && classifySecurity(1) == SecurityClass::high &&
-        classifySecurity(0) == SecurityClass::nullSecurity &&
+        classifySecurity(0) == SecurityClass::zeroSpace &&
         classifySecurity(-1) == SecurityClass::low && classifySecurity(-25) == SecurityClass::low &&
         !classifySecurity(26), "security classification is exact at every outer and inner boundary");
   check(securityValue(25) == "+5.0" && securityValue(1) == "+0.2" && securityValue(0) == "0.0" &&
@@ -43,15 +43,17 @@ int main() {
   check(responsePolicy(1).automaticFactionCrime && responsePolicy(1).localFactionResponse &&
         responsePolicy(-1).conditionalGdfSupport && responsePolicy(-12).occasionalGdfExpedition &&
         !responsePolicy(-21).conditionalGdfSupport && !responsePolicy(0).automaticFactionCrime,
-        "security response hooks distinguish high low bands and nullsec without fake fleet behavior");
+        "security response hooks distinguish high low bands and Zero Space without fake fleet behavior");
 
   auto state = seedState();
   std::map<std::string, std::size_t> sovereignCounts;
   std::size_t inhabited = 0, uninhabited = 0, gateMaterialSystems = 0, xenologicalSystems = 0;
+  std::set<std::string_view> displayNames;
   for (const auto& system : systems()) {
     const auto* profile = findSystemProfile(system.id);
-    check(!system.id.empty() && findRegion(system.regionId) && profile && profile->systemId == system.id,
-          "every system has stable identity region and profile");
+    check(!system.id.empty() && findRegion(system.regionId) && profile && profile->systemId == system.id &&
+          system.domain == SpaceDomain::knownSpace && displayNames.emplace(system.displayName).second,
+          "every system has stable identity unique name Known Space domain region and profile");
     check(profile && profile->planetCount >= 2 && profile->asteroidFieldCount >= 1 &&
           profile->resources != ResourceFamily::none,
           "every system has deterministic celestial and resource geography");
@@ -75,18 +77,30 @@ int main() {
     if (system.initialSovereignType == SovereignType::npcFaction)
       ++sovereignCounts[std::string(system.initialSovereignId)];
     else
-      ++sovereignCounts["NULL"];
+      ++sovereignCounts["ZERO_SPACE"];
   }
-  check(systems().size() == 90 && inhabited > 50 && uninhabited > 10 &&
+  check(systems().size() == 200 && inhabited > 120 && uninhabited > 50 &&
         gateMaterialSystems > 0 && gateMaterialSystems < systems().size() / 2 &&
         xenologicalSystems == 3,
-        "v0.17 galaxy scale population and rare restricted resource distribution validate");
-  check(sovereignCounts["faction.commonwealth"] == 14 &&
-        sovereignCounts["faction.compact"] == 13 &&
-        sovereignCounts["faction.directorate"] == 13 &&
-        sovereignCounts["faction.meridian"] == 12 &&
-        sovereignCounts["faction.aurelian"] == 10 && sovereignCounts["NULL"] == 28,
-        "initial 90-system distribution covers five factions and substantial nullsec");
+        "v0.20 galaxy scale population and rare restricted resource distribution validate");
+  check(sovereignCounts["faction.commonwealth"] == 27 &&
+        sovereignCounts["faction.directorate"] == 25 &&
+        sovereignCounts["faction.compact"] == 25 &&
+        sovereignCounts["faction.meridian"] == 23 &&
+        sovereignCounts["faction.aurelian"] == 20 && sovereignCounts["ZERO_SPACE"] == 80,
+        "Known Space has the exact five-faction and Zero Space distribution");
+  check(spaceDomainName(SpaceDomain::knownSpace) == std::string("KNOWN_SPACE") &&
+        securityClassName(SecurityClass::zeroSpace) == std::string("ZERO_SPACE") &&
+        spaceDomainName(SpaceDomain::riftspace) == std::string("RIFTSPACE"),
+        "space domain is represented independently from security classification");
+  check(findSystem("CONCORDIA")->displayName == "Crownspire",
+        "current capital name retains its legacy persistent system identifier");
+  check(findSystemProfile("ORCHARD")->primaryEconomy == EconomicRole::agriculture &&
+        produces(*findSystemProfile("ORCHARD"), CommodityFamily::food) &&
+        findSystemProfile("HAMMERFALL")->primaryEconomy == EconomicRole::shipbuilding &&
+        consumes(*findSystemProfile("HAMMERFALL"), CommodityFamily::ore) &&
+        findSystemProfile("RESONANCE")->primaryEconomy == EconomicRole::research,
+        "new faction geography distinguishes food supply manufacturing demand and research");
   const auto* keplerProfile = findSystemProfile("KEPLER");
   check(keplerProfile && produces(*keplerProfile, CommodityFamily::food) &&
         produces(*keplerProfile, CommodityFamily::parts) &&
@@ -159,19 +173,24 @@ int main() {
         regions().size() == kRegionCount && factionTerritories().size() == kFactionTerritoryCount &&
         gateConnections().size() == kGateConnectionCount, "canonical topology and profile sizes are stable");
 
-  std::size_t high = 0, low = 0, nullSecurity = 0;
+  std::size_t high = 0, low = 0, zeroSpace = 0;
   for (const auto& system : state) {
     const auto classification = classifySecurity(system.securitySteps);
     high += classification == SecurityClass::high;
     low += classification == SecurityClass::low;
-    nullSecurity += classification == SecurityClass::nullSecurity;
+    zeroSpace += classification == SecurityClass::zeroSpace;
     check(validateSovereignty(system.securitySteps, system.sovereignty),
           "every canonical sovereignty/security pair is legal");
   }
-  check(high > 0 && low > 0 && nullSecurity == 28,
-        "NPC high/low territory and explicit nullsec all exist");
+  check(high > 0 && low > 0 && high + low == 120 && zeroSpace == 80,
+        "NPC High/Low Security territory and explicit 0.0 Zero Space have exact totals");
 
   auto illegalNpcNull = state;
+  auto erasedFaction = state;
+  auto* erasedKepler = findState(erasedFaction, "KEPLER");
+  erasedKepler->securitySteps = 0;
+  erasedKepler->sovereignty = {SovereignType::unclaimed, ""};
+  check(!validateGalaxy(erasedFaction), "persistent faction territory cannot be silently converted into Zero Space");
   auto* verge = findState(illegalNpcNull, "VERGE_ANCHOR");
   verge->sovereignty = {SovereignType::npcFaction, "faction.commonwealth"};
   check(!validateGalaxy(illegalNpcNull), "NPC ownership of 0.0 rejects");
@@ -189,12 +208,12 @@ int main() {
         setNullSovereignty(claims, "VERGE_ANCHOR", SovereignType::unclaimed, "") &&
         !setNullSovereignty(claims, "KEPLER", SovereignType::playerGuild, "guild.test") &&
         !setNullSovereignty(claims, "VERGE_ANCHOR", SovereignType::npcFaction, "faction.compact"),
-        "unclaimed Guild and Alliance nullsec claims preserve 0.0 and reject NPC/non-null claims");
+        "unclaimed Guild and Alliance Zero Space claims preserve 0.0 and reject NPC/non-zero claims");
   check(!setNullSovereignty(claims, "DARKWARD", SovereignType::playerGuild, "guild.test") &&
         setDiscovery(claims, "DARKWARD", DiscoveryState::charted) &&
         setNullSovereignty(claims, "DARKWARD", SovereignType::playerGuild, "guild.test") &&
         !setDiscovery(claims, "DARKWARD", DiscoveryState::unknown),
-        "unknown nullsec must be charted before a player sovereignty claim");
+        "unknown Zero Space must be charted before a player sovereignty claim");
   check(!validateSovereignty(0, {SovereignType::playerGuild, "alliance.wrong"}) &&
         !validateSovereignty(0, {SovereignType::playerAlliance, "alliance.bad\nwire"}) &&
         validateSovereignty(0, {SovereignType::playerGuild, "guild.valid-id_1"}),
@@ -232,14 +251,16 @@ int main() {
       check(adjacentSystems(system.id).size() == 1, "declared backwater dead ends have one permanent Gate");
 
   const auto borders = deriveBorders(state);
-  check(borders.size() == 20 && borders.front().connectionId == "TRUNK.KEPLER.FARPOINT",
-        "faction/nullsec borders derive deterministically from authoritative adjacency and sovereignty");
+  check(borders.size() == 21 && borders.front().connectionId == "TRUNK.KEPLER.FARPOINT" &&
+        std::any_of(borders.begin(), borders.end(), [](const auto& border) {
+          return border.connectionId == "ZERO.OPEN_WOUND.WATCHPOINT";
+        }), "derived borders include the new Blackwater-to-Directorate exit");
   auto changedBorders = state;
   check(setNullSovereignty(changedBorders, "VERGE_ANCHOR", SovereignType::playerGuild, "guild.pathfinders") &&
-        deriveBorders(changedBorders).size() == 22 &&
+        deriveBorders(changedBorders).size() == 23 &&
         setNullSovereignty(changedBorders, "PATHFINDER_REACH", SovereignType::playerGuild,
                            "guild.pathfinders") &&
-        deriveBorders(changedBorders).size() == 23,
+        deriveBorders(changedBorders).size() == 24,
         "changing nullsec sovereignty changes derived borders without changing topology or security");
 
   auto infrastructureState = state;
@@ -259,5 +280,92 @@ int main() {
         !setDiscovery(state, "DARKWARD", static_cast<DiscoveryState>(99)),
         "discovery changes independently from sovereignty");
 
-  std::cout << "90-system topology population resource economy security border route and nullsec tests passed\n";
+  const auto physicalSeed = seedState();
+  auto knowledge = seedKnowledge(physicalSeed);
+  const auto* keplerKnowledge = findKnowledge(knowledge, "KEPLER");
+  auto* darkwardKnowledge = findKnowledge(knowledge, "DARKWARD");
+  check(validateKnowledge(knowledge) && keplerKnowledge && darkwardKnowledge &&
+        keplerKnowledge->level == KnowledgeLevel::surveyed &&
+        darkwardKnowledge->level == KnowledgeLevel::undetected &&
+        !authorizedSystemLine(*findSystem("DARKWARD"), *findState(physicalSeed, "DARKWARD"),
+                              *darkwardKnowledge),
+        "per-commander knowledge seeds separately from physical system truth");
+  check(!advanceKnowledge(knowledge, "DARKWARD", KnowledgeLevel::classified) &&
+        advanceKnowledge(knowledge, "DARKWARD", KnowledgeLevel::detected),
+        "knowledge cannot skip the DETECTED stage");
+  auto detectedLine = authorizedSystemLine(*findSystem("DARKWARD"), *findState(physicalSeed, "DARKWARD"),
+                                           *findKnowledge(knowledge, "DARKWARD"));
+  check(detectedLine && detectedLine->find("knowledge=DETECTED") != std::string::npos &&
+        detectedLine->find("DARKWARD") == std::string::npos &&
+        detectedLine->find("name=") == std::string::npos && detectedLine->find("resources=") == std::string::npos &&
+        advanceKnowledge(knowledge, "DARKWARD", KnowledgeLevel::classified),
+        "DETECTED read models omit classified located and surveyed truth");
+  auto classifiedLine = authorizedSystemLine(*findSystem("DARKWARD"), *findState(physicalSeed, "DARKWARD"),
+                                             *findKnowledge(knowledge, "DARKWARD"));
+  check(classifiedLine && classifiedLine->find("knowledge=CLASSIFIED") != std::string::npos &&
+        classifiedLine->find("DARKWARD") == std::string::npos &&
+        classifiedLine->find("domain=KNOWN_SPACE") != std::string::npos &&
+        classifiedLine->find("region=") == std::string::npos &&
+        advanceKnowledge(knowledge, "DARKWARD", KnowledgeLevel::located),
+        "CLASSIFIED read models expose classification without location");
+  auto locatedLine = authorizedSystemLine(*findSystem("DARKWARD"), *findState(physicalSeed, "DARKWARD"),
+                                          *findKnowledge(knowledge, "DARKWARD"));
+  check(locatedLine && locatedLine->find("knowledge=LOCATED") != std::string::npos &&
+        locatedLine->find("region=OUTER_REACH") != std::string::npos &&
+        locatedLine->find("resources=") == std::string::npos &&
+        advanceKnowledge(knowledge, "DARKWARD", KnowledgeLevel::surveyed),
+        "LOCATED read models expose navigation truth without survey metadata");
+  auto surveyedLine = authorizedSystemLine(*findSystem("DARKWARD"), *findState(physicalSeed, "DARKWARD"),
+                                           *findKnowledge(knowledge, "DARKWARD"));
+  check(surveyedLine && surveyedLine->find("knowledge=SURVEYED") != std::string::npos &&
+        surveyedLine->find("resources=") != std::string::npos &&
+        !advanceKnowledge(knowledge, "DARKWARD", KnowledgeLevel::located),
+        "SURVEYED read models expose full profile and knowledge never regresses");
+  auto invalidKnowledge = knowledge;
+  invalidKnowledge[1].systemId = invalidKnowledge[0].systemId;
+  check(!validateKnowledge(invalidKnowledge) && !parseKnowledgeLevel("CHARTED"),
+        "duplicate unknown and legacy knowledge encodings fail closed");
+
+  const std::map<std::string_view, std::size_t> expectedZeroRegions{
+    {"LANTERN_CORRIDOR", 9}, {"ASHEN_BASIN", 9}, {"NIGHT_POCKETS", 9},
+    {"BLACKWATER_CHOKE", 9}, {"FAR_WILDS", 8}, {"CINDER_CLUSTER", 8}};
+  auto expectedRegions = expectedZeroRegions;
+  expectedRegions.insert({{"COMMONWEALTH_CORE", 12}, {"KEPLER_REACH", 15},
+    {"COMPACT_MARCHES", 25}, {"DIRECTORATE_CORE", 25}, {"MERIDIAN_CORE", 23},
+    {"AURELIAN_CORE", 9}, {"SYNOD_MARCHES", 11}, {"OUTER_REACH", 12},
+    {"SHROUD_EXPANSE", 8}, {"VERGE", 8}});
+  std::map<std::string_view, std::size_t> actualRegions;
+  for (const auto& system : systems()) ++actualRegions[system.regionId];
+  check(actualRegions == expectedRegions, "all sixteen regions have their exact intended system totals");
+  for (const auto& [regionId, expected] : expectedZeroRegions) {
+    std::size_t count = 0;
+    std::size_t internallyConnected = 0;
+    for (const auto& system : systems()) {
+      if (system.regionId != regionId) continue;
+      ++count;
+      for (const auto& adjacentId : adjacentSystems(system.id)) {
+        const auto* neighbor = findSystem(adjacentId);
+        if (neighbor && neighbor->regionId == regionId) ++internallyConnected;
+      }
+    }
+    check(count == expected && internallyConnected >= expected * 2,
+          "each new Zero Space region has its intended size and internal routes");
+  }
+  check(adjacentSystems("NIGHT_LOCK").size() == 1 &&
+        adjacentSystems("NO_RETURN").size() == 1 &&
+        adjacentSystems("ENDLESS_BLUE").size() == 1 &&
+        adjacentSystems("NIGHT_PEARL").size() == 4,
+        "pocket and deep frontier branches include intentional blind ends and a shared access hub");
+  check(adjacent("SPLIT_LIGHT", "BLACKWATER") && adjacent("OPEN_WOUND", "WATCHPOINT"),
+        "Lantern and Blackwater form a dangerous through-route to faction space");
+  std::size_t cinderBoundary = 0;
+  for (const auto& connection : gateConnections()) {
+    const bool firstCinder = findSystem(connection.firstSystemId)->regionId == "CINDER_CLUSTER";
+    const bool secondCinder = findSystem(connection.secondSystemId)->regionId == "CINDER_CLUSTER";
+    cinderBoundary += firstCinder != secondCinder;
+  }
+  check(cinderBoundary == 1 && adjacent("COLD_CINDER", "CINDER_CLUSTER_ONE"),
+        "Cinder is internally cyclic but reaches the wider galaxy through one chokepoint");
+
+  std::cout << "200-system Known Space topology population economy security and Zero Space tests passed\n";
 }

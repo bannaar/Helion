@@ -153,6 +153,31 @@ helion::flight::State flightState(int fd) {
   return state;
 }
 
+void waitForWeaponReady(int fd) {
+  int readySamples = 0;
+  for (int attempt = 0; attempt < 50; ++attempt) {
+    // A rejected unknown target is side-effect free and always includes combat
+    // status; FLIGHT includes that extension only when combat events are queued.
+    auto response = command(fd, "FIRE INVALID-TARGET", "ERR invalid-target");
+    const auto rejection = response.rfind("ERR invalid-target");
+    auto start = response.find("COMBAT STATUS ", rejection);
+    if (start == std::string::npos || response.find('\n', start) == std::string::npos) {
+      response += receiveUntil(fd, "COMBAT STATUS ");
+      start = response.find("COMBAT STATUS ", rejection);
+    }
+    check(start != std::string::npos, "rejected target returns authoritative combat status");
+    const auto end = response.find('\n', start);
+    helion::flight::State state;
+    check(helion::flight::readCombatStatus(response.substr(start, end - start), state),
+          "valid authoritative weapon cooldown status");
+    readySamples = state.weaponCooldown <= 0 ? readySamples + 1 : 0;
+    // Two samples span a tick and avoid treating a rounded near-zero as ready.
+    if (readySamples == 2) return;
+    usleep(100000);
+  }
+  check(false, "authoritative weapon cooldown expires before the next shot");
+}
+
 void flyTo(int fd,double x,double y) {
   for(int i=0;i<400;++i) {
     const auto s=flightState(fd);
@@ -268,6 +293,7 @@ int main(int argc, char** argv) {
   const auto combatDamaged = flightState(first);
   check(combatDamaged.hull < combatDamaged.maxHull && !combatDamaged.destroyed,
         "hostile NPC applies authoritative hull damage");
+  waitForWeaponReady(first);
   expectPersistenceFailure(first,"FIRE RAIDER-1");
   const auto failedShotContacts = command(first,"CONTACTS","CONTACT RAIDER-1 hostile");
   check(failedShotContacts.find("RAIDER-1 hostile") != std::string::npos &&
@@ -275,11 +301,12 @@ int main(int argc, char** argv) {
         "failed shot rolls back target hull state");
   check(failedShotContacts.find("criminal.red_wake Red_Wake") != std::string::npos,
         "hostile contact exposes Red Wake affiliation");
+  waitForWeaponReady(first);
   const auto firstHit = command(first,"FIRE RAIDER-1","COMBAT HIT");
   check(firstHit.find("damage=25") != std::string::npos, "server calculates laser damage");
   command(first,"FIRE RAIDER-1","ERR weapon-cooldown");
   for (int shot = 1; shot < 4; ++shot) {
-    usleep(1100000);
+    waitForWeaponReady(first);
     if (shot == 3) {
       expectPersistenceFailure(first,"FIRE RAIDER-1");
       const auto failedRewardProfile = command(first,"PROFILE","PROFILE");
@@ -395,22 +422,22 @@ int main(int argc, char** argv) {
         initialEconomy.find("starter-grants=1500") != std::string::npos &&
         initialEconomy.find("ECONOMY END policy=PRODUCTION_LIKE") != std::string::npos,
         "regional production-like market and economic telemetry expose prior committed flows");
-  const auto initialGalaxy = command(first, "GALAXY", "GALAXY END", 360);
-  check(initialGalaxy.find("GALAXY BEGIN current=KEPLER systems=90 gates=133") != std::string::npos &&
+  const auto initialGalaxy = command(first, "GALAXY", "GALAXY END", 600);
+  check(initialGalaxy.find("GALAXY BEGIN current=KEPLER known-space-systems=200") != std::string::npos &&
         initialGalaxy.find("TERRITORY faction=faction.commonwealth capital=CONCORDIA commerce-hub=VANTAGE") != std::string::npos &&
         initialGalaxy.find("TERRITORY faction=faction.aurelian capital=AURELIA commerce-hub=LUMEN") != std::string::npos &&
-        initialGalaxy.find("SYSTEM id=KEPLER name=Kepler region=KEPLER_REACH security=+0.6 class=HIGH sovereign-type=NPC_FACTION sovereign-id=faction.commonwealth") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=KEPLER name=Kepler region=KEPLER_REACH domain=KNOWN_SPACE security=+0.6 class=HIGH sovereign-type=NPC_FACTION sovereign-id=faction.commonwealth") != std::string::npos &&
         initialGalaxy.find("economy=GATE_LOGISTICS infrastructure=STATION,WAREHOUSE,GATEWATCH,EXTRACTION,OUTPOST") != std::string::npos &&
-        initialGalaxy.find("SYSTEM id=GLOAM name=Gloam region=KEPLER_REACH security=-1.0 class=LOW sovereign-type=NPC_FACTION") != std::string::npos &&
-        initialGalaxy.find("SYSTEM id=PATHFINDER_REACH name=Pathfinder_Reach region=OUTER_REACH security=0.0 class=NULL sovereign-type=UNCLAIMED sovereign-id=none discovery=CHARTED roles=FRONTIER future-infrastructure=0") != std::string::npos &&
-        initialGalaxy.find("SYSTEM id=DARKWARD name=Darkward region=OUTER_REACH security=0.0 class=NULL sovereign-type=UNCLAIMED sovereign-id=none discovery=UNKNOWN") != std::string::npos &&
-        initialGalaxy.find("SYSTEM id=RIFTWARD name=Riftward region=SHROUD_EXPANSE security=0.0") != std::string::npos &&
-        initialGalaxy.find("resources=RARE_METALS,ICE_VOLATILES,INDUSTRIAL_GASES,SCIENTIFIC_SAMPLES,XENOLOGICAL_TRACES_RESTRICTED") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=GLOAM name=Gloam region=KEPLER_REACH domain=KNOWN_SPACE security=-1.0 class=LOW sovereign-type=NPC_FACTION") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=PATHFINDER_REACH name=Pathfinder_Reach region=OUTER_REACH domain=KNOWN_SPACE security=0.0 class=ZERO_SPACE sovereign-type=UNCLAIMED sovereign-id=none discovery=CHARTED roles=FRONTIER future-infrastructure=0") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=LANTERN_ONE name=Lantern_One region=LANTERN_CORRIDOR domain=KNOWN_SPACE security=0.0 class=ZERO_SPACE") != std::string::npos &&
+        initialGalaxy.find("SYSTEM id=DARKWARD") == std::string::npos &&
+        initialGalaxy.find("SYSTEM id=RIFTWARD") == std::string::npos &&
         initialGalaxy.find("GATE id=TRUNK.KEPLER.FARPOINT from=KEPLER to=FARPOINT route=MAJOR_INTERFACTION_TRUNK permanent=1") != std::string::npos &&
         initialGalaxy.find("GATE id=GATE.KEPLER.GLOAM from=KEPLER to=GLOAM route=BACKWATER permanent=1") != std::string::npos &&
         initialGalaxy.find("BORDER gate=TRUNK.KEPLER.FARPOINT") != std::string::npos &&
-        initialGalaxy.find("GALAXY END systems=90 gates=133 borders=20") != std::string::npos,
-        "authoritative galaxy query exposes v0.17 profiles territories security routes borders and nullsec hooks");
+        initialGalaxy.find("GALAXY END known-space-systems=200") != std::string::npos,
+        "authoritative galaxy query exposes v0.20 profiles while omitting undiscovered physical truth");
   command(first, "SHIPYARD BUY TITAN_MULE", "ERR insufficient-credits");
   command(first,"REPAIR","ERR hull-full");
   const auto missionOffer = command(first,"MISSION","MISSION 1 title=First Ore");
@@ -548,7 +575,7 @@ int main(int argc, char** argv) {
         content.find("H\twingman\t$scrypt$") != std::string::npos, "all legacy profiles migrated");
   check(content.rfind("E\tdevelopment\n", 0) == 0,
         "legacy persistence migrates to an explicit development environment");
-  check(occurrences(content, "\nY\t") == 28,
+  check(occurrences(content, "\nY\t") == 200,
         "legacy persistence gains one authoritative state record per canonical system");
   check(content.find("legacy-pass-one") == std::string::npos &&
         content.find("$legacy-pass-two") == std::string::npos, "plaintext removed from current data file");
@@ -560,6 +587,8 @@ int main(int argc, char** argv) {
         "stable owner-only lock file remains after shutdown");
   bool strippedVariant = false;
   bool changedGalaxyState = false;
+  std::size_t retainedLegacyGalaxyRecords = 0;
+  std::size_t removedLegacyKnowledgeRecords = 0;
   {
     std::ifstream input(data);
     std::ostringstream rewritten;
@@ -572,6 +601,15 @@ int main(int argc, char** argv) {
         fields.push_back(line.substr(start, end == std::string::npos ? std::string::npos : end - start));
         if (end == std::string::npos) break;
         start = end + 1;
+      }
+      if (fields.size() == 6 && fields[0] == "Y") {
+        ++retainedLegacyGalaxyRecords;
+        if (retainedLegacyGalaxyRecords > 90) continue;
+      }
+      if (fields[0] == "V" || fields[0] == "Z") continue;
+      if (fields.size() == 4 && fields[0] == "D") {
+        ++removedLegacyKnowledgeRecords;
+        continue;
       }
       if (fields.size() == 6 && fields[0] == "Y" && fields[1] == "DARKWARD") {
         fields[3] = "PLAYER_ALLIANCE";
@@ -614,8 +652,9 @@ int main(int argc, char** argv) {
     std::ofstream output(data, std::ios::trunc);
     output << rewritten.str();
   }
-  check(strippedVariant && changedGalaxyState,
-        "old owned-ship fixture and valid persisted nullsec state are present before restart");
+  check(strippedVariant && changedGalaxyState && retainedLegacyGalaxyRecords == 200 &&
+        removedLegacyKnowledgeRecords == 600,
+        "old owned-ship fixture valid Zero Space state and pre-knowledge 90-system migration fixture are present");
   // Restart over the retained lock inode and verify actual persisted data.
   childPid = fork();
   check(childPid >= 0, "fork restarted server");
@@ -648,11 +687,18 @@ int main(int argc, char** argv) {
         restoredEconomy.find("market-transactions=5") != std::string::npos &&
         restoredEconomy.find("ore-mined=1") != std::string::npos,
         "regional market state and economic telemetry survive server restart deterministically");
-  const auto restoredGalaxy = command(restarted, "GALAXY", "GALAXY END", 360);
-  check(restoredGalaxy.find("GALAXY BEGIN current=KEPLER systems=90 gates=133") != std::string::npos &&
-        restoredGalaxy.find("SYSTEM id=DARKWARD name=Darkward region=OUTER_REACH security=0.0 class=NULL sovereign-type=PLAYER_ALLIANCE sovereign-id=alliance.frontier_coalition discovery=CHARTED roles=FRONTIER future-infrastructure=1") != std::string::npos &&
-        restoredGalaxy.find("GALAXY END systems=90 gates=133 borders=25") != std::string::npos,
+  const auto restoredGalaxy = command(restarted, "GALAXY", "GALAXY END", 600);
+  check(restoredGalaxy.find("GALAXY BEGIN current=KEPLER known-space-systems=200") != std::string::npos &&
+        restoredGalaxy.find("SYSTEM id=DARKWARD name=Darkward region=OUTER_REACH domain=KNOWN_SPACE security=0.0 class=ZERO_SPACE sovereign-type=PLAYER_ALLIANCE sovereign-id=alliance.frontier_coalition discovery=CHARTED roles=FRONTIER future-infrastructure=1") != std::string::npos &&
+        restoredGalaxy.find("GALAXY END known-space-systems=200") != std::string::npos,
         "security sovereignty discovery infrastructure eligibility and derived borders reload exactly");
+  std::ifstream migratedGalaxyFile(data);
+  const std::string migratedGalaxy((std::istreambuf_iterator<char>(migratedGalaxyFile)),
+                                   std::istreambuf_iterator<char>());
+  check(occurrences(migratedGalaxy, "\nY\t") == 200,
+        "the retained 90-system save deterministically migrates once to the 200-system registry");
+  check(occurrences(migratedGalaxy, "\nD\t") == 600,
+        "legacy commanders receive complete deterministic per-commander knowledge records");
   const auto restoredWingmanLogin = command(restarted, "LOGIN wingman $legacy-pass-two", "OK LOGIN");
   check(restoredWingmanLogin.find("user=wingman") != std::string::npos,
         "older owned-ship variant schema loads after restart");
@@ -886,6 +932,65 @@ int main(int argc, char** argv) {
   const std::string afterInvalidObjectiveFailure((std::istreambuf_iterator<char>(invalidObjectivePreserved)),
                                                   std::istreambuf_iterator<char>());
   check(afterInvalidObjectiveFailure == invalidObjective, "invalid objective failure preserves source file");
+  std::string partialKnowledge = content;
+  const auto knowledgeRecord = partialKnowledge.find("\nD\t");
+  const auto knowledgeEnd = partialKnowledge.find('\n', knowledgeRecord + 1);
+  check(knowledgeRecord != std::string::npos && knowledgeEnd != std::string::npos,
+        "find persisted commander knowledge record");
+  partialKnowledge.erase(knowledgeRecord + 1, knowledgeEnd - knowledgeRecord);
+  {
+    std::ofstream fixture(data, std::ios::trunc);
+    fixture << partialKnowledge;
+  }
+  const pid_t partialKnowledgeRejected = fork();
+  check(partialKnowledgeRejected >= 0, "fork partial-knowledge server");
+  if (partialKnowledgeRejected == 0) {
+    execl(argv[1], argv[1], portText.c_str(), data.c_str(), "--cert", argv[2], "--key", argv[3], static_cast<char*>(nullptr));
+    _exit(127);
+  }
+  childPid = partialKnowledgeRejected;
+  check(waitpid(partialKnowledgeRejected, &status, 0) == partialKnowledgeRejected &&
+        WIFEXITED(status) && WEXITSTATUS(status) != 0,
+        "partial commander galaxy knowledge blocks startup");
+  childPid = -1;
+  std::ifstream partialKnowledgePreserved(data);
+  const std::string afterPartialKnowledgeFailure((std::istreambuf_iterator<char>(partialKnowledgePreserved)),
+                                                  std::istreambuf_iterator<char>());
+  check(afterPartialKnowledgeFailure == partialKnowledge,
+        "partial commander knowledge failure preserves the source save");
+  std::string missingCommanderKnowledge;
+  {
+    std::istringstream input(content);
+    std::string line;
+    while (std::getline(input, line)) {
+      if (line.rfind("D\twingman\t", 0) == 0) continue;
+      missingCommanderKnowledge += line + '\n';
+    }
+  }
+  check(occurrences(missingCommanderKnowledge, "\nD\twingman\t") == 0 &&
+        occurrences(missingCommanderKnowledge, "\nD\t") != 0,
+        "construct current-format save with one commander's entire knowledge block missing");
+  {
+    std::ofstream fixture(data, std::ios::trunc);
+    fixture << missingCommanderKnowledge;
+  }
+  const pid_t missingCommanderKnowledgeRejected = fork();
+  check(missingCommanderKnowledgeRejected >= 0, "fork missing-commander-knowledge server");
+  if (missingCommanderKnowledgeRejected == 0) {
+    execl(argv[1], argv[1], portText.c_str(), data.c_str(), "--cert", argv[2], "--key", argv[3], static_cast<char*>(nullptr));
+    _exit(127);
+  }
+  childPid = missingCommanderKnowledgeRejected;
+  check(waitpid(missingCommanderKnowledgeRejected, &status, 0) == missingCommanderKnowledgeRejected &&
+        WIFEXITED(status) && WEXITSTATUS(status) != 0,
+        "missing commander galaxy knowledge block blocks startup");
+  childPid = -1;
+  std::ifstream missingCommanderKnowledgePreserved(data);
+  const std::string afterMissingCommanderKnowledgeFailure(
+    (std::istreambuf_iterator<char>(missingCommanderKnowledgePreserved)),
+    std::istreambuf_iterator<char>());
+  check(afterMissingCommanderKnowledgeFailure == missingCommanderKnowledge,
+        "missing commander knowledge failure preserves the source save");
   cleanup();
   std::cout << "server integration tests passed\n";
   return 0;

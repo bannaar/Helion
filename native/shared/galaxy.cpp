@@ -26,11 +26,18 @@ const std::array<RegionDefinition, kRegionCount> kRegions{{
   {"AURELIAN_CORE", "Aurelian Core"},
   {"SYNOD_MARCHES", "Synod Marches"},
   {"SHROUD_EXPANSE", "Shroud Expanse"},
-  {"VERGE", "The Verge"}
+  {"VERGE", "The Verge"},
+  {"LANTERN_CORRIDOR", "Lantern Corridor"},
+  {"ASHEN_BASIN", "Ashen Basin"},
+  {"NIGHT_POCKETS", "Night Pockets"},
+  {"BLACKWATER_CHOKE", "Blackwater Choke"},
+  {"FAR_WILDS", "Far Wilds"},
+  {"CINDER_CLUSTER", "Cinder Cluster"}
 }};
 
-const std::array<SystemDefinition, kSystemCount> kSystems{{
-  {"CONCORDIA", "Concordia", "COMMONWEALTH_CORE", 25, SovereignType::npcFaction,
+inline constexpr std::size_t kLegacySystemCount = 90;
+const std::array<SystemDefinition, kLegacySystemCount> kLegacySystems{{
+  {"CONCORDIA", "Crownspire", "COMMONWEALTH_CORE", 25, SovereignType::npcFaction,
    "faction.commonwealth", DiscoveryState::charted, SystemRole::capital | developed, false},
   {"VANTAGE", "Vantage", "COMMONWEALTH_CORE", 21, SovereignType::npcFaction,
    "faction.commonwealth", DiscoveryState::charted, SystemRole::commerceHub | developed | resource, false},
@@ -222,6 +229,176 @@ const std::array<SystemDefinition, kSystemCount> kSystems{{
    "", DiscoveryState::unknown, SystemRole::frontier, true}
 }};
 
+struct ExpansionSeed {
+  std::string_view id;
+  std::string_view displayName;
+  std::string_view regionId;
+};
+
+constexpr std::array<ExpansionSeed, 13> kCommonwealthExpansion{{
+  {"BRIGHTHAVEN", "Brighthaven", "COMMONWEALTH_CORE"},
+  {"CROWN_REACH", "Crown Reach", "COMMONWEALTH_CORE"},
+  {"VERNALIS", "Vernalis", "COMMONWEALTH_CORE"},
+  {"ORCHARD", "Orchard", "COMMONWEALTH_CORE"},
+  {"BLUE_MARCH", "Blue March", "COMMONWEALTH_CORE"},
+  {"WAYFARER", "Wayfarer", "KEPLER_REACH"},
+  {"NORTHSTAR", "Northstar", "KEPLER_REACH"},
+  {"BASTION", "Bastion", "KEPLER_REACH"},
+  {"REDOUBT", "Redoubt", "KEPLER_REACH"},
+  {"DEEPWELL", "Deepwell", "KEPLER_REACH"},
+  {"HUSHPOINT", "Hushpoint", "KEPLER_REACH"},
+  {"WARDEN_FALL", "Warden Fall", "KEPLER_REACH"},
+  {"GREY_HARBOR", "Grey Harbor", "KEPLER_REACH"}
+}};
+
+constexpr std::array<ExpansionSeed, 12> kCompactExpansion{{
+  {"LIBERTY_BELL", "Liberty Bell", "COMPACT_MARCHES"},
+  {"HAMMERFALL", "Hammerfall", "COMPACT_MARCHES"},
+  {"RIVET", "Rivet", "COMPACT_MARCHES"},
+  {"INDEPENDENCE", "Independence", "COMPACT_MARCHES"},
+  {"WAYSTATION", "Waystation", "COMPACT_MARCHES"},
+  {"CINDERWORKS", "Cinderworks", "COMPACT_MARCHES"},
+  {"MARCHLIGHT", "Marchlight", "COMPACT_MARCHES"},
+  {"TALLY", "Tally", "COMPACT_MARCHES"},
+  {"DUSTLAND", "Dustland", "COMPACT_MARCHES"},
+  {"BROKEN_ANVIL", "Broken Anvil", "COMPACT_MARCHES"},
+  {"LAST_CLAIM", "Last Claim", "COMPACT_MARCHES"},
+  {"FREEMANS_END", "Freemans End", "COMPACT_MARCHES"}
+}};
+
+constexpr std::array<ExpansionSeed, 12> kDirectorateExpansion{{
+  {"IMPERATOR", "Imperator", "DIRECTORATE_CORE"},
+  {"VICTORY", "Victory", "DIRECTORATE_CORE"},
+  {"CITADEL", "Citadel", "DIRECTORATE_CORE"},
+  {"LUMINARY", "Luminary", "DIRECTORATE_CORE"},
+  {"VIGIL", "Vigil", "DIRECTORATE_CORE"},
+  {"AXIOM", "Axiom", "DIRECTORATE_CORE"},
+  {"PRAETOR", "Praetor", "DIRECTORATE_CORE"},
+  {"SUNWARD", "Sunward", "DIRECTORATE_CORE"},
+  {"DARK_SENTINEL", "Dark Sentinel", "DIRECTORATE_CORE"},
+  {"IRON_ECLIPSE", "Iron Eclipse", "DIRECTORATE_CORE"},
+  {"FAR_DECREE", "Far Decree", "DIRECTORATE_CORE"},
+  {"FINAL_ORDER", "Final Order", "DIRECTORATE_CORE"}
+}};
+
+constexpr std::array<ExpansionSeed, 11> kMeridianExpansion{{
+  {"PARITY", "Parity", "MERIDIAN_CORE"},
+  {"VENTURE", "Venture", "MERIDIAN_CORE"},
+  {"BLUE_LEDGER", "Blue Ledger", "MERIDIAN_CORE"},
+  {"CONCORD_MARKET", "Concord Market", "MERIDIAN_CORE"},
+  {"DIVIDEND", "Dividend", "MERIDIAN_CORE"},
+  {"RELAY_NINE", "Relay Nine", "MERIDIAN_CORE"},
+  {"OUTRIDER", "Outrider", "MERIDIAN_CORE"},
+  {"SPINDRIFT", "Spindrift", "MERIDIAN_CORE"},
+  {"RISKWARD", "Riskward", "MERIDIAN_CORE"},
+  {"THIN_MARGIN", "Thin Margin", "MERIDIAN_CORE"},
+  {"CLOSING_BELL", "Closing Bell", "MERIDIAN_CORE"}
+}};
+
+constexpr std::array<ExpansionSeed, 10> kAurelianExpansion{{
+  {"CHORUS", "Chorus", "AURELIAN_CORE"},
+  {"VESPERS", "Vespers", "AURELIAN_CORE"},
+  {"SOLACE", "Solace", "AURELIAN_CORE"},
+  {"APOCRYPHA", "Apocrypha", "AURELIAN_CORE"},
+  {"RESONANCE", "Resonance", "AURELIAN_CORE"},
+  {"PENUMBRA", "Penumbra", "SYNOD_MARCHES"},
+  {"RELIQUARY", "Reliquary", "SYNOD_MARCHES"},
+  {"STILLWATER", "Stillwater", "SYNOD_MARCHES"},
+  {"LAST_HYMN", "Last Hymn", "SYNOD_MARCHES"},
+  {"VEILED_TRUTH", "Veiled Truth", "SYNOD_MARCHES"}
+}};
+
+constexpr std::array<ExpansionSeed, 52> kZeroSpaceExpansion{{
+  {"LANTERN_ONE", "Lantern One", "LANTERN_CORRIDOR"},
+  {"LANTERN_TWO", "Lantern Two", "LANTERN_CORRIDOR"},
+  {"WAYLIGHT", "Waylight", "LANTERN_CORRIDOR"},
+  {"PILOT_STAR", "Pilot Star", "LANTERN_CORRIDOR"},
+  {"LONG_BEACON", "Long Beacon", "LANTERN_CORRIDOR"},
+  {"FALSE_LANTERN", "False Lantern", "LANTERN_CORRIDOR"},
+  {"DIM_RELAY", "Dim Relay", "LANTERN_CORRIDOR"},
+  {"CORRIDOR_END", "Corridor End", "LANTERN_CORRIDOR"},
+  {"SPLIT_LIGHT", "Split Light", "LANTERN_CORRIDOR"},
+  {"ASHEN_CROWN", "Ashen Crown", "ASHEN_BASIN"},
+  {"DUST_VAULT", "Dust Vault", "ASHEN_BASIN"},
+  {"RED_BASIN", "Red Basin", "ASHEN_BASIN"},
+  {"SCORIA", "Scoria", "ASHEN_BASIN"},
+  {"COLD_CALDERA", "Cold Caldera", "ASHEN_BASIN"},
+  {"BURIED_SUN", "Buried Sun", "ASHEN_BASIN"},
+  {"SILT", "Silt", "ASHEN_BASIN"},
+  {"GLASS_FLOOR", "Glass Floor", "ASHEN_BASIN"},
+  {"BASIN_DEEP", "Basin Deep", "ASHEN_BASIN"},
+  {"NIGHT_PEARL", "Night Pearl", "NIGHT_POCKETS"},
+  {"CLOSED_EYE", "Closed Eye", "NIGHT_POCKETS"},
+  {"DARK_SHELTER", "Dark Shelter", "NIGHT_POCKETS"},
+  {"HOLLOW_MOON", "Hollow Moon", "NIGHT_POCKETS"},
+  {"VEIL_POCKET", "Veil Pocket", "NIGHT_POCKETS"},
+  {"SLEEPER_TIDE", "Sleeper Tide", "NIGHT_POCKETS"},
+  {"QUIET_ORBIT", "Quiet Orbit", "NIGHT_POCKETS"},
+  {"BLIND_REACH", "Blind Reach", "NIGHT_POCKETS"},
+  {"NIGHT_LOCK", "Night Lock", "NIGHT_POCKETS"},
+  {"BLACKWATER", "Blackwater", "BLACKWATER_CHOKE"},
+  {"NARROW_WAKE", "Narrow Wake", "BLACKWATER_CHOKE"},
+  {"TOLLLESS", "Tollless", "BLACKWATER_CHOKE"},
+  {"KNIFE_GATE", "Knife Gate", "BLACKWATER_CHOKE"},
+  {"DROWNED_MARK", "Drowned Mark", "BLACKWATER_CHOKE"},
+  {"PINCHPOINT", "Pinchpoint", "BLACKWATER_CHOKE"},
+  {"CROOKED_PASS", "Crooked Pass", "BLACKWATER_CHOKE"},
+  {"LOCKJAW", "Lockjaw", "BLACKWATER_CHOKE"},
+  {"OPEN_WOUND", "Open Wound", "BLACKWATER_CHOKE"},
+  {"FAR_BRIAR", "Far Briar", "FAR_WILDS"},
+  {"WILDS_EDGE", "Wilds Edge", "FAR_WILDS"},
+  {"THORNSTAR", "Thornstar", "FAR_WILDS"},
+  {"LOST_RANGE", "Lost Range", "FAR_WILDS"},
+  {"NO_RETURN", "No Return", "FAR_WILDS"},
+  {"HUNTERS_GAP", "Hunters Gap", "FAR_WILDS"},
+  {"WOLF_RAY", "Wolf Ray", "FAR_WILDS"},
+  {"ENDLESS_BLUE", "Endless Blue", "FAR_WILDS"},
+  {"CINDER_CLUSTER_ONE", "Cinder Cluster One", "CINDER_CLUSTER"},
+  {"CINDER_CLUSTER_TWO", "Cinder Cluster Two", "CINDER_CLUSTER"},
+  {"CHAR", "Char", "CINDER_CLUSTER"},
+  {"SMOKE_RING", "Smoke Ring", "CINDER_CLUSTER"},
+  {"EMBER_CHAIN", "Ember Chain", "CINDER_CLUSTER"},
+  {"GREY_COAL", "Grey Coal", "CINDER_CLUSTER"},
+  {"LAST_SPARK", "Last Spark", "CINDER_CLUSTER"},
+  {"COLD_CINDER", "Cold Cinder", "CINDER_CLUSTER"}
+}};
+
+template <std::size_t N>
+void appendFactionSystems(std::array<SystemDefinition, kSystemCount>& systems, std::size_t& next,
+                          const std::array<ExpansionSeed, N>& seeds, std::string_view factionId) {
+  const std::size_t highCount = (N + 1) / 2;
+  for (std::size_t index = 0; index < seeds.size(); ++index) {
+    const auto& seed = seeds[index];
+    const int securitySteps = index < highCount ? std::max(1, 18 - static_cast<int>(index) * 3) :
+      -std::min(25, 1 + static_cast<int>(index - highCount) * 4);
+    SystemRole roles = index < highCount ? developed : SystemRole::frontier;
+    if (index % 3 == 1) roles = roles | resource;
+    if (index + 2 >= seeds.size()) roles = roles | SystemRole::lowSecurityBackwater;
+    systems[next++] = {seed.id, seed.displayName, seed.regionId, securitySteps, SovereignType::npcFaction,
+      factionId, DiscoveryState::charted, roles, false, SpaceDomain::knownSpace};
+  }
+}
+
+std::array<SystemDefinition, kSystemCount> makeSystems() {
+  std::array<SystemDefinition, kSystemCount> systems{};
+  std::copy(kLegacySystems.begin(), kLegacySystems.end(), systems.begin());
+  std::size_t next = kLegacySystems.size();
+  appendFactionSystems(systems, next, kCommonwealthExpansion, "faction.commonwealth");
+  appendFactionSystems(systems, next, kCompactExpansion, "faction.compact");
+  appendFactionSystems(systems, next, kDirectorateExpansion, "faction.directorate");
+  appendFactionSystems(systems, next, kMeridianExpansion, "faction.meridian");
+  appendFactionSystems(systems, next, kAurelianExpansion, "faction.aurelian");
+  for (std::size_t index = 0; index < kZeroSpaceExpansion.size(); ++index) {
+    const auto& seed = kZeroSpaceExpansion[index];
+    systems[next++] = {seed.id, seed.displayName, seed.regionId, 0, SovereignType::unclaimed, "",
+      index % 3 == 0 ? DiscoveryState::charted : DiscoveryState::unknown,
+      SystemRole::frontier, true, SpaceDomain::knownSpace};
+  }
+  return systems;
+}
+
+const std::array<SystemDefinition, kSystemCount> kSystems = makeSystems();
+
 std::array<SystemProfile, kSystemCount> makeSystemProfiles() {
   std::array<SystemProfile, kSystemCount> profiles{};
   const auto is = [](std::string_view value, std::string_view expected) { return value == expected; };
@@ -309,10 +486,34 @@ std::array<SystemProfile, kSystemCount> makeSystemProfiles() {
       profile.stellarType = StellarType::orangeDwarf;
       profile.resources = ResourceFamily::rareMetals | ResourceFamily::industrialGases |
         ResourceFamily::scientificSamples;
-    } else {
+    } else if (system.regionId == "VERGE") {
       profile.stellarType = StellarType::whiteStar;
       profile.resources = ResourceFamily::fuelIsotopes | ResourceFamily::scientificSamples |
         ResourceFamily::gateMaterials;
+    } else if (system.regionId == "LANTERN_CORRIDOR") {
+      profile.stellarType = StellarType::orangeDwarf;
+      profile.resources = ResourceFamily::fuelIsotopes | ResourceFamily::industrialGases |
+        ResourceFamily::iceVolatiles;
+    } else if (system.regionId == "ASHEN_BASIN") {
+      profile.stellarType = StellarType::redDwarf;
+      profile.resources = ResourceFamily::structuralMetals | ResourceFamily::rareMetals |
+        ResourceFamily::salvage;
+    } else if (system.regionId == "NIGHT_POCKETS") {
+      profile.stellarType = index % 4 == 0 ? StellarType::neutronStar : StellarType::redDwarf;
+      profile.resources = ResourceFamily::scientificSamples | ResourceFamily::iceVolatiles |
+        ResourceFamily::industrialGases;
+    } else if (system.regionId == "BLACKWATER_CHOKE") {
+      profile.stellarType = StellarType::yellowDwarf;
+      profile.resources = ResourceFamily::industrialMinerals | ResourceFamily::iceVolatiles |
+        ResourceFamily::salvage;
+    } else if (system.regionId == "FAR_WILDS") {
+      profile.stellarType = StellarType::binary;
+      profile.resources = ResourceFamily::organics | ResourceFamily::rareMetals |
+        ResourceFamily::scientificSamples;
+    } else {
+      profile.stellarType = StellarType::orangeDwarf;
+      profile.resources = ResourceFamily::structuralMetals | ResourceFamily::fuelIsotopes |
+        ResourceFamily::salvage;
     }
 
     if (system.initialSecuritySteps < 0)
@@ -326,7 +527,10 @@ std::array<SystemProfile, kSystemCount> makeSystemProfiles() {
       profile.stellarType = StellarType::neutronStar;
 
     if (is(system.id, "GREENVALE") || is(system.id, "HARROW") ||
-        is(system.id, "HOMESTEAD")) profile.primaryEconomy = EconomicRole::agriculture;
+        is(system.id, "HOMESTEAD") || is(system.id, "ORCHARD") ||
+        is(system.id, "VERNALIS") || is(system.id, "INDEPENDENCE") ||
+        is(system.id, "SUNWARD") || is(system.id, "SPINDRIFT") || is(system.id, "STILLWATER"))
+      profile.primaryEconomy = EconomicRole::agriculture;
     else if (is(system.id, "VANTAGE") || is(system.id, "FORGE_END"))
       profile.primaryEconomy = EconomicRole::shipbuilding;
     else if (is(system.id, "IRONHOME") || is(system.id, "ORION_SPUR") ||
@@ -344,6 +548,30 @@ std::array<SystemProfile, kSystemCount> makeSystemProfiles() {
              is(system.id, "DEAD_RECKONING")) profile.primaryEconomy = EconomicRole::salvage;
     else if (is(system.id, "PORT_PROSPERITY") || is(system.id, "ARCADIA_EXCHANGE"))
       profile.primaryEconomy = EconomicRole::commerce;
+
+    // Named regional specializations give new corridors supply sources and
+    // consumers; these are world metadata, not additional live market engines.
+    if (is(system.id, "HAMMERFALL") || is(system.id, "CITADEL"))
+      profile.primaryEconomy = EconomicRole::shipbuilding;
+    else if (is(system.id, "RIVET") || is(system.id, "IRON_ECLIPSE"))
+      profile.primaryEconomy = EconomicRole::industry;
+    else if (is(system.id, "DEEPWELL") || is(system.id, "LAST_CLAIM"))
+      profile.primaryEconomy = EconomicRole::extraction;
+    else if (is(system.id, "CINDERWORKS") || is(system.id, "DIVIDEND"))
+      profile.primaryEconomy = EconomicRole::refining;
+    else if (is(system.id, "BASTION") || is(system.id, "REDOUBT") ||
+             is(system.id, "VIGIL") || is(system.id, "PRAETOR"))
+      profile.primaryEconomy = EconomicRole::military;
+    else if (is(system.id, "AXIOM") || is(system.id, "APOCRYPHA") ||
+             is(system.id, "RESONANCE") || is(system.id, "RELIQUARY"))
+      profile.primaryEconomy = EconomicRole::research;
+    else if (is(system.id, "WAYFARER") || is(system.id, "WAYSTATION") ||
+             is(system.id, "RELAY_NINE"))
+      profile.primaryEconomy = EconomicRole::gateLogistics;
+    else if (is(system.id, "PARITY") || is(system.id, "VENTURE") ||
+             is(system.id, "CONCORD_MARKET") || is(system.id, "BLUE_LEDGER"))
+      profile.primaryEconomy = EconomicRole::commerce;
+    else if (is(system.id, "BROKEN_ANVIL")) profile.primaryEconomy = EconomicRole::salvage;
 
     switch (profile.primaryEconomy) {
       case EconomicRole::government:
@@ -429,7 +657,9 @@ std::array<SystemProfile, kSystemCount> makeSystemProfiles() {
     {"VERGE_ANCHOR", 1'200}, {"PATHFINDER_REACH", 380}, {"COALITION_MARCH", 2'400},
     {"MISTRAL_VOID", 90}, {"SHROUD_EDGE", 720}, {"BROKEN_COMPASS", 40},
     {"CINDER_DEEP", 310}, {"EMBER_WELL", 180}, {"WANDERERS_REST", 4'800},
-    {"GHOSTLIGHT", 65}, {"UNBOUND", 1'400}, {"FAR_LANTERN", 320}
+    {"GHOSTLIGHT", 65}, {"UNBOUND", 1'400}, {"FAR_LANTERN", 320},
+    {"WAYLIGHT", 640}, {"ASHEN_CROWN", 210}, {"NIGHT_PEARL", 75},
+    {"BLACKWATER", 1'850}, {"HUNTERS_GAP", 340}, {"CINDER_CLUSTER_ONE", 520}
   };
   for (const auto& seed : inhabitedNull) {
     for (auto& profile : profiles) {
@@ -467,7 +697,8 @@ const std::array<FactionTerritory, kFactionTerritoryCount> kTerritories{{
   {"faction.aurelian", "AURELIA", "LUMEN"}
 }};
 
-const std::array<GateConnection, kGateConnectionCount> kConnections{{
+inline constexpr std::size_t kLegacyGateConnectionCount = 133;
+const std::array<GateConnection, kLegacyGateConnectionCount> kLegacyConnections{{
   {"GATE.CONCORDIA.VANTAGE", "CONCORDIA", "VANTAGE", RouteClass::factionCore},
   {"GATE.VANTAGE.HOLLOWAY", "VANTAGE", "HOLLOWAY", RouteClass::factionCore},
   {"GATE.VANTAGE.HARROW", "VANTAGE", "HARROW", RouteClass::secondary},
@@ -617,6 +848,83 @@ const std::array<GateConnection, kGateConnectionCount> kConnections{{
   {"GATE.DUSK_MERIDIAN.DARKWARD", "DUSK_MERIDIAN", "DARKWARD", RouteClass::secondary}
 }};
 
+void appendConnection(std::array<GateConnection, kGateConnectionCount>& connections,
+                      std::size_t& next, std::string id, std::string_view first,
+                      std::string_view second, RouteClass routeClass) {
+  connections[next++] = {std::move(id), std::string(first), std::string(second), routeClass};
+}
+
+template <std::size_t N>
+void appendFactionConnections(std::array<GateConnection, kGateConnectionCount>& connections,
+                              std::size_t& next, const std::array<ExpansionSeed, N>& seeds,
+                              std::string_view anchor) {
+  appendConnection(connections, next, "EXPANSION." + std::string(anchor) + "." + std::string(seeds[0].id),
+                   anchor, seeds[0].id, RouteClass::secondary);
+  for (std::size_t index = 1; index < seeds.size(); ++index) {
+    const auto route = index + 1 == seeds.size() ? RouteClass::backwater :
+      index >= (seeds.size() + 1) / 2 ? RouteClass::frontier : RouteClass::secondary;
+    appendConnection(connections, next,
+      "EXPANSION." + std::string(seeds[index - 1].id) + "." + std::string(seeds[index].id),
+      seeds[index - 1].id, seeds[index].id, route);
+  }
+  appendConnection(connections, next,
+    "EXPANSION.LOOP." + std::string(seeds[0].id) + "." + std::string(seeds[3].id),
+    seeds[0].id, seeds[3].id, RouteClass::secondary);
+  appendConnection(connections, next,
+    "EXPANSION.LOOP." + std::string(seeds[2].id) + "." + std::string(seeds[5].id),
+    seeds[2].id, seeds[5].id, RouteClass::secondary);
+}
+
+std::array<GateConnection, kGateConnectionCount> makeConnections() {
+  std::array<GateConnection, kGateConnectionCount> connections{};
+  std::copy(kLegacyConnections.begin(), kLegacyConnections.end(), connections.begin());
+  std::size_t next = kLegacyConnections.size();
+  appendFactionConnections(connections, next, kCommonwealthExpansion, "VANTAGE");
+  appendFactionConnections(connections, next, kCompactExpansion, "CROSSROADS");
+  appendFactionConnections(connections, next, kDirectorateExpansion, "HELIOS_EXCHANGE");
+  appendFactionConnections(connections, next, kMeridianExpansion, "MERIDIAN_PRIME");
+  appendFactionConnections(connections, next, kAurelianExpansion, "LUMEN");
+  const auto link = [&](std::string_view first, std::string_view second,
+                        RouteClass route = RouteClass::backwater) {
+    appendConnection(connections, next, "ZERO." + std::string(first) + "." + std::string(second),
+                     first, second, route);
+  };
+  const auto local = [&](std::size_t offset, std::size_t first, std::size_t second) {
+    link(kZeroSpaceExpansion[offset + first].id, kZeroSpaceExpansion[offset + second].id);
+  };
+  // Lantern is a through-corridor: a costly frontier alternative to the trunks.
+  link("FAR_LANTERN", "LANTERN_ONE", RouteClass::frontier);
+  for (std::size_t i = 1; i < 9; ++i) local(0, i - 1, i);
+  local(0, 2, 5);
+  link("SPLIT_LIGHT", "BLACKWATER", RouteClass::frontier);
+  // Ashen Basin is a closed resource ring with an inward shortcut and one mouth.
+  link("OBSIDIAN_TIDE", "ASHEN_CROWN", RouteClass::frontier);
+  for (std::size_t i = 0; i < 9; ++i) local(9, i, (i + 1) % 9);
+  local(9, 0, 4);
+  // Night Pockets: two small loops behind a single entry, plus a blind dead end.
+  link("NIGHTGLASS", "NIGHT_PEARL", RouteClass::frontier);
+  for (const auto& edge : std::array<std::pair<std::size_t, std::size_t>, 10>{{
+         {0, 1}, {1, 2}, {2, 3}, {3, 1}, {0, 4}, {4, 5}, {5, 6}, {6, 4}, {0, 7}, {7, 8}}})
+    local(18, edge.first, edge.second);
+  // Blackwater connects the wilderness to a faction border through Knife Gate.
+  link("COALITION_MARCH", "BLACKWATER", RouteClass::frontier);
+  for (std::size_t i = 1; i < 9; ++i) local(27, i - 1, i);
+  local(27, 4, 7);
+  link("OPEN_WOUND", "WATCHPOINT", RouteClass::frontier);
+  // Far Wilds is a remote branching resource area with two genuine dead ends.
+  link("TERMINUS_ECHO", "FAR_BRIAR", RouteClass::frontier);
+  for (const auto& edge : std::array<std::pair<std::size_t, std::size_t>, 9>{{
+         {0, 1}, {1, 2}, {2, 3}, {3, 4}, {1, 5}, {5, 6}, {5, 7}, {0, 2}, {2, 5}}})
+    local(36, edge.first, edge.second);
+  // Cinder is a compact ring: internally redundant, isolated behind one gate.
+  link("CINDER_DEEP", "CINDER_CLUSTER_ONE", RouteClass::frontier);
+  for (std::size_t i = 0; i < 8; ++i) local(44, i, (i + 1) % 8);
+  local(44, 1, 5);
+  return connections;
+}
+
+const std::array<GateConnection, kGateConnectionCount> kConnections = makeConnections();
+
 bool sameSovereignty(const Sovereignty& left, const Sovereignty& right) {
   return left.type == right.type && left.id == right.id;
 }
@@ -716,6 +1024,7 @@ bool validateTopology() {
     const auto& system = kSystems[index];
     const auto& profile = kSystemProfiles[index];
     if (system.id.empty() || system.displayName.empty() || !findRegion(system.regionId) ||
+        system.domain != SpaceDomain::knownSpace ||
         !systemIds.emplace(system.id).second) return false;
     if (profile.systemId != system.id || profile.population > 20'000'000'000ULL ||
         profile.planetCount > 32 || profile.moonCount > 64 || profile.asteroidFieldCount > 8 ||
@@ -737,8 +1046,8 @@ bool validateTopology() {
     degree.emplace(system.id, 0);
   }
 
-  std::unordered_set<std::string_view> connectionIds;
-  std::set<std::pair<std::string_view, std::string_view>> pairs;
+  std::unordered_set<std::string> connectionIds;
+  std::set<std::pair<std::string, std::string>> pairs;
   std::size_t trunkCount = 0;
   std::array<std::size_t, 5> routeCounts{};
   for (const auto& connection : kConnections) {
@@ -881,7 +1190,7 @@ std::optional<SecurityClass> classifySecurity(int steps) {
   if (!validSecuritySteps(steps)) return std::nullopt;
   if (steps > 0) return SecurityClass::high;
   if (steps < 0) return SecurityClass::low;
-  return SecurityClass::nullSecurity;
+  return SecurityClass::zeroSpace;
 }
 
 LowSecurityBand lowSecurityBand(int steps) {
@@ -893,7 +1202,7 @@ LowSecurityBand lowSecurityBand(int steps) {
 
 SecurityResponsePolicy responsePolicy(int steps) {
   const auto security = classifySecurity(steps);
-  if (!security || *security == SecurityClass::nullSecurity) return {};
+  if (!security || *security == SecurityClass::zeroSpace) return {};
   if (*security == SecurityClass::high) return {true, true, false, false};
   const auto band = lowSecurityBand(steps);
   return {true, true, band == LowSecurityBand::supported, band == LowSecurityBand::deep};
@@ -902,8 +1211,17 @@ SecurityResponsePolicy responsePolicy(int steps) {
 const char* securityClassName(SecurityClass value) {
   switch (value) {
     case SecurityClass::high: return "HIGH";
-    case SecurityClass::nullSecurity: return "NULL";
+    case SecurityClass::zeroSpace: return "ZERO_SPACE";
     case SecurityClass::low: return "LOW";
+  }
+  return "UNKNOWN";
+}
+const char* spaceDomainName(SpaceDomain value) {
+  switch (value) {
+    case SpaceDomain::knownSpace: return "KNOWN_SPACE";
+    case SpaceDomain::riftspace: return "RIFTSPACE";
+    case SpaceDomain::unknownSpace: return "UNKNOWN_SPACE";
+    case SpaceDomain::deepUnknown: return "DEEP_UNKNOWN";
   }
   return "UNKNOWN";
 }
@@ -933,6 +1251,24 @@ const char* discoveryStateName(DiscoveryState value) {
 std::optional<DiscoveryState> parseDiscoveryState(std::string_view value) {
   if (value == "UNKNOWN") return DiscoveryState::unknown;
   if (value == "CHARTED") return DiscoveryState::charted;
+  return std::nullopt;
+}
+const char* knowledgeLevelName(KnowledgeLevel value) {
+  switch (value) {
+    case KnowledgeLevel::undetected: return "UNDETECTED";
+    case KnowledgeLevel::detected: return "DETECTED";
+    case KnowledgeLevel::classified: return "CLASSIFIED";
+    case KnowledgeLevel::located: return "LOCATED";
+    case KnowledgeLevel::surveyed: return "SURVEYED";
+  }
+  return "INVALID";
+}
+std::optional<KnowledgeLevel> parseKnowledgeLevel(std::string_view value) {
+  if (value == "UNDETECTED") return KnowledgeLevel::undetected;
+  if (value == "DETECTED") return KnowledgeLevel::detected;
+  if (value == "CLASSIFIED") return KnowledgeLevel::classified;
+  if (value == "LOCATED") return KnowledgeLevel::located;
+  if (value == "SURVEYED") return KnowledgeLevel::surveyed;
   return std::nullopt;
 }
 const char* routeClassName(RouteClass value) {
@@ -1021,6 +1357,44 @@ GalaxyState seedState() {
   return state;
 }
 
+KnowledgeState seedKnowledge(const GalaxyState& state) {
+  KnowledgeState knowledge{};
+  for (std::size_t index = 0; index < state.size(); ++index) {
+    knowledge[index] = {state[index].systemId, state[index].discovery == DiscoveryState::charted ?
+      KnowledgeLevel::surveyed : KnowledgeLevel::undetected};
+  }
+  return knowledge;
+}
+
+const KnowledgeRecord* findKnowledge(const KnowledgeState& state, std::string_view systemId) {
+  for (const auto& record : state) if (record.systemId == systemId) return &record;
+  return nullptr;
+}
+
+KnowledgeRecord* findKnowledge(KnowledgeState& state, std::string_view systemId) {
+  for (auto& record : state) if (record.systemId == systemId) return &record;
+  return nullptr;
+}
+
+bool validateKnowledge(const KnowledgeState& knowledge) {
+  std::unordered_set<std::string> ids;
+  for (const auto& record : knowledge) {
+    if (!findSystem(record.systemId) || !ids.emplace(record.systemId).second ||
+        !parseKnowledgeLevel(knowledgeLevelName(record.level))) return false;
+  }
+  return ids.size() == kSystemCount;
+}
+
+bool advanceKnowledge(KnowledgeState& knowledge, std::string_view systemId, KnowledgeLevel next) {
+  auto* record = findKnowledge(knowledge, systemId);
+  if (!record) return false;
+  const auto currentRank = static_cast<int>(record->level);
+  const auto nextRank = static_cast<int>(next);
+  if (nextRank != currentRank + 1 || nextRank > static_cast<int>(KnowledgeLevel::surveyed)) return false;
+  record->level = next;
+  return true;
+}
+
 bool validateSovereignty(int securitySteps, const Sovereignty& sovereignty) {
   if (!validSecuritySteps(securitySteps)) return false;
   if (securitySteps == 0) {
@@ -1046,6 +1420,8 @@ bool validateGalaxy(const GalaxyState& state) {
         !validateSovereignty(current.securitySteps, current.sovereignty) ||
         (current.discovery != DiscoveryState::unknown &&
          current.discovery != DiscoveryState::charted)) return false;
+    if ((definition->initialSovereignType == SovereignType::npcFaction) !=
+        (current.sovereignty.type == SovereignType::npcFaction)) return false;
     if (current.discovery == DiscoveryState::unknown &&
         (current.sovereignty.type == SovereignType::playerGuild ||
          current.sovereignty.type == SovereignType::playerAlliance)) return false;
@@ -1125,7 +1501,8 @@ std::string systemLine(const SystemDefinition& definition, const SystemState& st
   const auto* profile = findSystemProfile(definition.id);
   if (!profile) return "SYSTEM INVALID";
   return "SYSTEM id=" + std::string(definition.id) + " name=" + wireToken(definition.displayName) +
-    " region=" + std::string(definition.regionId) + " security=" + securityValue(state.securitySteps) +
+    " region=" + std::string(definition.regionId) + " domain=" + spaceDomainName(definition.domain) +
+    " security=" + securityValue(state.securitySteps) +
     " class=" + (classification ? securityClassName(*classification) : std::string("INVALID")) +
     " sovereign-type=" + sovereignTypeName(state.sovereignty.type) +
     " sovereign-id=" + (state.sovereignty.id.empty() ? std::string("none") : state.sovereignty.id) +
@@ -1143,6 +1520,36 @@ std::string systemLine(const SystemDefinition& definition, const SystemState& st
     " resources=" + resourceText(*profile) +
     " produces=" + commodityText(profile->production) +
     " consumes=" + commodityText(profile->consumption);
+}
+
+std::optional<std::string> authorizedSystemLine(const SystemDefinition& definition,
+                                                const SystemState& state,
+                                                const KnowledgeRecord& knowledge) {
+  if (definition.id != state.systemId || definition.id != knowledge.systemId ||
+      knowledge.level == KnowledgeLevel::undetected) return std::nullopt;
+  const auto registered = std::find_if(kSystems.begin(), kSystems.end(), [&](const auto& system) {
+    return system.id == definition.id;
+  });
+  if (registered == kSystems.end()) return std::nullopt;
+  // A contact handle must not reveal a descriptive system ID before location.
+  const std::string contact = " contact=signal-" + std::to_string(registered - kSystems.begin() + 1);
+  if (knowledge.level == KnowledgeLevel::detected)
+    return "SYSTEM" + contact + " knowledge=DETECTED";
+  const auto classification = classifySecurity(state.securitySteps);
+  if (!classification) return std::nullopt;
+  if (knowledge.level == KnowledgeLevel::classified)
+    return "SYSTEM" + contact + " domain=" + spaceDomainName(definition.domain) +
+      " class=" + securityClassName(*classification) + " knowledge=CLASSIFIED";
+  if (knowledge.level == KnowledgeLevel::located)
+    return "SYSTEM id=" + std::string(definition.id) + " name=" + wireToken(definition.displayName) +
+      " region=" + std::string(definition.regionId) + " domain=" + spaceDomainName(definition.domain) +
+      " security=" + securityValue(state.securitySteps) + " class=" + securityClassName(*classification) +
+      " sovereign-type=" + sovereignTypeName(state.sovereignty.type) +
+      " sovereign-id=" + (state.sovereignty.id.empty() ? std::string("none") : state.sovereignty.id) +
+      contact + " knowledge=LOCATED";
+  if (knowledge.level == KnowledgeLevel::surveyed)
+    return systemLine(definition, state) + contact + " knowledge=SURVEYED";
+  return std::nullopt;
 }
 
 std::string territoryLine(const FactionTerritory& territory) {

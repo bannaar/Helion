@@ -33,6 +33,13 @@ int main() {
         std::string_view(flight::kStations[0].systemId) == keplerFood->systemId &&
         std::string_view(flight::kStations[1].systemId) == cinderFood->systemId,
         "station markets reference the authoritative galaxy system and region");
+  const auto galaxyState = galaxy::seedState();
+  const auto* keplerState = galaxy::findState(galaxyState, "KEPLER");
+  check(keplerState && keplerState->sovereignty.id == "faction.commonwealth" &&
+        keplerFood->ownerId == "authority.kepler" && keplerOre->ownerId == "corp.orion" &&
+        keplerFood->ownerId != keplerState->sovereignty.id &&
+        keplerOre->ownerId != keplerState->sovereignty.id,
+        "structure and market ownership remain distinct from political sovereignty");
   check(economy::npcSellPrice(*keplerFood, PricingPolicy::productionLike) == 20 &&
         economy::npcSellPrice(*cinderFood, PricingPolicy::productionLike) == 40 &&
         economy::npcBuyPrice(*keplerOre, PricingPolicy::productionLike) == 60,

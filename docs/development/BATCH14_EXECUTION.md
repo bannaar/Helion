@@ -1,6 +1,206 @@
-# Batch 14 v0.17 execution record
+# Batch 14 v0.20 execution record
 
-This file is the live implementation record for Batch 14. The repository-local
+## Current recovery continuation — 2026-10-15/16
+
+This section is the current implementation record. The v0.17 material below is
+retained as explicitly superseded historical evidence, not a current milestone
+status or canon specification. The controlling scope is the user's v0.20
+recovery/resume instruction: finish and checkpoint M3, report, then stop before
+further M4 implementation. Batch 14 as a whole is **not complete**.
+
+### Recovery and preservation
+
+- Independently verified branch `batch14/implementation-v0.11`, starting HEAD
+  `3764db1e602a1022cbd44ce032076b9c297add36`, five commits ahead of the local
+  `origin/batch14/implementation-v0.11` tracking ref at `280c0b0`. No remote
+  operation was performed. The initial tracked working tree and index were clean.
+- Preserved `e9edfe0` (M3 topology/security), `80454d3` (M3 persistence/query),
+  `5ed7772` (M4 bounded binary foundation), `b19f08a`, and `3764db1` unchanged.
+- `b19f08a` is mixed recovery work: M3's 90-system/133-gate registry, Aurelian
+  faction, profiles, resources/economy metadata and migration; plus M4 binary
+  negotiation, native client/server integration and TLS coverage.
+- `3764db1` adds the M4 protocol benchmark only. M4 remains preserved WIP,
+  including the committed binary foundation and later negotiation/typed
+  input/flight/replay protection. Its completion has not been claimed here.
+- The full-history recovery bundle
+  `~/Desktop/HELION_PRE_RESUME_2026-10-15_171006.bundle` was verified again and
+  remains untouched. `.agents/` contains a plugin marketplace manifest;
+  `plugins/` contains plugin manifests, skills, hooks and utilities. These are
+  development-tool infrastructure, not native runtime dependencies. Their exact
+  creating process cannot be proven from Git; contents identify their purpose.
+  Both remain untracked, unchanged, and excluded from checkpoint staging. No
+  `.gitignore` policy change is necessary to complete M3.
+- The recovered infrastructure serialization already used
+  `STATION,WAREHOUSE,GATEWATCH,EXTRACTION,OUTPOST`; that historical repair was
+  retained rather than repeated.
+
+### Canon and implemented M3 scope
+
+Reconciliation uses the user's v0.20 contract and the Desktop references
+`HELION_World_Bible_draftcomp7.txt` (SHA-256
+`2270345d1c7e566fda1941b06d45472a43a32dfa32607c23d4604f8b045b7c69`)
+and `HELION_CANON_CHANGELOG_AI_SYNC_v0.20.txt` (SHA-256
+`cf5add4ab8cf6439302a6430ccd0b0cf12396f0ef4e5907cd8934b46a7c0289a`).
+The present is 1087 AS, exactly 900 years after the 187 AS Severance. IGG is a
+non-sovereign treaty/service framework with coequal INSA, Gatewatch and GDF
+arms. GSC, UniNet, Crownspire, Ironstar Forge, Verdance, Riftspace and ASA /
+Adaptive Technology are current terminology. Broader old UI/lore terminology
+outside M3 is deferred; compatibility-sensitive IDs are retained.
+
+| Authoritative Known Space allocation | Systems |
+| --- | ---: |
+| Helion Commonwealth | 27 |
+| Solar Directorate | 25 |
+| Free Systems Compact | 25 |
+| Meridian League | 23 |
+| Aurelian Synod | 20 |
+| Faction-controlled subtotal | 120 |
+| Zero Space | 80 |
+| Total | 200 |
+
+The existing `native/shared/galaxy.*` authority is extended in place. All 90
+recovered system IDs and 133 gate edges remain. The registry now contains 200
+systems, 16 regions and 265 undirected permanent gates, including six protected
+inter-faction trunks. Every system and each faction territory is connected.
+Remote pockets are isolated by chokepoints, not accidentally unreachable.
+Crownspire is the Commonwealth capital display name; `CONCORDIA` remains its
+stable save/topology ID.
+
+Six new Zero Space regions add 52 systems: Lantern Corridor (9), Ashen Basin
+(9), Night Pockets (9), Blackwater Choke (9), Far Wilds (8), Cinder Cluster (8).
+Lantern/Blackwater form a dangerous through-route to the Directorate border;
+Ashen is a resource ring with one entrance; Night has two small pockets and a
+blind spur; Far Wilds branches into remote dead ends; Cinder is internally
+cyclic behind a single entry. Existing frontier routes and faction backwaters
+remain. The initial sovereignty graph has 21 derived borders.
+
+All systems retain population, settlement scale, traffic, celestial counts,
+infrastructure, resource families and production/consumption metadata. New
+food, industrial, research, military, logistics and extraction systems have
+distinct roles. Uninhabited systems have resource potential but no invented
+active production. M2's existing station markets remain the live economy;
+galaxy-wide extraction, manufacturing and transport simulation is deferred.
+
+Security remains integer `-25..25`, exactly 0.2 per step: positive High,
+negative Low, zero Zero Space. All 120 major-faction systems are nonzero;
+all 80 Zero Space systems are 0.0. `SpaceDomain` is a separate field; Riftspace,
+Unknown Space and Deep Unknown are outside this registry. The internal
+`nullSecurity` alias and `setNullSovereignty` name remain compatibility seams.
+Bounded server-side security/sovereignty mutations and crime/response query
+policies remain; full GDF/INSA/Gatewatch fleet AI is deferred. System sovereignty
+does not derive from station/market ownership, with a Kepler/Orion regression
+test proving that distinction.
+
+Per-commander knowledge is persistent and separate from physical state.
+`UNDETECTED -> DETECTED -> CLASSIFIED -> LOCATED -> SURVEYED` advances one stage
+at a time through a server-side helper. Early stages expose contact handles,
+not descriptive IDs; full profiles require SURVEYED. GALAXY uses the
+authenticated profile and omits hidden systems and gates/borders with unknown
+endpoints. Territory summaries are also filtered if their capital or commerce
+hub is unknown to that commander. Existing `systems`, `gates`, `borders` query keys remain, counting
+visible rows; new explicit total/knowledge fields distinguish the public
+200-system total. `class=ZERO_SPACE` replaces the former WIP `class=NULL`
+metadata label; TLS framing and binary negotiation versions are unchanged.
+Legacy public charting seeds initial knowledge only. Gameplay discovery
+acquisition, physical anomaly instances, survey trading and Commander/API
+transport remain deferred.
+
+Persistence keeps the existing atomic, owner-only, environment-bound store.
+Exact historical 28- and 90-ID sets expand to 200 deterministically; old
+security, sovereignty, location, credentials, ships, modules, balances and
+telemetry survive. New metadata comes from canonical seeds, never invented
+historical counters. A `V\tGALAXY_KNOWLEDGE\t1` marker distinguishes complete
+current saves from legacy saves; each commander has exactly 200 `D` records.
+The final `Z\tGALAXY_END` record checks the system, commander and total record
+counts. Truncation or omitted ship/economy records cannot silently invoke a
+legacy reconstruction path. This is structural integrity checking, not a
+cryptographic signature against an operator who deliberately rewrites a save.
+Unknown versions, duplicates, malformed/trailing fields, partial galaxies,
+partial/missing knowledge blocks and environment mismatches fail before
+replacing the save. Legacy knowledge is seeded after all physical rows load,
+independent of row order. Commander serialization is sorted for repeatable
+snapshots. Older binaries cannot load the new additive records; restore the
+pre-upgrade backup when deliberately rolling back a server binary.
+
+The server integration fixture now waits for two authoritative `COMBAT STATUS`
+ready samples instead of assuming a fixed wall-clock sleep expires cooldown.
+A Release rerun exposed the old timing assumption. The initial attempted wait
+incorrectly inspected `FLIGHT` data, which does not contain weapon cooldown;
+the final helper parses the actual combat-status extension from a side-effect-free
+rejected target request (ordinary FLIGHT responses do not always include it).
+Damage, cooldown, reward and persistence-rollback assertions remain unchanged.
+
+### Current milestone status and validation
+
+| Milestone | Current state |
+| --- | --- |
+| M0–M2 | Existing implemented foundations preserved and regression-tested |
+| M3 | Complete: implemented and validated at the v0.20 200-system foundation scope |
+| M4 | Preserved partial implementation/WIP; no new protocol expansion |
+| M5–M8 | Not started in this recovery continuation |
+| M9 | Batch-wide completion remains pending later milestones |
+
+Final validation after the persistence, visibility and timing repairs:
+
+| Configuration / gate | Result |
+| --- | --- |
+| Combined Debug, warnings as errors, `/tmp/helion-b14-debug` | Build passed; full CTest **26/26**, 182.94 s |
+| Server Debug ASan/UBSan, warnings as errors, `/tmp/helion-b14-sanitize` | Build passed; full CTest **16/16**, 66.97 s; no sanitizer/leak diagnostics |
+| Server-only Release, warnings as errors, `/tmp/helion-b14-server` | Build passed; full CTest **16/16**, 55.09 s |
+| Client-only Release, warnings as errors, `/tmp/helion-b14-client` | Build passed; full CTest **18/18**, 13.71 s |
+| Release live TLS repeat (`--repeat until-fail:2`) | Both additional runs passed, 78.08 s total |
+| Combined, server-only and client-only packages | All six TGZ/DEB artifacts generated successfully |
+| Whitespace / patch integrity | `git diff --check` passed |
+
+Commands were `cmake --build <build-dir> --parallel 3`,
+`ctest --test-dir <build-dir> --output-on-failure`, and
+`cpack --config <build-dir>/CPackConfig.cmake -B <build-dir>/packages`.
+The full Debug suite includes galaxy, economy, security, environment/data-lock,
+text and binary protocol compatibility, live TLS/server integration, the new
+28/90-to-200 persistence/migration/isolation/corruption gate, installed-launcher
+smoke, core gameplay, graphical acceptance, core render states and renderer
+fallback. The sanitizer build includes the actual server integration and live
+migration processes, with AddressSanitizer/UndefinedBehaviorSanitizer enabled
+and no environment override disabling leak detection. CTest logs are under
+each build's `Testing/Temporary/` directory; packages are under `packages/`.
+
+Earlier restricted invocations failed because sockets/X11 were unavailable or
+LeakSanitizer encountered ptrace confinement. Unrestricted reruns passed.
+Those failures were not concurrency capacity failures, despite an initial
+progress-message hypothesis. Later Release and intermediate test-helper
+failures are explained above and were repaired before these final green runs.
+There are no unexplained final gate failures.
+
+The Codex Security diff workflow completed scan
+`67e8e348-aa1d-4465-a4f5-b6793159eddc` with no reportable findings on its selected
+earlier patch. It records a changed-working-tree warning and is not evidence
+for subsequent edits. Final direct source review covered `saveStateLocked`,
+`loadState`, the authenticated GALAXY handler, `validateGalaxy`, knowledge
+validation/progression and `authorizedSystemLine`. That review closed missing
+record detection and hidden-capital disclosure gaps. The live malformed-save
+and viewer-isolation tests exercise those boundaries, including source-file
+preservation on failure. No outstanding M3 security issue was identified by
+that review; this is not a claim of exhaustive independent assurance. Tool
+infrastructure was explicitly excluded. No independent delegated review ran.
+
+### Checkpoint boundary and explicit deferrals
+
+The local M3 checkpoint extends the five preserved commits; it does not rewrite
+history or publish remotely. Only M3 source, tests and this execution record
+belong in that checkpoint. `.agents/` and `plugins/` remain outside it.
+
+Advanced enforcement fleets, discovery acquisition gameplay/physical anomaly
+instances, survey trading, galaxy-wide production/logistics simulation,
+Commander/player APIs and TEST administration remain deferred. The new
+knowledge persistence and filtered read model are implemented, not the entire
+future discovery gameplay loop. Compatibility-sensitive IDs remain; broader
+legacy UI/lore renaming is outside this M3 patch. The next milestone is M4,
+beginning with review of the preserved binary negotiation/typed-traffic and
+benchmark foundation. Stop for the user's M3 review before expanding it.
+
+## Historical v0.17 record (superseded)
+
+The following was the live implementation record at v0.17. The repository-local
 `HELION_Batch14_Prompt_v0.11.txt` and `HELION_Codex_Goal_v0.11.txt` remain the
 baseline contract. The user-supplied
 `HELION_Batch14_Prompt_v0.17_integrated.txt` (SHA-256

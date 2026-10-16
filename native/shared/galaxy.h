@@ -9,10 +9,12 @@
 
 namespace helion::galaxy {
 
-enum class SecurityClass { high, nullSecurity, low };
+enum class SpaceDomain { knownSpace, riftspace, unknownSpace, deepUnknown };
+enum class SecurityClass { high, zeroSpace, low, nullSecurity = zeroSpace };
 enum class LowSecurityBand { none, supported, deep, extreme };
 enum class SovereignType { npcFaction, playerGuild, playerAlliance, unclaimed };
 enum class DiscoveryState { unknown, charted };
+enum class KnowledgeLevel { undetected, detected, classified, located, surveyed };
 enum class RouteClass { majorInterfactionTrunk, factionCore, secondary, frontier, backwater };
 enum class SettlementScale { uninhabited, outpost, colony, established, metropolitan };
 enum class StellarType { redDwarf, orangeDwarf, yellowDwarf, whiteStar, binary, neutronStar };
@@ -113,6 +115,7 @@ struct SystemDefinition {
   DiscoveryState initialDiscovery = DiscoveryState::charted;
   SystemRole roles = SystemRole::none;
   bool futurePlayerInfrastructureEligible = false;
+  SpaceDomain domain = SpaceDomain::knownSpace;
 };
 
 struct SystemProfile {
@@ -138,10 +141,15 @@ struct SystemState {
   DiscoveryState discovery = DiscoveryState::charted;
 };
 
+struct KnowledgeRecord {
+  std::string systemId;
+  KnowledgeLevel level = KnowledgeLevel::undetected;
+};
+
 struct GateConnection {
-  std::string_view id;
-  std::string_view firstSystemId;
-  std::string_view secondSystemId;
+  std::string id;
+  std::string firstSystemId;
+  std::string secondSystemId;
   RouteClass routeClass = RouteClass::secondary;
 };
 
@@ -166,11 +174,12 @@ struct SecurityResponsePolicy {
   bool occasionalGdfExpedition = false;
 };
 
-inline constexpr std::size_t kRegionCount = 10;
-inline constexpr std::size_t kSystemCount = 90;
+inline constexpr std::size_t kRegionCount = 16;
+inline constexpr std::size_t kSystemCount = 200;
 inline constexpr std::size_t kFactionTerritoryCount = 5;
-inline constexpr std::size_t kGateConnectionCount = 133;
+inline constexpr std::size_t kGateConnectionCount = 265;
 using GalaxyState = std::array<SystemState, kSystemCount>;
+using KnowledgeState = std::array<KnowledgeRecord, kSystemCount>;
 
 const std::array<RegionDefinition, kRegionCount>& regions();
 const std::array<SystemDefinition, kSystemCount>& systems();
@@ -193,10 +202,13 @@ LowSecurityBand lowSecurityBand(int steps);
 SecurityResponsePolicy responsePolicy(int steps);
 
 const char* securityClassName(SecurityClass value);
+const char* spaceDomainName(SpaceDomain value);
 const char* sovereignTypeName(SovereignType value);
 std::optional<SovereignType> parseSovereignType(std::string_view value);
 const char* discoveryStateName(DiscoveryState value);
 std::optional<DiscoveryState> parseDiscoveryState(std::string_view value);
+const char* knowledgeLevelName(KnowledgeLevel value);
+std::optional<KnowledgeLevel> parseKnowledgeLevel(std::string_view value);
 const char* routeClassName(RouteClass value);
 const char* settlementScaleName(SettlementScale value);
 const char* stellarTypeName(StellarType value);
@@ -209,6 +221,11 @@ bool produces(const SystemProfile& profile, CommodityFamily commodity);
 bool consumes(const SystemProfile& profile, CommodityFamily commodity);
 
 GalaxyState seedState();
+KnowledgeState seedKnowledge(const GalaxyState& state);
+const KnowledgeRecord* findKnowledge(const KnowledgeState& state, std::string_view systemId);
+KnowledgeRecord* findKnowledge(KnowledgeState& state, std::string_view systemId);
+bool validateKnowledge(const KnowledgeState& knowledge);
+bool advanceKnowledge(KnowledgeState& knowledge, std::string_view systemId, KnowledgeLevel next);
 bool validateSovereignty(int securitySteps, const Sovereignty& sovereignty);
 bool validateGalaxy(const GalaxyState& state);
 bool setSecurity(GalaxyState& state, std::string_view systemId, int securitySteps);
@@ -223,6 +240,9 @@ bool canHostFuturePlayerInfrastructure(const SystemDefinition& definition,
                                        const SystemState& state);
 
 std::string systemLine(const SystemDefinition& definition, const SystemState& state);
+std::optional<std::string> authorizedSystemLine(const SystemDefinition& definition,
+                                                const SystemState& state,
+                                                const KnowledgeRecord& knowledge);
 std::string territoryLine(const FactionTerritory& territory);
 std::string gateLine(const GateConnection& connection);
 std::string borderLine(const Border& border);

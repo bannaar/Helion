@@ -109,6 +109,8 @@ if(HELION_BUILD_TESTS)
   add_executable(helion_protocol_benchmark tests/protocol_benchmark.cpp)
   target_link_libraries(helion_protocol_benchmark PRIVATE helion_protocol)
   target_compile_options(helion_protocol_benchmark PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME helion_protocol_benchmark COMMAND helion_protocol_benchmark)
+  set_tests_properties(helion_protocol_benchmark PROPERTIES TIMEOUT 60)
   if(HELION_BUILD_SERVER)
     add_executable(helion_environment_tests tests/environment_tests.cpp)
     target_link_libraries(helion_environment_tests PRIVATE helion_security)
@@ -135,6 +137,9 @@ if(HELION_BUILD_TESTS)
     add_test(NAME helion_tls_integration COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/tls_integration.py ${tls_test_arguments})
     set_tests_properties(helion_tls_integration PROPERTIES TIMEOUT 90 RESOURCE_LOCK helion_gameplay_integration)
+    add_test(NAME helion_binary_tls_integration COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/binary_tls_integration.py --server $<TARGET_FILE:helion_server>)
+    set_tests_properties(helion_binary_tls_integration PROPERTIES TIMEOUT 90 RESOURCE_LOCK helion_gameplay_integration)
     add_test(NAME helion_galaxy_persistence COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/galaxy_persistence.py --server $<TARGET_FILE:helion_server>)
     set_tests_properties(helion_galaxy_persistence PROPERTIES TIMEOUT 90 RESOURCE_LOCK helion_gameplay_integration)
@@ -158,10 +163,20 @@ if(HELION_BUILD_TESTS AND HELION_BUILD_SERVER AND HELION_BUILD_CLIENT)
     --cert-helper ${CMAKE_CURRENT_SOURCE_DIR}/scripts/helion-dev-cert)
   set_tests_properties(helion_graphical_acceptance PROPERTIES TIMEOUT 240
     RESOURCE_LOCK "helion_graphics_display;helion_gameplay_integration")
+  add_test(NAME helion_graphical_legacy_acceptance COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/graphical_acceptance.py
+    --server $<TARGET_FILE:helion_server> --client $<TARGET_FILE:helion_client>
+    --cert-helper ${CMAKE_CURRENT_SOURCE_DIR}/scripts/helion-dev-cert --legacy-protocol)
+  set_tests_properties(helion_graphical_legacy_acceptance PROPERTIES TIMEOUT 240
+    RESOURCE_LOCK "helion_graphics_display;helion_gameplay_integration")
 endif()
 
 if(HELION_BUILD_TESTS AND HELION_BUILD_CLIENT)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  find_program(HELION_OPENSSL_EXECUTABLE openssl REQUIRED)
+  add_test(NAME helion_client_protocol_integration COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/client_protocol_integration.py --client $<TARGET_FILE:helion_client>)
+  set_tests_properties(helion_client_protocol_integration PROPERTIES TIMEOUT 120 RESOURCE_LOCK helion_graphics_display)
   add_test(NAME helion_core_render_states COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core_render_states.py --client $<TARGET_FILE:helion_client>)
   set_tests_properties(helion_core_render_states PROPERTIES TIMEOUT 120 RESOURCE_LOCK helion_graphics_display)

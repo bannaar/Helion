@@ -182,9 +182,11 @@ def main():
                     receive_until(secure, b'OK CREATED user=environmentpilot')
                     secure.sendall(b'QUIT\n')
             if args.client:
-                commands = '/create tls_pilot synthetic-password TLS Pilot\n/profile\n/quit\n'
+                commands = '/protocol BINARY 1\n/create tls_pilot synthetic-password TLS Pilot\n/profile\n/quit\n'
                 good = run([args.client, '127.0.0.1', str(port), '--ca', str(cert), '--terminal'], input=commands)
                 assert 'OK CREATED user=tls_pilot' in good.stdout and 'PROFILE user=tls_pilot' in good.stdout
+                assert 'Terminal compatibility mode uses bounded legacy text' in good.stdout
+                assert 'OK PROTOCOL BINARY' not in good.stdout
                 for trust in (other, None):
                     command = [args.client, '127.0.0.1', str(port), '--terminal']
                     if trust:

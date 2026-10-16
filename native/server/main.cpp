@@ -930,8 +930,12 @@ thread_local std::uint32_t responseRequestId = 0;
 
 class ResponseRequestScope {
  public:
-  explicit ResponseRequestScope(std::uint32_t requestId) { responseRequestId = requestId; }
-  ~ResponseRequestScope() { responseRequestId = 0; }
+  explicit ResponseRequestScope(std::uint32_t requestId) : previous_(responseRequestId) {
+    responseRequestId = requestId;
+  }
+  ~ResponseRequestScope() { responseRequestId = previous_; }
+ private:
+  std::uint32_t previous_;
 };
 
 bool sendLine(int fd, const std::string& line) {
@@ -1046,6 +1050,8 @@ void appendFlightState(std::vector<OutboundResponse>& responses, Profile& profil
 }
 
 void broadcast(const std::string& line) {
+  // Broadcasts are unsolicited on every recipient, not replies to the sender's sequence.
+  ResponseRequestScope unsolicited(0);
   std::vector<int> recipients;
   {
     std::lock_guard<std::mutex> lock(stateMutex);
@@ -1143,20 +1149,20 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
       helion::protocol::Frame frame;
       std::uint32_t requestId = 0;
       std::optional<helion::protocol::Request> parsedRequest;
+      std::string terminalError;
     };
     std::vector<IncomingFrame> incoming;
     if (binaryMode) {
       for (const auto& event : binaryDecoder.feed(
              std::string_view(bytes, static_cast<std::size_t>(received)))) {
         if (event.kind != helion::protocol::binary::DecodeKind::frame) {
-          sendLine(fd, std::string("ERR ") + helion::protocol::binary::decodeKindName(event.kind));
-          running = false;
+          incoming.push_back({{helion::protocol::FrameKind::malformed, {}}, 0, std::nullopt,
+            std::string("ERR ") + helion::protocol::binary::decodeKindName(event.kind)});
           break;
         }
         if (event.frame.requestId == 0 || event.frame.requestId <= lastBinaryRequestId) {
-          ResponseRequestScope responseScope(event.frame.requestId);
-          sendLine(fd, "ERR replayed-request");
-          running = false;
+          incoming.push_back({{helion::protocol::FrameKind::malformed, {}}, event.frame.requestId,
+            std::nullopt, "ERR replayed-request"});
           break;
         }
         lastBinaryRequestId = event.frame.requestId;
@@ -1164,9 +1170,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           const auto input = helion::protocol::binary::decodeInputPayload(std::string_view(
             reinterpret_cast<const char*>(event.frame.payload.data()), event.frame.payload.size()));
           if (!input) {
-            ResponseRequestScope responseScope(event.frame.requestId);
-            sendLine(fd, "ERR malformed-input");
-            running = false;
+            incoming.push_back({{helion::protocol::FrameKind::malformed, {}}, event.frame.requestId,
+              std::nullopt, "ERR malformed-input"});
             break;
           }
           helion::protocol::Request request;
@@ -1175,26 +1180,37 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           request.turn = input->turn;
           request.brake = input->brake;
           incoming.push_back({{helion::protocol::FrameKind::line, "INPUT"},
-                              event.frame.requestId, std::move(request)});
+                              event.frame.requestId, std::move(request), {}});
           continue;
         }
         if (event.frame.type != helion::protocol::binary::MessageType::textRequest) {
-          ResponseRequestScope responseScope(event.frame.requestId);
-          sendLine(fd, "ERR invalid-message-direction");
-          running = false;
+          incoming.push_back({{helion::protocol::FrameKind::malformed, {}}, event.frame.requestId,
+            std::nullopt, "ERR invalid-message-direction"});
           break;
         }
         std::string line(event.frame.payload.begin(), event.frame.payload.end());
+        if (!helion::protocol::validWireLine(line)) {
+          incoming.push_back({{helion::protocol::FrameKind::malformed, {}}, event.frame.requestId,
+            std::nullopt, "ERR malformed-message"});
+          break;
+        }
         incoming.push_back({{helion::protocol::FrameKind::line, std::move(line)},
-                            event.frame.requestId, std::nullopt});
+                            event.frame.requestId, std::nullopt, {}});
       }
     } else {
       for (auto& frame : decoder.feed(std::string_view(bytes, static_cast<std::size_t>(received))))
-        incoming.push_back({std::move(frame), 0, std::nullopt});
+        incoming.push_back({std::move(frame), 0, std::nullopt, {}});
     }
     for (const auto& incomingFrame : incoming) {
       const auto& frame = incomingFrame.frame;
       ResponseRequestScope responseScope(incomingFrame.requestId);
+      // Commit valid prefixes and emit their replies before a terminal error,
+      // independent of TLS read segmentation. Never dispatch trailing frames.
+      if (!incomingFrame.terminalError.empty()) {
+        sendLine(fd, incomingFrame.terminalError);
+        running = false;
+        break;
+      }
       lastCompleteLine = now;
       if (frame.kind != helion::protocol::FrameKind::line) {
         sendLine(fd, frame.kind == helion::protocol::FrameKind::too_long ? "ERR line-too-long" : "ERR malformed-message");
@@ -1209,7 +1225,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             std::to_string(helion::protocol::binary::kVersion));
           continue;
         }
-        if (incoming.size() != 1 || !enableBinaryTransport(fd)) {
+        if (incoming.size() != 1 || !decoder.atMessageBoundary() || !enableBinaryTransport(fd)) {
           sendLine(fd, "ERR protocol-negotiation-failed");
           running = false;
           break;

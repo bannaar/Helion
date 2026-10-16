@@ -50,6 +50,22 @@ int main() {
   binary::Decoder truncated;
   check(truncated.feed(std::string_view(encoded->data(), 7)).empty() &&
         truncated.finish() && truncated.failed(), "truncated header fails closed at end of stream");
+  for (std::size_t split = 0; split <= encoded->size(); ++split) {
+    binary::Decoder fragmented;
+    auto first = fragmented.feed(std::string_view(*encoded).substr(0, split));
+    auto second = fragmented.feed(std::string_view(*encoded).substr(split));
+    check(first.size() + second.size() == 1 && !fragmented.finish() && !fragmented.failed(),
+          "every header/payload fragmentation boundary yields exactly one complete frame");
+    if (split > 0 && split < encoded->size()) {
+      binary::Decoder incomplete;
+      check(incomplete.feed(std::string_view(*encoded).substr(0, split)).empty(),
+            "incomplete header or payload never emits a request");
+      const auto end = incomplete.finish();
+      check(end && end->kind == DecodeKind::truncated && incomplete.failed() &&
+            incomplete.bufferedBytes() == 0 && incomplete.feed(*encoded).empty() && !incomplete.finish(),
+            "truncation failure is terminal and releases buffered bytes");
+    }
+  }
 
   auto corrupt = [&](std::size_t index, unsigned char value, DecodeKind expected) {
     std::string bytes = *encoded;
@@ -60,8 +76,12 @@ int main() {
           decoder.bufferedBytes() == 0, "invalid binary header fails without retained payload");
   };
   corrupt(0, 'X', DecodeKind::invalidMagic);
+  corrupt(1, 'X', DecodeKind::invalidMagic);
+  corrupt(2, 0, DecodeKind::incompatibleVersion);
   corrupt(2, binary::kVersion + 1, DecodeKind::incompatibleVersion);
   corrupt(3, 255, DecodeKind::invalidMessageType);
+  corrupt(3, 0, DecodeKind::invalidMessageType);
+  corrupt(4, 1, DecodeKind::invalidFlags);
   corrupt(5, 1, DecodeKind::invalidFlags);
   corrupt(6, 1, DecodeKind::oversizedPayload);
   check(std::string(binary::decodeKindName(DecodeKind::incompatibleVersion)) == "CLIENT_UPDATE_REQUIRED",
@@ -76,10 +96,29 @@ int main() {
   events = maximumDecoder.feed(*maximum);
   check(events.size() == 1 && events[0].frame.payload.size() == binary::kMaxPayload &&
         maximumDecoder.bufferedBytes() == 0, "maximum bounded payload round-trips");
+  auto overMaximum = *maximum;
+  overMaximum[9] = 1; // 4097, not merely an obviously enormous length.
+  binary::Decoder orderedFailure;
+  events = orderedFailure.feed(*text + overMaximum + *text);
+  check(events.size() == 2 && events[0].kind == DecodeKind::frame &&
+        events[1].kind == DecodeKind::oversizedPayload && orderedFailure.feed(*text).empty(),
+        "a valid prefix precedes the terminal error and no trailing frame escapes failure");
+  check(!binary::encodeFrame(static_cast<MessageType>(255), 1, "") &&
+        !binary::encodeFrame(MessageType::textRequest, 1, "", 1),
+        "encoder rejects unknown types and reserved flags");
 
   check(!binary::decodeInputPayload(std::string("\1\2\0", 3)) &&
         !binary::decodeInputPayload(std::string("\1\0", 2)) &&
         binary::encodeInputPayload({2, 0, 0}).empty(), "malformed input fields reject");
+  for (int byte = 0; byte < 256; ++byte) {
+    for (std::size_t field = 0; field < 3; ++field) {
+      std::string payload(3, '\0');
+      payload[field] = static_cast<char>(byte);
+      const bool valid = field == 1 ? byte == 0 || byte == 1 || byte == 255 : byte <= 1;
+      check(binary::decodeInputPayload(payload).has_value() == valid,
+            "every possible byte in every typed input field has defined acceptance");
+    }
+  }
 
   helion::flight::State flight;
   flight.x = 123.125; flight.y = -456.5; flight.vx = 12.25; flight.vy = -9.5;
@@ -99,6 +138,41 @@ int main() {
         "flight snapshot uses explicit fixed-width fields and preserves authoritative state");
   check(!binary::decodeFlightSnapshotPayload(flightPayload->substr(1), restored, credits, experience),
         "malformed flight payload length rejects");
+  const auto rejectFlight = [&](std::string payload) {
+    const auto previous = restored;
+    const int previousCredits = credits, previousExperience = experience;
+    check(!binary::decodeFlightSnapshotPayload(payload, restored, credits, experience) &&
+          restored.x == previous.x && restored.fuel == previous.fuel && restored.hull == previous.hull &&
+          credits == previousCredits && experience == previousExperience,
+          "malformed binary state rejects atomically without partially replacing client state");
+  };
+  for (const auto index : {36u, 56u}) {
+    auto bad = *flightPayload;
+    bad[index] = 2;
+    rejectFlight(bad);
+  }
+  auto badStation = *flightPayload;
+  badStation[51] = static_cast<char>(255);
+  rejectFlight(badStation);
+  for (const auto index : {39u, 43u}) {
+    auto badInteger = *flightPayload;
+    badInteger[index] = static_cast<char>(255);
+    rejectFlight(badInteger);
+  }
+  for (std::size_t index = 0; index < 36; index += 4) {
+    auto nonfinite = *flightPayload;
+    nonfinite[index] = 0x7f;
+    nonfinite[index + 1] = static_cast<char>(0xc0); // quiet NaN in each float field
+    nonfinite[index + 2] = nonfinite[index + 3] = 0;
+    rejectFlight(nonfinite);
+  }
+  flight.cooldown = 1.251;
+  flight.yaw = helion::flight::kPi + 0.001;
+  const auto boundary = binary::encodeFlightSnapshotPayload(flight, std::numeric_limits<int>::max(), 0);
+  check(boundary && binary::decodeFlightSnapshotPayload(*boundary, restored, credits, experience) &&
+        restored.cooldown <= 1.251 && restored.yaw <= helion::flight::kPi + 0.001 &&
+        credits == std::numeric_limits<int>::max(),
+        "float narrowing does not push valid boundary states out of the decoder's domain");
   flight.x = std::numeric_limits<double>::quiet_NaN();
   check(!binary::encodeFlightSnapshotPayload(flight, 1, 1), "nonfinite flight values reject");
 

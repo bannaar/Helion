@@ -99,7 +99,9 @@ int terminalClient(int fd, helion::tls::Connection& connection) {
       else for(int i=0;i<n;++i) {
         if(bytes[i]=='\n') {
           const auto request=commandLine(typed); typed.clear();
-          if(helion::protocol::parseRequest(request).command==helion::protocol::Command::invalid)
+          if(helion::protocol::parseRequest(request).command==helion::protocol::Command::protocol)
+            std::cout<<"Terminal compatibility mode uses bounded legacy text; binary negotiation is reserved for the graphical client\n";
+          else if(helion::protocol::parseRequest(request).command==helion::protocol::Command::invalid)
             std::cout<<"Unknown or malformed command\n";
           else {
             if(request=="QUIT") quitQueued=true;
@@ -422,7 +424,7 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
 
 int main(int argc,char** argv) {
   std::signal(SIGPIPE, SIG_IGN);
-  bool renderCheck=false, graphicsInfo=false, terminal=false, acceptanceRun=false;
+  bool renderCheck=false, graphicsInfo=false, terminal=false, acceptanceRun=false, legacyProtocol=false;
   helion::graphics::RendererMode rendererMode = helion::graphics::RendererMode::auto_mode;
   std::string host="127.0.0.1", port="4242", caFile, renderPath, renderState="combat";
   std::string acceptanceDirectory, acceptancePhase="journey", coreFault;
@@ -433,6 +435,7 @@ int main(int argc,char** argv) {
     for(int i=1;i<argc;++i) {
       const std::string arg=argv[i];
       if(arg=="--terminal") terminal=true;
+      else if(arg=="--legacy-protocol") legacyProtocol=true;
       else if(arg=="--graphics-info") graphicsInfo=true;
       else if(arg=="--renderer" && i+1<argc) {
         if(!helion::graphics::parseRendererMode(argv[++i],rendererMode))
@@ -469,7 +472,7 @@ int main(int argc,char** argv) {
       else throw std::runtime_error("too many arguments");
     }
   } catch(const std::exception& error) {
-    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info] [--renderer auto|legacy|core] [--render-check path --render-state state --render-size width height]\n"; return 2;
+    std::cerr<<error.what()<<"\nUsage: helion_client [host] [port] [--ca certificate.pem] [--terminal|--graphics-info] [--legacy-protocol] [--renderer auto|legacy|core] [--render-check path --render-state state --render-size width height]\n"; return 2;
   }
   if (acceptanceRun) {
     const char* enabled = std::getenv("HELION_ACCEPTANCE");
@@ -621,6 +624,8 @@ int main(int argc,char** argv) {
     helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return saved?0:1;
   }
   bool running=true,greetingSeen=false,protocolReady=false,binaryMode=false,focused=true;
+  bool transportClosed = false;
+  bool negotiationSent = false;
   helion::protocol::LineDecoder decoder;
   helion::protocol::binary::Decoder binaryDecoder;
   std::string outgoing;
@@ -820,7 +825,10 @@ int main(int argc,char** argv) {
     if(view.authenticated && now-lastContacts>1.0) { view.contacts.clear(); queue("CONTACTS"); lastContacts=now; }
     if(view.connected && !outgoing.empty()) {
       const auto count=connection->write(outgoing.data(),outgoing.size());
-      if(count>0) outgoing.erase(0,static_cast<std::size_t>(count));
+      if(count>0) {
+        outgoing.erase(0,static_cast<std::size_t>(count));
+        if (greetingSeen && !protocolReady && outgoing.empty()) negotiationSent = true;
+      }
       else if(count<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR) view.connected=false;
     }
     for(int batch=0;view.connected && batch<16;++batch) {
@@ -829,175 +837,196 @@ int main(int argc,char** argv) {
         if(count==0 || (errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)) view.connected=false;
         break;
       }
-      lastReply=now;
-      struct IncomingResponse {
-        helion::protocol::Frame frame;
-        bool binaryFlight = false;
-        helion::flight::State flight;
-        int credits = 0;
-        int experience = 0;
-      };
-      std::vector<IncomingResponse> incoming;
-      if (binaryMode) {
-        for (const auto& event : binaryDecoder.feed(
-               std::string_view(bytes, static_cast<std::size_t>(count)))) {
-          if (event.kind != helion::protocol::binary::DecodeKind::frame ||
-              event.frame.requestId >= nextRequestId ||
-              (event.frame.requestId != 0 && event.frame.requestId < lastResponseRequestId)) {
-            view.connected=false; view.log.push_back("ERR malformed binary response"); break;
-          }
-          if (event.frame.requestId != 0) lastResponseRequestId = event.frame.requestId;
-          const std::string payload(event.frame.payload.begin(), event.frame.payload.end());
-          if (event.frame.type == helion::protocol::binary::MessageType::textResponse) {
-            if (!helion::protocol::validWireLine(payload)) {
-              view.connected=false; view.log.push_back("ERR malformed binary text response"); break;
+      // Before negotiation completes, consume only through each text newline.
+      // An ACK and the first binary frame can share a TLS read without loss.
+      std::size_t responseOffset = 0;
+      while (view.connected && responseOffset < static_cast<std::size_t>(count)) {
+        struct IncomingResponse {
+          helion::protocol::Frame frame;
+          bool binaryFlight = false;
+          helion::flight::State flight;
+          int credits = 0;
+          int experience = 0;
+        };
+        std::vector<IncomingResponse> incoming;
+        if (binaryMode) {
+          for (const auto& event : binaryDecoder.feed(
+                 std::string_view(bytes + responseOffset, static_cast<std::size_t>(count) - responseOffset))) {
+            if (event.kind != helion::protocol::binary::DecodeKind::frame ||
+                event.frame.requestId >= nextRequestId ||
+                (event.frame.requestId != 0 && event.frame.requestId < lastResponseRequestId)) {
+              view.connected=false; view.log.push_back("ERR malformed binary response"); break;
             }
-            IncomingResponse response;
-            response.frame = {helion::protocol::FrameKind::line, payload};
-            incoming.push_back(std::move(response));
-          } else if (event.frame.type == helion::protocol::binary::MessageType::flightSnapshot) {
-            IncomingResponse response;
-            response.frame = {helion::protocol::FrameKind::line, {}};
-            response.binaryFlight = true;
-            if (!helion::protocol::binary::decodeFlightSnapshotPayload(
-                  payload, response.flight, response.credits, response.experience)) {
-              view.connected=false; view.log.push_back("ERR malformed binary flight state"); break;
-            }
-            incoming.push_back(std::move(response));
-          } else {
-            view.connected=false; view.log.push_back("ERR invalid binary response direction"); break;
-          }
-        }
-      } else {
-        for (auto& frame : decoder.feed(std::string_view(bytes, static_cast<std::size_t>(count)))) {
-          IncomingResponse response;
-          response.frame = std::move(frame);
-          incoming.push_back(std::move(response));
-        }
-      }
-      for(auto& incomingResponse : incoming) {
-        auto& frame = incomingResponse.frame;
-        if(!greetingSeen) {
-          if(frame.kind!=helion::protocol::FrameKind::line || !helion::protocol::compatibleWelcome(frame.line)) {
-            view.log.push_back("ERR incompatible server protocol"); view.connected=false; break;
-          }
-          greetingSeen=true;
-          outgoing += "PROTOCOL BINARY " + std::to_string(helion::protocol::binary::kVersion) + "\n";
-        }
-        if(frame.kind!=helion::protocol::FrameKind::line) { view.connected=false; view.log.push_back("ERR malformed response"); break; }
-        if (frame.line == "OK PROTOCOL BINARY 1") {
-          binaryMode = true;
-          protocolReady = true;
-          view.commandReady = true;
-          continue;
-        }
-        if (!protocolReady && frame.line.rfind("ERR CLIENT_UPDATE_REQUIRED", 0) == 0) {
-          view.log.push_back(frame.line); view.connected=false; break;
-        }
-        if (!incomingResponse.binaryFlight) {
-          updatePresentationMetadata(view, frame.line);
-          updateUiFromLine(view, frame.line);
-        }
-        const auto& response = frame.line;
-        const bool genericResult = response.rfind("OK ", 0) == 0 || response.rfind("ERR ", 0) == 0;
-        const bool uiComplete = genericResult ||
-          (pendingUiAction == "PROFILE" && response.rfind("PROFILE ", 0) == 0) ||
-          (pendingUiAction == "FLIGHT" &&
-            (incomingResponse.binaryFlight || response.rfind("FLIGHT ", 0) == 0)) ||
-          (pendingUiAction == "GALNET" && response == "GALNET END") ||
-          (pendingUiAction == "CAREER" && response.rfind("CAREER ", 0) == 0) ||
-          (pendingUiAction == "OUTFIT LIST" && response.rfind("LOADOUT ", 0) == 0) ||
-          (pendingUiAction == "SHIPYARD" && response.rfind("SHIPYARD END", 0) == 0) ||
-          (pendingUiAction == "CONTACTS" && response == "CONTACTS END") ||
-          (pendingUiAction == "FIRE" && response.rfind("COMBAT HIT ", 0) == 0);
-        if (view.ui.commandPending && uiComplete) {
-          view.ui.commandPending = false;
-          pendingUiAction.clear();
-        }
-        if (incomingResponse.binaryFlight) {
-          view.ship = incomingResponse.flight;
-          view.credits = incomingResponse.credits;
-          view.experience = incomingResponse.experience;
-          if (view.ship.docked) visual = view.ship;
-        } else if(frame.line.rfind("FLIGHT ",0)==0) {
-          if(!helion::flight::readSnapshot(frame.line,view.ship,view.credits,view.experience)) {
-            view.connected=false; view.log.push_back("ERR malformed flight state"); break;
-          }
-          if(view.ship.docked) visual=view.ship;
-        } else {
-          if (frame.line.rfind("PROFILE ", 0) == 0) {
-            const auto marker = frame.line.find(" reputation=");
-            if (marker != std::string::npos) {
-              const auto start = marker + 12;
-              const auto end = frame.line.find(' ', start);
-              std::map<std::string, int> restored;
-              if (helion::organizations::parseReputationSummary(frame.line.substr(start, end - start), restored))
-                view.reputation = std::move(restored);
-            }
-          } else if (frame.line.rfind("GALNET ", 0) == 0 && frame.line != "GALNET END") {
-            const auto headline = frame.line.find(" headline=");
-            if (headline != std::string::npos) view.log.push_back("GALNET / " + frame.line.substr(headline + 10));
-          }
-          const bool fuelFrame = helion::flight::readFuelLine(frame.line, view.ship);
-          const bool combatStatus = helion::flight::readCombatStatus(frame.line, view.ship);
-          helion::flight::Contact contact;
-          if (fuelFrame || combatStatus) {
-            // Fuel is an additive frame so older clients can still parse FLIGHT snapshots.
-          } else if (helion::flight::readContact(frame.line, contact)) {
-            view.contacts.push_back(std::move(contact));
-          } else if (frame.line == "CONTACTS END") {
-            // Contact frames are replaced atomically once the stream terminates.
-            const auto selected = std::find_if(view.contacts.begin(), view.contacts.end(),
-              [&view](const auto& item) { return item.hostile && item.id == view.targetId; });
-            if (selected == view.contacts.end()) {
-              const auto firstHostile = std::find_if(view.contacts.begin(), view.contacts.end(),
-                [](const auto& item) { return item.hostile; });
-              view.targetId = firstHostile == view.contacts.end() ? std::string{} : firstHostile->id;
-            }
-            view.log.push_back("CONTACTS / "+std::to_string(view.contacts.size())+" IN SECTOR");
-          }
-          if(frame.line.rfind("OK LOGIN",0)==0 || frame.line.rfind("OK CREATED",0)==0) {
-            uiInput.clearCredentials();
-            view.authenticated=true; view.console=false; view.ui.consoleOpen=false;
-            view.ui.screen = view.ship.docked ? helion::client::UiScreen::station : helion::client::UiScreen::flight;
-            view.ui.connectionStatus = "TLS VERIFIED / COMMANDER AUTHENTICATED";
-            queue("FLIGHT"); queue("PROFILE"); queue("GALNET"); queue("OUTFIT LIST"); queue("CAREER");
-          }
-          if (frame.line.rfind("OK ", 0) == 0 && frame.line.rfind("OK LOGIN",0) != 0 &&
-              frame.line.rfind("OK CREATED",0) != 0 && frame.line.rfind("OK BYE",0) != 0) {
-            queue("PROFILE"); queue("CAREER"); queue("GALNET"); queue("OUTFIT LIST");
-          }
-          if (coreMode && (frame.line.rfind("OK LAUNCHED",0) == 0)) view.ui.screen = helion::client::UiScreen::flight;
-          if (coreMode && (frame.line.rfind("OK DOCKED",0) == 0 || frame.line.rfind("OK RECOVERED",0) == 0))
-            view.ui.screen = helion::client::UiScreen::station;
-          if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
-          if(frame.line.rfind("COMBAT HIT",0)==0 || frame.line.rfind("COMBAT DESTROYED target",0)==0)
-            view.weaponUntil=now+0.28;
-          if(frame.line.rfind("COMBAT DAMAGE",0)==0 || frame.line.rfind("COMBAT DESTROYED player",0)==0)
-            view.damageUntil=now+0.55;
-          if(frame.line.rfind("OK RECOVERED",0)==0) view.damageUntil=now+0.25;
-          if(frame.line.rfind("COMBAT DESTROYED",0)==0) queue("PROFILE");
-          helion::flight::DockTransaction sale;
-          helion::flight::FuelTransaction refuel;
-          if(!fuelFrame && !combatStatus && frame.line.rfind("STATE ",0)!=0) {
-            if (helion::flight::readDockTransaction(frame.line, sale)) {
-              view.log.push_back(std::move(frame.line));
-              view.log.push_back("SALE / "+std::to_string(sale.cargoSold)+" ORE / +"+
-                                 std::to_string(sale.creditsEarned)+" CR / +"+
-                                 std::to_string(sale.experienceEarned)+" XP");
-            } else if (helion::flight::readFuelTransaction(frame.line, refuel)) {
-              view.log.push_back(std::move(frame.line));
-              view.log.push_back("REFUEL / +"+std::to_string(static_cast<int>(std::ceil(refuel.fuelAdded)))+
-                                 " FUEL / -"+std::to_string(refuel.creditsSpent)+" CR");
+            if (event.frame.requestId != 0) lastResponseRequestId = event.frame.requestId;
+            const std::string payload(event.frame.payload.begin(), event.frame.payload.end());
+            if (event.frame.type == helion::protocol::binary::MessageType::textResponse) {
+              if (!helion::protocol::validWireLine(payload)) {
+                view.connected=false; view.log.push_back("ERR malformed binary text response"); break;
+              }
+              IncomingResponse response;
+              response.frame = {helion::protocol::FrameKind::line, payload};
+              incoming.push_back(std::move(response));
+            } else if (event.frame.type == helion::protocol::binary::MessageType::flightSnapshot) {
+              IncomingResponse response;
+              response.frame = {helion::protocol::FrameKind::line, {}};
+              response.binaryFlight = true;
+              if (!helion::protocol::binary::decodeFlightSnapshotPayload(
+                    payload, response.flight, response.credits, response.experience)) {
+                view.connected=false; view.log.push_back("ERR malformed binary flight state"); break;
+              }
+              incoming.push_back(std::move(response));
             } else {
-              view.log.push_back(std::move(frame.line));
+              view.connected=false; view.log.push_back("ERR invalid binary response direction"); break;
+            }
+          }
+          responseOffset = static_cast<std::size_t>(count);
+        } else {
+          const auto fragmentSize = protocolReady ? static_cast<std::size_t>(count) - responseOffset : 1;
+          for (auto& frame : decoder.feed(std::string_view(bytes + responseOffset, fragmentSize))) {
+            IncomingResponse response;
+            response.frame = std::move(frame);
+            incoming.push_back(std::move(response));
+          }
+          responseOffset += fragmentSize;
+        }
+        for(auto& incomingResponse : incoming) {
+          lastReply=now;
+          auto& frame = incomingResponse.frame;
+          if(!greetingSeen) {
+            if(frame.kind!=helion::protocol::FrameKind::line || !helion::protocol::compatibleWelcome(frame.line)) {
+              view.log.push_back("ERR incompatible server protocol"); view.connected=false; break;
+            }
+            greetingSeen=true;
+            if (legacyProtocol) {
+              protocolReady = true;
+              view.commandReady = true;
+            } else outgoing += "PROTOCOL BINARY " + std::to_string(helion::protocol::binary::kVersion) + "\n";
+          }
+          if(frame.kind!=helion::protocol::FrameKind::line) { view.connected=false; view.log.push_back("ERR malformed response"); break; }
+          if (frame.line.rfind("OK PROTOCOL ", 0) == 0) {
+            if (frame.line != "OK PROTOCOL BINARY 1" || !negotiationSent || protocolReady || legacyProtocol) {
+              view.log.push_back("ERR unexpected protocol acknowledgement"); view.connected=false; break;
+            }
+            binaryMode = true;
+            protocolReady = true;
+            view.commandReady = true;
+            continue;
+          }
+          if (!protocolReady && frame.line.rfind("ERR ", 0) == 0) {
+            view.log.push_back(frame.line); view.connected=false; break;
+          }
+          if (!incomingResponse.binaryFlight) {
+            updatePresentationMetadata(view, frame.line);
+            updateUiFromLine(view, frame.line);
+          }
+          const auto& response = frame.line;
+          const bool genericResult = response.rfind("OK ", 0) == 0 || response.rfind("ERR ", 0) == 0;
+          const bool uiComplete = genericResult ||
+            (pendingUiAction == "PROFILE" && response.rfind("PROFILE ", 0) == 0) ||
+            (pendingUiAction == "FLIGHT" &&
+              (incomingResponse.binaryFlight || response.rfind("FLIGHT ", 0) == 0)) ||
+            (pendingUiAction == "GALNET" && response == "GALNET END") ||
+            (pendingUiAction == "CAREER" && response.rfind("CAREER ", 0) == 0) ||
+            (pendingUiAction == "OUTFIT LIST" && response.rfind("LOADOUT ", 0) == 0) ||
+            (pendingUiAction == "SHIPYARD" && response.rfind("SHIPYARD END", 0) == 0) ||
+            (pendingUiAction == "CONTACTS" && response == "CONTACTS END") ||
+            (pendingUiAction == "FIRE" && response.rfind("COMBAT HIT ", 0) == 0);
+          if (view.ui.commandPending && uiComplete) {
+            view.ui.commandPending = false;
+            pendingUiAction.clear();
+          }
+          if (incomingResponse.binaryFlight) {
+            view.ship = incomingResponse.flight;
+            view.credits = incomingResponse.credits;
+            view.experience = incomingResponse.experience;
+            if (view.ship.docked) visual = view.ship;
+          } else if(frame.line.rfind("FLIGHT ",0)==0) {
+            if(!helion::flight::readSnapshot(frame.line,view.ship,view.credits,view.experience)) {
+              view.connected=false; view.log.push_back("ERR malformed flight state"); break;
+            }
+            if(view.ship.docked) visual=view.ship;
+          } else {
+            if (frame.line.rfind("PROFILE ", 0) == 0) {
+              const auto marker = frame.line.find(" reputation=");
+              if (marker != std::string::npos) {
+                const auto start = marker + 12;
+                const auto end = frame.line.find(' ', start);
+                std::map<std::string, int> restored;
+                if (helion::organizations::parseReputationSummary(frame.line.substr(start, end - start), restored))
+                  view.reputation = std::move(restored);
+              }
+            } else if (frame.line.rfind("GALNET ", 0) == 0 && frame.line != "GALNET END") {
+              const auto headline = frame.line.find(" headline=");
+              if (headline != std::string::npos) view.log.push_back("GALNET / " + frame.line.substr(headline + 10));
+            }
+            const bool fuelFrame = helion::flight::readFuelLine(frame.line, view.ship);
+            const bool combatStatus = helion::flight::readCombatStatus(frame.line, view.ship);
+            helion::flight::Contact contact;
+            if (fuelFrame || combatStatus) {
+              // Fuel is an additive frame so older clients can still parse FLIGHT snapshots.
+            } else if (helion::flight::readContact(frame.line, contact)) {
+              view.contacts.push_back(std::move(contact));
+            } else if (frame.line == "CONTACTS END") {
+              // Contact frames are replaced atomically once the stream terminates.
+              const auto selected = std::find_if(view.contacts.begin(), view.contacts.end(),
+                [&view](const auto& item) { return item.hostile && item.id == view.targetId; });
+              if (selected == view.contacts.end()) {
+                const auto firstHostile = std::find_if(view.contacts.begin(), view.contacts.end(),
+                  [](const auto& item) { return item.hostile; });
+                view.targetId = firstHostile == view.contacts.end() ? std::string{} : firstHostile->id;
+              }
+              view.log.push_back("CONTACTS / "+std::to_string(view.contacts.size())+" IN SECTOR");
+            }
+            if(frame.line.rfind("OK LOGIN",0)==0 || frame.line.rfind("OK CREATED",0)==0) {
+              uiInput.clearCredentials();
+              view.authenticated=true; view.console=false; view.ui.consoleOpen=false;
+              view.ui.screen = view.ship.docked ? helion::client::UiScreen::station : helion::client::UiScreen::flight;
+              view.ui.connectionStatus = "TLS VERIFIED / COMMANDER AUTHENTICATED";
+              queue("FLIGHT"); queue("PROFILE"); queue("GALNET"); queue("OUTFIT LIST"); queue("CAREER");
+            }
+            if (frame.line.rfind("OK ", 0) == 0 && frame.line.rfind("OK LOGIN",0) != 0 &&
+                frame.line.rfind("OK CREATED",0) != 0 && frame.line.rfind("OK BYE",0) != 0) {
+              queue("PROFILE"); queue("CAREER"); queue("GALNET"); queue("OUTFIT LIST");
+            }
+            if (coreMode && (frame.line.rfind("OK LAUNCHED",0) == 0)) view.ui.screen = helion::client::UiScreen::flight;
+            if (coreMode && (frame.line.rfind("OK DOCKED",0) == 0 || frame.line.rfind("OK RECOVERED",0) == 0))
+              view.ui.screen = helion::client::UiScreen::station;
+            if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
+            if(frame.line.rfind("COMBAT HIT",0)==0 || frame.line.rfind("COMBAT DESTROYED target",0)==0)
+              view.weaponUntil=now+0.28;
+            if(frame.line.rfind("COMBAT DAMAGE",0)==0 || frame.line.rfind("COMBAT DESTROYED player",0)==0)
+              view.damageUntil=now+0.55;
+            if(frame.line.rfind("OK RECOVERED",0)==0) view.damageUntil=now+0.25;
+            if(frame.line.rfind("COMBAT DESTROYED",0)==0) queue("PROFILE");
+            helion::flight::DockTransaction sale;
+            helion::flight::FuelTransaction refuel;
+            if(!fuelFrame && !combatStatus && frame.line.rfind("STATE ",0)!=0) {
+              if (helion::flight::readDockTransaction(frame.line, sale)) {
+                view.log.push_back(std::move(frame.line));
+                view.log.push_back("SALE / "+std::to_string(sale.cargoSold)+" ORE / +"+
+                                   std::to_string(sale.creditsEarned)+" CR / +"+
+                                   std::to_string(sale.experienceEarned)+" XP");
+              } else if (helion::flight::readFuelTransaction(frame.line, refuel)) {
+                view.log.push_back(std::move(frame.line));
+                view.log.push_back("REFUEL / +"+std::to_string(static_cast<int>(std::ceil(refuel.fuelAdded)))+
+                                   " FUEL / -"+std::to_string(refuel.creditsSpent)+" CR");
+              } else {
+                view.log.push_back(std::move(frame.line));
+              }
             }
           }
         }
       }
     }
     if(view.connected && now-lastReply>10) { view.connected=false; view.log.push_back("ERR command link timed out"); }
-    if(!view.connected) { outgoing.clear(); view.thrust=false; view.ui.commandPending=false; pendingUiAction.clear(); }
+    if(!view.connected) {
+      outgoing.clear(); view.thrust=false; view.ui.commandPending=false; pendingUiAction.clear();
+      if (!transportClosed) {
+        connection->closeNotify();
+        shutdown(fd, SHUT_RDWR);
+        transportClosed = true;
+      }
+    }
     if(view.log.size()>64) view.log.erase(view.log.begin(),view.log.end()-64);
     int width,height; SDL_GL_GetDrawableSize(window,&width,&height);
     if(width>0 && height>0) {
@@ -1071,7 +1100,15 @@ int main(int argc,char** argv) {
               << " sdl-errors=" << soakSdlErrors
               << " disconnects=" << soakDisconnects << '\n';
   }
-  SDL_StopTextInput(); connection->sendAll("QUIT\n",500); connection->closeNotify();
+  SDL_StopTextInput();
+  if (!transportClosed && protocolReady && connection->sendAll(outgoing, 500)) {
+    if (binaryMode) {
+      const auto quit = helion::protocol::binary::encodeFrame(
+        helion::protocol::binary::MessageType::textRequest, nextRequestId, "QUIT");
+      if (quit) connection->sendAll(*quit, 500);
+    } else connection->sendAll("QUIT\n", 500);
+  }
+  connection->closeNotify();
   shutdown(fd,SHUT_RDWR); close(fd);
   coreRenderer.reset();
   helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return acceptance.failed() || soakFailed ? 1 : 0;

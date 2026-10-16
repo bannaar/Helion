@@ -1,8 +1,151 @@
 # Batch 14 v0.20 execution record
 
-## Current recovery continuation — 2026-10-15/16
+## Current M4 continuation — 2026-10-16
 
-This section is the current implementation record. The v0.17 material below is
+The user reviewed and approved M3 checkpoint
+`f028ebd97250fb16661296f627df9905c3550ec4` and explicitly authorized M4.
+This section supersedes the earlier stop-before-M4 instruction below, not the
+completed M3 implementation or its validation evidence. Batch 14 as a whole
+remains incomplete. Stop for review at the local M4 checkpoint before M5.
+
+### Preserved-work audit
+
+The starting branch was `batch14/implementation-v0.11`, HEAD `f028ebd`, six
+commits ahead of the unchanged local origin tracking ref `280c0b0`. Tracked
+files/index were clean; only `.agents/` and `plugins/` were untracked. Both
+remain tool infrastructure outside the implementation/checkpoint. No fetch,
+push, merge, rebase, reset or change to `main` is part of this continuation.
+
+- `5ed7772`: implemented explicit 14-byte binary v1 framing, bounded incremental
+  decoding, typed input/flight codecs, fixed-width big-endian encoding and
+  focused unit tests. This is the retained transport architecture.
+- `b19f08a`: mixed M3 work and M4 negotiation, client/server TLS integration,
+  typed INPUT/flight traffic and per-connection request sequencing. M3's content
+  is preserved at its approved boundary. M4's initial integration was partial:
+  basic tests existed, but negotiation read boundaries, error ordering and
+  cross-client broadcast correlation still had gaps.
+- `3764db1`: implemented the original 100,000-iteration protocol benchmark.
+  Preserved and extended, not replaced. Originally it did not gate semantic
+  correctness or include the per-update ACTIVE SHIP envelope in aggregate bytes.
+- Recovered protocol unit tests passed before changes. Existing live TLS tests
+  covered basic negotiation/typed traffic; their existence was not treated as
+  proof of all adversarial/compatibility behavior.
+
+### Implemented M4 completion work
+
+The [transport contract](BATCH14_PROTOCOL.md) records the exact wire format,
+upgrade boundary, error behavior, limits and compatibility policy.
+
+- Preserved TLS and the single authoritative command-dispatch path; no new
+  gameplay authority, persistence format, M3 galaxy change or M5 engine exists.
+- Completed graphical negotiation handling: ACK plus binary data in one TLS
+  read, acknowledgement only after the request was sent, strict version checks,
+  no automatic downgrade, immediate transport closure on terminal errors and
+  binary-framed QUIT. Partial bytes no longer refresh the client reply deadline.
+- Added explicit graphical `--legacy-protocol` compatibility. Terminal mode
+  stays bounded text and rejects attempts to switch its decoder manually.
+- Server upgrade rejects trailing partial text as well as complete pipelined
+  commands. Binary errors are dispatched in stream order: valid prefixes finish
+  before the terminal error, and trailing requests cannot mutate state.
+- Broadcast correlation is zero for all recipients, not the sender's request
+  ID; nested response scopes restore the original request ID.
+- Retained strict payload bounds, direction checks, monotonic nonzero request
+  IDs and sticky decoder failures. Binary text control characters now terminate
+  the session. Float narrowing preserves legal snapshot boundary values.
+- Added exhaustive input-byte checks, every split/truncated prefix, malformed
+  headers/fields, atomic decode checks and retained fuzz-like random input.
+  New real-server TLS tests cover negotiation, coalescing, partial frames,
+  bounds, replayed purchases, reconnect semantics, broadcasts and authority.
+  New real-client/adversarial-server TLS tests cover coalesced ACKs, explicit
+  text compatibility, unsolicited/version-invalid ACKs, future correlations,
+  malformed snapshots, directions, flags, payloads and lengths.
+- The preserved benchmark is now a CTest validation gate with semantic and
+  size assertions. Timing remains informational. It reports codec-only and
+  full sampled update bytes separately and does not claim zero allocations.
+
+### Final validation and checkpoint boundary
+
+All applicable gates passed on 2026-10-16. Every configuration used
+`HELION_WARNINGS_AS_ERRORS=ON`; no warnings-as-errors bypass was added.
+
+| Configuration / gate | Result |
+| --- | --- |
+| Combined Debug, `/tmp/helion-b14-debug` | Build passed; complete CTest **30/30** passed |
+| Release server-only, `/tmp/helion-b14-server` | Build passed; complete CTest **18/18** passed |
+| Release client-only, `/tmp/helion-b14-client` | Build passed; complete CTest **20/20** passed |
+| Debug ASan/UBSan server-only, `/tmp/helion-b14-sanitize` | Build passed; complete CTest **18/18** passed; no sanitizer diagnostics |
+| Packaging | Combined/server/client TGZ and DEB: all six generated successfully |
+| Installed launcher smoke | First-run TLS, account creation, saved login, permissions, shutdown and shipped protocol guide passed |
+| Graphical integration | Core gameplay, binary journey/reconnect, explicit legacy journey/reconnect, render states and renderer fallback passed |
+| Whitespace | `git diff --check` passed |
+
+The full suites include existing environment/security, authoritative server
+gameplay, economy, galaxy/persistence/migration, certificate verification and
+live TLS tests. New protocol suites add adversarial client/server transport
+checks described above. The terminal upgrade-rejection assertion was separately
+rerun through `helion_tls_integration` after it was added and passed. Sanitizers
+ran without ASAN/LSAN/UBSAN environment overrides; graphical driver paths were
+validated in Debug/Release, not claimed to have sanitizer coverage.
+
+Commands: `cmake --build <build> --parallel 3`,
+`ctest --test-dir <build> --output-on-failure`, and
+`cpack --config <build>/CPackConfig.cmake -B <build>/packages` for the three
+non-sanitizer package configurations. CTest logs remain under each build's
+`Testing/Temporary/`. The original 29-test combined suite also passed before
+the legacy graphical journey became a permanent thirtieth gate.
+
+During focused validation, two new assertions needed correction: the benchmark
+must respect the legacy text cooldown's two-decimal precision, and the live BUY
+test must expect the existing `OK BOUGHT` reply. Both now validate the actual
+protocol contract; neither was removed or weakened to ignore a server failure.
+All final gates pass; no unexplained failures or outstanding compiler/sanitizer
+warnings remain. This is targeted protocol/security regression evidence, not
+an exhaustive independent security audit or production-load certification.
+
+M4A framing/codecs, M4B negotiation/compatibility, M4C typed authoritative
+input/flight integration and M4D benchmark validation are implemented and
+validated. The local M4 checkpoint extends `f028ebd` and all five earlier
+recovery commits unchanged. Only this coherent M4 change is checkpointed;
+tool infrastructure remains untracked. No remote publication or `main` change
+is authorized. Stop here for review; M5 is the recommended next milestone only
+after authorization.
+
+### Preserved benchmark measurements
+
+Release server-only build, 100,000 iterations per operation, sampled on this
+development host (nanoseconds/operation; not an end-to-end network benchmark):
+
+| Sample | Text bytes | Binary bytes | Text encode | Binary encode | Text decode | Binary decode |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| INPUT | 13 | 17 | 52.09 | 140.29 | 720.30 | 179.26 |
+| Equivalent-field flight state | 143 | 71 | 8648.40 | 403.86 | 6617.93 | 433.19 |
+
+The actual routine text FLIGHT/FUEL pair is 96 bytes; the equivalent-field
+143-byte codec sample additionally includes COMBAT STATUS. Ten seconds of
+10 Hz input/snapshot traffic gives 10,900 text vs 8,800 binary codec bytes.
+Including representative ACTIVE SHIP metadata on every update gives 36,300
+vs 35,500 bytes (about 2.2% lower), excluding TLS/IP overhead and unrelated
+traffic. INPUT is larger and slower to encode, but faster to parse in this
+sample. Flight encoding/decoding is substantially cheaper here; no blanket
+CPU or total-network-bandwidth improvement is claimed. Decoder retained bytes
+after complete samples are zero; maximum frame is 4110 bytes. Allocation counts
+are uninstrumented. Timing varied under concurrent build/test load, so CTest
+asserts semantics/bounds/byte relationships rather than timing thresholds.
+
+### Intentional scope limits
+
+Typed INPUT and authoritative flight snapshots are implemented. Lower-volume
+commands/responses and ACTIVE SHIP metadata remain bounded text inside binary
+envelopes; there is no speculative rewrite of contacts, markets or outfitting.
+Connection-scoped duplicate rejection is implemented and tested; durable
+cross-reconnection idempotency is not. Allocation counts are not instrumented;
+there is no end-to-end latency/production-load claim. Per-environment approved
+protocol/build policy is deferred (both currently use the same v1 transport).
+M5 client-engine restructuring and all later milestones are not started here.
+
+## Completed M3 recovery record — 2026-10-15/16
+
+This section records the approved M3 boundary. The v0.17 material below is
 retained as explicitly superseded historical evidence, not a current milestone
 status or canon specification. The controlling scope is the user's v0.20
 recovery/resume instruction: finish and checkpoint M3, report, then stop before

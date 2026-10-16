@@ -2,12 +2,17 @@
 #include "shared/protocol.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
 namespace {
 constexpr int kIterations = 100000;
+void check(bool valid, const char* label) {
+  if (!valid) { std::cerr << "FAILED: " << label << '\n'; std::exit(1); }
+}
 
 template <typename Function>
 double nanosecondsPerOperation(Function function) {
@@ -33,12 +38,22 @@ int main() {
   const std::string textInput = "INPUT 1 -1 0\n";
   const auto binaryInputPayload = binary::encodeInputPayload({1, -1, 0});
   const auto binaryInput = binary::encodeFrame(binary::MessageType::input, 1, binaryInputPayload);
-  const std::string textFlight = helion::flight::snapshot(state, credits, experience) + "\n" +
+  const std::string routineFlight = helion::flight::snapshot(state, credits, experience) + "\n" +
     helion::flight::fuelLine(state) + "\n";
+  const std::string textFlight = routineFlight + helion::flight::combatStatusLine(state) + "\n";
   const auto binaryFlightPayload = binary::encodeFlightSnapshotPayload(state, credits, experience);
+  check(binaryInput && binaryFlightPayload, "benchmark sample encodes");
   const auto binaryFlight = binary::encodeFrame(binary::MessageType::flightSnapshot, 1,
                                                  *binaryFlightPayload);
-  if (!binaryInput || !binaryFlightPayload || !binaryFlight) return 1;
+  check(binaryFlight.has_value(), "flight frame encodes");
+  helion::flight::State verified;
+  int verifiedCredits = 0, verifiedExperience = 0;
+  check(binary::decodeFlightSnapshotPayload(*binaryFlightPayload, verified, verifiedCredits, verifiedExperience) &&
+        verified.x == state.x && verified.weaponCooldown == state.weaponCooldown &&
+        verified.fuel == state.fuel && verifiedCredits == credits && verifiedExperience == experience,
+        "benchmark validates decoded semantics, not just throughput");
+  check(binaryInput->size() == 17 && binaryFlight->size() == 71 &&
+        binaryFlight->size() < routineFlight.size(), "typed frame sizes and representative snapshot savings");
 
   std::uint64_t checksum = 0;
   const double textInputEncode = nanosecondsPerOperation([&] {
@@ -64,7 +79,7 @@ int main() {
 
   const double textFlightEncode = nanosecondsPerOperation([&] {
     const auto encoded = helion::flight::snapshot(state, credits, experience) + "\n" +
-      helion::flight::fuelLine(state) + "\n";
+      helion::flight::fuelLine(state) + "\n" + helion::flight::combatStatusLine(state) + "\n";
     checksum += encoded.size();
   });
   const double binaryFlightEncode = nanosecondsPerOperation([&] {
@@ -74,12 +89,15 @@ int main() {
   });
   const auto newline = textFlight.find('\n');
   const std::string snapshotLine = textFlight.substr(0, newline);
-  const std::string fuelLine = textFlight.substr(newline + 1, textFlight.size() - newline - 2);
+  const std::string fuelLine = helion::flight::fuelLine(state);
+  const std::string combatLine = helion::flight::combatStatusLine(state);
   const double textFlightDecode = nanosecondsPerOperation([&] {
     helion::flight::State decoded;
     int decodedCredits = 0, decodedExperience = 0;
     const bool valid = helion::flight::readSnapshot(snapshotLine, decoded, decodedCredits, decodedExperience) &&
-      helion::flight::readFuelLine(fuelLine, decoded);
+      helion::flight::readFuelLine(fuelLine, decoded) && helion::flight::readCombatStatus(combatLine, decoded);
+    check(valid && std::abs(decoded.weaponCooldown - state.weaponCooldown) <= 0.0051,
+          "text benchmark round-trip within its two-decimal precision");
     checksum += static_cast<std::uint64_t>(valid ? decoded.hull : 0);
   });
   binary::Decoder flightDecoder;
@@ -90,12 +108,25 @@ int main() {
     const bool valid = binary::decodeFlightSnapshotPayload(std::string_view(
       reinterpret_cast<const char*>(events[0].frame.payload.data()), events[0].frame.payload.size()),
       decoded, decodedCredits, decodedExperience);
+    check(valid && decodedCredits == credits, "binary benchmark round-trip");
     checksum += static_cast<std::uint64_t>(valid ? decoded.hull : 0);
   });
 
   constexpr std::size_t intervalMessages = 100; // Ten seconds at the current 10 Hz input cadence.
-  const std::size_t textInterval = intervalMessages * (textInput.size() + textFlight.size());
+  const std::size_t textInterval = intervalMessages * (textInput.size() + routineFlight.size());
   const std::size_t binaryInterval = intervalMessages * (binaryInput->size() + binaryFlight->size());
+  // ACTIVE SHIP is still emitted for every input update, even in binary mode.
+  // Include its envelope cost; do not advertise codec-only savings as total wire savings.
+  const std::string activeShip = "ACTIVE SHIP instance=ship-benchmark-0001 hull=SIDEWINDER display=Sidewinder "
+    "manufacturer=INDEPENDENT_YARDS operator=CIVILIAN cargo-capacity=8 speed=200 acceleration=130 "
+    "handling=6 hull-capacity=125 pad=SMALL mass=25 livery=independent_civilian wear=USED";
+  const auto activeFrame = binary::encodeFrame(binary::MessageType::textResponse, 1, activeShip);
+  check(activeFrame.has_value(), "representative active-ship metadata fits bounded envelope");
+  const auto fullTextInterval = textInterval + intervalMessages * (activeShip.size() + 1);
+  const auto fullBinaryInterval = binaryInterval + intervalMessages * activeFrame->size();
+  check(fullBinaryInterval < fullTextInterval && checksum != 0 &&
+        inputDecoder.bufferedBytes() == 0 && flightDecoder.bufferedBytes() == 0,
+        "complete sampled update remains a byte win and decoders retain no completed frame");
   std::cout << "PROTOCOL_BENCH iterations=" << kIterations << " checksum=" << checksum << '\n'
             << "INPUT bytes-text=" << textInput.size() << " bytes-binary=" << binaryInput->size()
             << " encode-ns-text=" << textInputEncode << " encode-ns-binary=" << binaryInputEncode
@@ -103,6 +134,9 @@ int main() {
             << "FLIGHT bytes-text=" << textFlight.size() << " bytes-binary=" << binaryFlight->size()
             << " encode-ns-text=" << textFlightEncode << " encode-ns-binary=" << binaryFlightEncode
             << " decode-ns-text=" << textFlightDecode << " decode-ns-binary=" << binaryFlightDecode << '\n'
-            << "INTERVAL seconds=10 input-hz=10 snapshot-hz=10 bytes-text=" << textInterval
-            << " bytes-binary=" << binaryInterval << '\n';
+            << "INTERVAL seconds=10 input-hz=10 snapshot-hz=10 codec-bytes-text=" << textInterval
+            << " codec-bytes-binary=" << binaryInterval << " full-update-bytes-text=" << fullTextInterval
+            << " full-update-bytes-binary=" << fullBinaryInterval << '\n'
+            << "BUFFER retained-after-frame=0 maximum-frame=" << binary::kMaxFrameSize
+            << " allocation-count=not-instrumented tls-overhead=excluded\n";
 }

@@ -58,13 +58,14 @@ def stop_server(process):
         raise AssertionError(f"server did not stop cleanly: {process.returncode}\n{out}\n{err}")
 
 
-def run_client(client, port, cert, captures, phase):
+def run_client(client, port, cert, captures, phase, legacy_protocol=False):
     env = dict(os.environ)
     env.update({"HELION_ACCEPTANCE": "1", "SDL_VIDEODRIVER": "x11"})
     result = subprocess.run([
         client, "localhost", str(port), "--ca", str(cert), "--renderer", "core",
         "--acceptance-run", str(captures), "--acceptance-phase", phase,
-    ], env=env, capture_output=True, text=True, timeout=240)
+    ] + (["--legacy-protocol"] if legacy_protocol else []),
+        env=env, capture_output=True, text=True, timeout=240)
     combined = result.stdout + result.stderr
     if PASSWORD_SENTINEL in combined:
         raise AssertionError("acceptance credential leaked to client output")
@@ -79,12 +80,14 @@ def run_client(client, port, cert, captures, phase):
     return result.stdout
 
 
-def run_soak(client, port, cert, captures, seconds):
+def run_soak(client, port, cert, captures, seconds, legacy_protocol=False):
     env = dict(os.environ)
     env.update({"HELION_ACCEPTANCE": "1", "SDL_VIDEODRIVER": "x11"})
     command = [client, "localhost", str(port), "--ca", str(cert), "--renderer", "core",
                "--acceptance-run", str(captures), "--acceptance-phase", "soak",
                "--acceptance-seconds", str(seconds)]
+    if legacy_protocol:
+        command.append("--legacy-protocol")
     process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     samples = []
@@ -151,6 +154,7 @@ def main():
     parser.add_argument("--cert-helper", required=True)
     parser.add_argument("--output")
     parser.add_argument("--soak-seconds", type=int, default=0)
+    parser.add_argument("--legacy-protocol", action="store_true")
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory(prefix="helion-graphical-acceptance-") as directory:
@@ -166,15 +170,15 @@ def main():
 
         server = start_server(args.server, port, database, cert, key)
         try:
-            journey_output = run_client(args.client, port, cert, captures, "journey")
+            journey_output = run_client(args.client, port, cert, captures, "journey", args.legacy_protocol)
         finally:
             stop_server(server)
 
         server = start_server(args.server, port, database, cert, key)
         try:
-            reconnect_output = run_client(args.client, port, cert, captures, "reconnect")
+            reconnect_output = run_client(args.client, port, cert, captures, "reconnect", args.legacy_protocol)
             if args.soak_seconds:
-                run_soak(args.client, port, cert, captures, args.soak_seconds)
+                run_soak(args.client, port, cert, captures, args.soak_seconds, args.legacy_protocol)
         finally:
             stop_server(server)
 

@@ -36,7 +36,10 @@ void appendU32(std::string& bytes, std::uint32_t value) {
 }
 
 void appendFloat(std::string& bytes, double value) {
-  const float narrowed = static_cast<float>(value);
+  float narrowed = static_cast<float>(value);
+  // Avoid rounding a legal boundary (e.g. cooldown 1.251) outside its range.
+  if (std::abs(static_cast<double>(narrowed)) > std::abs(value))
+    narrowed = std::nextafter(narrowed, 0.0f);
   std::uint32_t wire = 0;
   static_assert(sizeof(wire) == sizeof(narrowed), "binary float must be 32 bits");
   static_assert(std::numeric_limits<float>::is_iec559, "binary float requires IEEE-754");

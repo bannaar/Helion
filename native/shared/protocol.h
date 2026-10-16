@@ -19,6 +19,7 @@ struct Frame {
 class LineDecoder {
  public:
   std::vector<Frame> feed(std::string_view bytes);
+  bool atMessageBoundary() const { return pending_.empty() && !oversized_ && !malformed_; }
 
  private:
   std::string pending_;

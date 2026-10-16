@@ -30,9 +30,14 @@ int main() {
         "ambiguous or malformed binary negotiation rejects");
 
   LineDecoder partial;
-  check(partial.feed("PRO").empty(), "partial frame waits");
+  check(partial.atMessageBoundary() && partial.feed("PRO").empty() && !partial.atMessageBoundary(),
+        "partial frame waits and blocks a transport transition");
   auto frames = partial.feed("FILE\r\n");
   check(frames.size() == 1 && frames[0].kind == FrameKind::line && frames[0].line == "PROFILE", "partial CRLF frame completes");
+  check(partial.atMessageBoundary(), "complete text frame restores the transport boundary");
+  LineDecoder negotiation;
+  check(negotiation.feed("PROTOCOL BINARY 1\nSTA").size() == 1 && !negotiation.atMessageBoundary(),
+        "a trailing incomplete text command must not be discarded during binary negotiation");
 
   LineDecoder multiple;
   frames = multiple.feed("STATE\nPROFILE\nQUIT\n");

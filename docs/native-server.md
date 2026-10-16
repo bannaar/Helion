@@ -216,6 +216,12 @@ rate limits. Keep the server restricted while those limits are developed.
 
 ## 6. Protocol smoke test
 
+The graphical client negotiates bounded binary version 1 over TLS by default.
+Use `--legacy-protocol` explicitly for an older text-only server; failed binary
+negotiation never silently downgrades. Terminal mode remains bounded text over
+the same authenticated TLS connection. See the [M4 transport contract](development/BATCH14_PROTOCOL.md)
+for framing, versioning, request IDs, bounds and compatibility behavior.
+
 From a machine with the client binary:
 
 ```sh

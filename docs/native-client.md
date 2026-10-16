@@ -40,6 +40,12 @@ build-native/native/helion_client
 
 ## 3. Connect
 
+The graphical client explicitly negotiates binary protocol v1 over TLS.
+For an older text-only server, choose `--legacy-protocol`; negotiation failures
+never silently downgrade. `--terminal` remains the bounded text diagnostic
+interface. See the [transport contract](development/BATCH14_PROTOCOL.md) for
+versioning, limits and compatibility behavior.
+
 Graphical mode:
 
 ```sh

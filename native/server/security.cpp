@@ -19,6 +19,7 @@ constexpr std::uint64_t kMaxMemory = 64 * 1024 * 1024;
 constexpr std::size_t kSaltBytes = 16;
 constexpr std::size_t kHashBytes = 32;
 constexpr std::string_view kPrefix = "$scrypt$32768$8$1$";
+constexpr std::string_view kCompanionHashPrefix = "$sha256$";
 
 std::string toHex(const unsigned char* bytes, std::size_t length) {
   constexpr char digits[] = "0123456789abcdef";
@@ -45,6 +46,25 @@ bool fromHex(std::string_view text, unsigned char* out, std::size_t length) {
     out[i] = static_cast<unsigned char>((high << 4) | low);
   }
   return true;
+}
+
+std::array<unsigned char, 32> sha256(std::string_view value) {
+  std::array<unsigned char, 32> digest{};
+  unsigned int length = 0;
+  if (EVP_Digest(value.data(), value.size(), digest.data(), &length, EVP_sha256(), nullptr) != 1 ||
+      length != digest.size()) {
+    OPENSSL_cleanse(digest.data(), digest.size());
+    throw std::runtime_error("companion token hashing unavailable");
+  }
+  return digest;
+}
+
+std::string encodedCompanionHash(std::string_view token) {
+  auto digest = sha256(token);
+  std::string encoded(kCompanionHashPrefix);
+  encoded += toHex(digest.data(), digest.size());
+  OPENSSL_cleanse(digest.data(), digest.size());
+  return encoded;
 }
 
 std::string hashAnyPassword(std::string_view password) {
@@ -95,6 +115,60 @@ bool migrateLegacyCredential(std::string& credential, bool legacyRecord) {
   std::fill(credential.begin(), credential.end(), '\0');
   credential = std::move(encoded);
   return true;
+}
+
+CompanionTokenMaterial issueCompanionToken() {
+  std::array<unsigned char, kCompanionTokenIdBytes> idBytes{};
+  std::array<unsigned char, kCompanionTokenSecretBytes> secretBytes{};
+  if (RAND_bytes(idBytes.data(), static_cast<int>(idBytes.size())) != 1 ||
+      RAND_bytes(secretBytes.data(), static_cast<int>(secretBytes.size())) != 1) {
+    OPENSSL_cleanse(secretBytes.data(), secretBytes.size());
+    throw std::runtime_error("companion token generation unavailable");
+  }
+
+  CompanionTokenMaterial material;
+  material.id = toHex(idBytes.data(), idBytes.size());
+  material.token = "hc1." + material.id + "." + toHex(secretBytes.data(), secretBytes.size());
+  OPENSSL_cleanse(secretBytes.data(), secretBytes.size());
+  material.hash = encodedCompanionHash(material.token);
+  return material;
+}
+
+bool isEncodedCompanionTokenHash(std::string_view value) {
+  if (value.substr(0, kCompanionHashPrefix.size()) != kCompanionHashPrefix) return false;
+  std::array<unsigned char, 32> decoded{};
+  return fromHex(value.substr(kCompanionHashPrefix.size()), decoded.data(), decoded.size());
+}
+
+std::string companionTokenId(std::string_view token) {
+  constexpr std::string_view tokenPrefix = "hc1.";
+  const auto expectedSize = tokenPrefix.size() + kCompanionTokenIdBytes * 2 + 1 + kCompanionTokenSecretBytes * 2;
+  if (token.size() != expectedSize || token.substr(0, tokenPrefix.size()) != tokenPrefix) return {};
+  const auto idStart = tokenPrefix.size();
+  const auto separator = token.find('.', idStart);
+  if (separator != idStart + kCompanionTokenIdBytes * 2) return {};
+  const auto id = token.substr(idStart, separator - idStart);
+  for (const char ch : id) {
+    if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return {};
+  }
+  return std::string(id);
+}
+
+bool verifyCompanionToken(
+    std::string_view token,
+    std::string_view expectedId,
+    std::string_view encodedHash) {
+  if (companionTokenId(token) != expectedId ||
+      encodedHash.substr(0, kCompanionHashPrefix.size()) != kCompanionHashPrefix) return false;
+
+  std::array<unsigned char, 32> expected{};
+  if (!fromHex(encodedHash.substr(kCompanionHashPrefix.size()), expected.data(), expected.size())) return false;
+
+  auto actual = sha256(token);
+  const bool match = CRYPTO_memcmp(expected.data(), actual.data(), actual.size()) == 0;
+  OPENSSL_cleanse(actual.data(), actual.size());
+  OPENSSL_cleanse(expected.data(), expected.size());
+  return match;
 }
 
 } // namespace helion::security

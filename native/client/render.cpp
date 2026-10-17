@@ -125,22 +125,7 @@ void shipAsset(const View& v) {
 } // namespace
 
 std::string redactCommand(const std::string& command) {
-  std::string result = command;
-  std::string normalized=command;
-  std::transform(normalized.begin(),normalized.end(),normalized.begin(),[](unsigned char c){return std::toupper(c);});
-  const auto start=normalized.find_first_not_of(" /\t");
-  if (start==std::string::npos) return result;
-  const auto end=normalized.find_first_of(" \t",start);
-  const auto verb=normalized.substr(start,end-start);
-  if (verb!="LOGIN" && verb!="CREATE") return result;
-  auto user=normalized.find_first_not_of(" \t",end);
-  if (user==std::string::npos) return result;
-  auto userEnd=normalized.find_first_of(" \t",user);
-  auto pass=normalized.find_first_not_of(" \t",userEnd);
-  if (pass==std::string::npos) return result;
-  auto passEnd=normalized.find_first_of(" \t",pass);
-  result.replace(pass,passEnd==std::string::npos ? result.size()-pass : passEnd-pass,"********");
-  return result;
+  return maskedCommand(command);
 }
 
 void render(int width, int height, const View& v) {

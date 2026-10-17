@@ -48,4 +48,5 @@ with tempfile.TemporaryDirectory(prefix='helion-install-') as directory:
     assert (prefix / 'share/applications/helion.desktop').exists()
     assert (prefix / 'share/icons/hicolor/scalable/apps/helion.svg').exists()
     assert (prefix / 'share/doc/helion/development/BATCH14_PROTOCOL.md').exists()
+    assert (prefix / 'share/doc/helion/companion-auth.md').exists()
     print('installed launcher: first-run TLS, account creation, saved login, permissions, desktop files and shutdown passed')

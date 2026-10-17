@@ -50,6 +50,15 @@ std::string commandLine(std::string typed) {
   const auto end=typed.find_first_of(" \t");
   std::transform(typed.begin(),end==std::string::npos ? typed.end() : typed.begin()+end,
     typed.begin(),[](unsigned char c){return std::toupper(c);});
+  if (typed.substr(0, end) == "COMPANION" && end != std::string::npos) {
+    const auto action = typed.find_first_not_of(" \t", end);
+    if (action != std::string::npos) {
+      const auto actionEnd = typed.find_first_of(" \t", action);
+      std::transform(typed.begin() + action,
+        actionEnd == std::string::npos ? typed.end() : typed.begin() + actionEnd,
+        typed.begin() + action, [](unsigned char c){return std::toupper(c);});
+    }
+  }
   return typed;
 }
 bool saveFrame(const std::string& path,int width,int height) {
@@ -66,7 +75,7 @@ bool saveFrame(const std::string& path,int width,int height) {
   SDL_FreeSurface(surface); return saved;
 }
 int terminalClient(int fd, helion::tls::Connection& connection) {
-  std::cout<<"Commands: /create, /login, /chat, /profile, /mission, /accept, /turnin, /galnet, /upgrade engine|hull, /repair, /refuel, /outfit LIST|BUY|FIT|REMOVE, /fire target-id, /recover, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
+  std::cout<<"Commands: /create, /login, /companion issue|auth|list|revoke, /chat, /profile, /mission, /accept, /turnin, /galnet, /upgrade engine|hull, /repair, /refuel, /outfit LIST|BUY|FIT|REMOVE, /fire target-id, /recover, /contacts, /buy, /sell, /launch, /input, /flight, /mine, /dock, /quit\n";
   helion::protocol::LineDecoder decoder;
   bool greeted=false, running=true, stdinClosed=false, quitQueued=false;
   std::string outgoing, typed;

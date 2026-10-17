@@ -17,6 +17,13 @@ int main() {
   check(maskedCommand("/create pilot secret-password Pilot One") == "/create pilot ******** Pilot One",
         "create passwords are masked");
   check(maskedCommand("/profile") == "/profile", "non-auth commands remain readable");
+  check(maskedCommand("/companion auth hc1.secret") == "/companion auth ********",
+        "companion bearer credentials are masked in both renderers and command logs");
+  check(maskedCommand("COMPANION\tAuTh\thc1.secret trailing") == "COMPANION\tAuTh\t******** trailing",
+        "companion masking handles case and whitespace");
+  check(maskedCommand("/companion list") == "/companion list" &&
+        maskedCommand("/companion auth") == "/companion auth",
+        "metadata and incomplete companion commands remain readable");
   UiState state;
   state.cargoCapacity = 20;
   state.quantity = 99;

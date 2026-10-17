@@ -182,11 +182,20 @@ def main():
                     receive_until(secure, b'OK CREATED user=environmentpilot')
                     secure.sendall(b'QUIT\n')
             if args.client:
-                commands = '/protocol BINARY 1\n/create tls_pilot synthetic-password TLS Pilot\n/profile\n/quit\n'
+                commands = ('/protocol BINARY 1\n/create tls_pilot synthetic-password TLS Pilot\n'
+                            '/companion issue\n/companion list\n/profile\n/quit\n')
                 good = run([args.client, '127.0.0.1', str(port), '--ca', str(cert), '--terminal'], input=commands)
                 assert 'OK CREATED user=tls_pilot' in good.stdout and 'PROFILE user=tls_pilot' in good.stdout
                 assert 'Terminal compatibility mode uses bounded legacy text' in good.stdout
                 assert 'OK PROTOCOL BINARY' not in good.stdout
+                issued = next(line for line in good.stdout.splitlines() if line.startswith('OK COMPANION ISSUED '))
+                companion_token = next(item[6:] for item in issued.split() if item.startswith('token='))
+                assert 'COMPANION TOKEN id=' in good.stdout and 'COMPANION END' in good.stdout
+                companion = run([args.client, '127.0.0.1', str(port), '--ca', str(cert), '--terminal'],
+                                input='/companion auth ' + companion_token + '\n/profile\n/launch\n/quit\n')
+                assert 'OK COMPANION AUTH user=tls_pilot' in companion.stdout
+                assert 'PROFILE user=tls_pilot' in companion.stdout and 'ERR scope-denied' in companion.stdout
+                assert companion_token not in companion.stdout + companion.stderr
                 for trust in (other, None):
                     command = [args.client, '127.0.0.1', str(port), '--terminal']
                     if trust:

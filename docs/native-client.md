@@ -69,6 +69,10 @@ reopen the console and Escape to return to flight. Use:
 ```text
 /create username password display
 /login username password
+/companion issue
+/companion list
+/companion revoke token-id
+/companion auth bearer-token
 /chat hello pilots
 /profile
 /galnet
@@ -84,10 +88,17 @@ reopen the console and Escape to return to flight. Use:
 /quit
 ```
 
-The client expects the versioned `WELCOME Helion/2` greeting. The shared
-protocol decoder buffers split network reads, separates multiple lines in one
-read, and rejects oversized or malformed lines. The maximum line size is 4096
-bytes before LF. Version 1 retains the existing command names.
+The `COMPANION` commands provide the development pairing foundation for
+HELION Commander. Bearer tokens are secrets; graphical command echo redacts
+`COMPANION AUTH` token values. See `docs/companion-auth.md`.
+
+The client expects the versioned `WELCOME Helion/2` greeting and negotiates
+binary version 1 before authentication by default. `--legacy-protocol` explicitly
+selects text; negotiation never silently downgrades. Both decoders buffer split
+reads and reject malformed or oversized messages. Legacy lines allow at most
+4096 bytes before LF; binary payloads allow at most 4096 bytes, with typed input
+and authoritative flight snapshots. Companion commands use the same transport
+and server scope checks. See the [M4 transport contract](development/BATCH14_PROTOCOL.md).
 
 For headless diagnostics, use terminal mode:
 

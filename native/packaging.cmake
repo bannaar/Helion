@@ -22,6 +22,7 @@ elseif(HELION_BUILD_CLIENT)
   install(FILES assets/helion.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 endif()
 set(HELION_PACKAGE_DOCS README.md ${PROJECT_SOURCE_DIR}/docs/native-install.md
+  ${PROJECT_SOURCE_DIR}/docs/companion-auth.md
   ${PROJECT_SOURCE_DIR}/docs/PROJECT_STATE.md
   ${PROJECT_SOURCE_DIR}/docs/compaq610-server-elitebook-client.md)
 if(HELION_BUILD_SERVER)

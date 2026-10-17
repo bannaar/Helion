@@ -53,7 +53,8 @@ For the retained command-line mode, use
 `./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt --terminal`.
 
 The client commands are `/create username password display`, `/login username
-password`, `/chat message`, `/profile`, `/state`, `/contacts`, `/buy food 1`,
+password`, `/companion issue`, `/companion auth token`, `/companion list`,
+`/companion revoke id`, `/chat message`, `/profile`, `/state`, `/contacts`, `/buy food 1`,
 `/sell parts 1`, `/mission`, `/accept`, `/turnin`, `/upgrade engine|hull`,
 `/repair`, `/refuel`, `/outfit LIST|BUY|FIT|REMOVE`,
 `/shipyard LIST|OWNED|BUY hull-id|SWITCH instance-id`, `/launch`, `/flight`,
@@ -244,20 +245,33 @@ and use the X11 check above to prove Intel hardware acceleration. CTest
 separately exercises actual server flight, mining, docking, input validation,
 and persisted rewards after restart.
 
-## Line protocol
+## Negotiated transport and legacy line protocol
+
+The graphical client negotiates M4 binary version 1 over verified TLS before
+login. `--legacy-protocol` explicitly selects text compatibility; terminal mode
+also stays text. Negotiation failure never silently downgrades. Binary framing,
+request IDs, typed input/flight snapshots, bounds and ordered error handling are
+described in [the M4 transport contract](../docs/development/BATCH14_PROTOCOL.md).
+Companion commands travel through this same dispatcher as binary text requests
+or legacy lines and always enforce the fixed `profile.read` scope.
+
+### Legacy text messages
 
 The server sends `WELCOME Helion/2` and `INFO` lines on connect. Protocol version
 2 is defined in `shared/protocol.h`; the client rejects a different greeting.
-Requests are one
+In legacy mode, requests are one
 newline-terminated line: `CREATE username password display`, `LOGIN username
-password`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
+password`, `COMPANION ISSUE`, `COMPANION AUTH token`, `COMPANION LIST`,
+`COMPANION REVOKE id`, `CHAT message`, `PROFILE`, `STATE`, `CONTACTS`, `BUY`, `SELL`,
 `MISSION`, `ACCEPT`, `TURNIN`, `UPGRADE`, `REPAIR`, `REFUEL`, `OUTFIT`, `LAUNCH`,
 `INPUT`, `FLIGHT`, `MINE`, `DOCK`, `FIRE target-id`, `RECOVER`, `GALNET`, or
 `QUIT`. Responses are newline-terminated `OK`, `ERR`, `PROFILE`, `STATE`,
 `GALNET`, `FUEL`,
 `LOADOUT`, `COMBAT`, `TRANSACTION`, and `CHAT` records. The server stores salted
 scrypt password hashes, migrates existing plaintext profile records on startup,
-and creates owner-only data files. New passwords must be 12–128 bytes. The connection requires TLS 1.2 or newer. Clients verify the certificate
+and creates owner-only data files. New passwords must be 12–128 bytes. Companion bearer tokens are random,
+expire after 30 days, are stored only as SHA-256 verifiers, and initially grant only `profile.read`.
+See [the companion credential foundation](../docs/companion-auth.md). The connection requires TLS 1.2 or newer. Clients verify the certificate
 chain, expiration, and DNS/IP Subject Alternative Name using OS trust roots
 or an explicit `--ca` file. There is no plaintext fallback or insecure bypass.
 

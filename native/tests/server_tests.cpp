@@ -439,6 +439,17 @@ int main(int argc, char** argv) {
         initialGalaxy.find("GALAXY END known-space-systems=200") != std::string::npos,
         "authoritative galaxy query exposes v0.20 profiles while omitting undiscovered physical truth");
   command(first, "SHIPYARD BUY TITAN_MULE", "ERR insufficient-credits");
+  expectPersistenceFailure(first, "COMPANION ISSUE");
+  const auto issuedCompanion = command(first, "COMPANION ISSUE", "OK COMPANION ISSUED");
+  const std::string companionToken = responseField(issuedCompanion, "token=");
+  const std::string companionTokenId = responseField(issuedCompanion, "id=");
+  check(companionToken.rfind("hc1." + companionTokenId + ".", 0) == 0 &&
+        responseField(issuedCompanion, "scope=") == "profile.read",
+        "companion token issued once with profile-read scope");
+  const auto companionList = command(first, "COMPANION LIST", "COMPANION END");
+  check(companionList.find("COMPANION TOKEN id=" + companionTokenId) != std::string::npos &&
+        companionList.find("scope=profile.read") != std::string::npos,
+        "full player session lists active companion token metadata");
   command(first,"REPAIR","ERR hull-full");
   const auto missionOffer = command(first,"MISSION","MISSION 1 title=First Ore");
   check(missionOffer.find("issuer=corp.orion issuer-name=Orion_Extraction_Group") != std::string::npos &&
@@ -561,6 +572,14 @@ int main(int argc, char** argv) {
   command(replacement,"LAUNCH","OK LAUNCHED");
   check(command(replacement,"CONTACTS","CONTACTS END").find("CONTACT RAIDER-2 hostile") != std::string::npos,
         "next launch creates a new deterministic combat encounter");
+  command(replacement, "COMPANION AUTH " + companionToken, "OK COMPANION AUTH");
+  check(command(replacement, "PROFILE", "PROFILE").find("user=explorer") != std::string::npos,
+        "companion token grants profile-read access");
+  command(replacement, "BUY food 1", "ERR scope-denied");
+  command(replacement, "CHAT forbidden", "ERR scope-denied");
+  command(replacement, "COMPANION ISSUE", "ERR scope-denied");
+  command(replacement, "LOGIN explorer synthetic-password", "ERR scope-denied");
+  command(replacement, "CREATE tokenescape synthetic-password Token Escape", "ERR scope-denied");
   closeConnection(replacement);
 
   kill(child, SIGTERM);
@@ -582,6 +601,9 @@ int main(int argc, char** argv) {
   check(occurrences(content, "S\tpilot\t") == 1 && occurrences(content, "S\texplorer\t") == 1 &&
         occurrences(content, "S\twingman\t") == 2,
         "legacy migration is idempotent and purchased ownership persists exactly once");
+  check(content.find("T\t" + companionTokenId + "\texplorer\t$sha256$") != std::string::npos,
+        "companion token verifier persists with owner");
+  check(content.find(companionToken) == std::string::npos, "plaintext companion bearer token is never persisted");
 
   check(stat((data + ".lock").c_str(), &info) == 0 && (info.st_mode & 0777) == 0600,
         "stable owner-only lock file remains after shutdown");
@@ -708,6 +730,15 @@ int main(int argc, char** argv) {
         restoredWingmanProfile.find("credits=46605") != std::string::npos,
         "purchased fleet, active ship and debit survive server restart exactly once");
   command(restarted, "LOGIN explorer synthetic-password", "OK LOGIN");
+  const auto restoredTokens = command(restarted, "COMPANION LIST", "COMPANION END");
+  check(restoredTokens.find("id=" + companionTokenId) != std::string::npos,
+        "companion token metadata survives restart");
+  expectPersistenceFailure(restarted, "COMPANION REVOKE " + companionTokenId);
+  check(command(restarted, "COMPANION LIST", "COMPANION END").find("id=" + companionTokenId) != std::string::npos,
+        "failed companion revocation rolls back");
+  command(restarted, "COMPANION REVOKE " + companionTokenId, "OK COMPANION REVOKED");
+  check(command(restarted, "COMPANION LIST", "COMPANION END").find("id=" + companionTokenId) == std::string::npos,
+        "companion token removed after durable revocation");
   expectPersistenceFailure(restarted,"REPAIR");
   const auto failedRepairProfile = command(restarted,"PROFILE","PROFILE");
   check(failedRepairProfile.find("credits=1536") != std::string::npos &&
@@ -767,6 +798,7 @@ int main(int argc, char** argv) {
   }
   check(slow >= 0, "slow-client server accepts first TLS client");
   check(receiveUntil(slow, "INFO commands=").find("WELCOME Helion/2") != std::string::npos, "slow-client greeting");
+  command(slow, "COMPANION AUTH " + companionToken, "ERR invalid-companion-token");
   command(slow,"LOGIN explorer synthetic-password","OK LOGIN");
   command(slow,"TURNIN","ERR mission-not-active");
   int receiveBuffer = 1024;

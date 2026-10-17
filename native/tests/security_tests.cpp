@@ -43,6 +43,21 @@ int main() {
   check(!helion::security::migrateLegacyCredential(corrupt, false) &&
         !helion::security::verifyPassword("oldpass", corrupt), "corrupt hash fails closed");
 
+  const auto companion = helion::security::issueCompanionToken();
+  const auto companion2 = helion::security::issueCompanionToken();
+  check(companion.id.size() == helion::security::kCompanionTokenIdBytes * 2, "companion token id length");
+  check(companion.token.rfind("hc1." + companion.id + ".", 0) == 0, "companion token embeds public id");
+  check(helion::security::isEncodedCompanionTokenHash(companion.hash), "companion token hash recognized");
+  check(helion::security::companionTokenId(companion.token) == companion.id, "companion token id parses");
+  check(helion::security::companionTokenId("hc1.bad.token").empty(), "malformed companion token id rejected");
+  check(helion::security::verifyCompanionToken(companion.token, companion.id, companion.hash),
+        "issued companion token verifies");
+  check(!helion::security::verifyCompanionToken(companion2.token, companion.id, companion.hash),
+        "different companion token rejected");
+  check(!helion::security::verifyCompanionToken(companion.token, companion2.id, companion.hash),
+        "wrong companion token id rejected");
+  check(!helion::security::isEncodedCompanionTokenHash("$sha256$bad"), "malformed companion hash rejected");
+
   helion::server::ConnectionLimit limit(2);
   check(limit.tryAcquire() && limit.tryAcquire(), "available slots acquired");
   check(!limit.tryAcquire() && limit.active() == 2, "connection limit enforced");

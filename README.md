@@ -104,11 +104,19 @@ configuration, data-file handling, and troubleshooting.
 
 ## Native protocol snapshot
 
-Requests are newline-terminated:
+The graphical client negotiates M4 binary version 1 over TLS. Terminal mode and
+explicit `--legacy-protocol` use bounded text; there is no silent downgrade.
+See the [transport contract](docs/development/BATCH14_PROTOCOL.md).
+These commands are newline-terminated in legacy mode and carried as text-request
+payloads in binary mode (flight input also has a typed binary message):
 
 ```text
 CREATE username password display
 LOGIN username password
+COMPANION ISSUE
+COMPANION AUTH bearer-token
+COMPANION LIST
+COMPANION REVOKE token-id
 CHAT message
 PROFILE
 STATE
@@ -125,7 +133,10 @@ QUIT
 ```
 
 The native server stores salted scrypt password hashes and requires TLS 1.2+
-for all connections. Clients verify certificate trust and server identity;
+for all connections. Scoped companion bearer credentials can be issued from a
+normal player session; only their SHA-256 verifiers are persisted, they expire
+after 30 days, and their initial authority is limited to `profile.read`.
+See [companion authentication](docs/companion-auth.md). Clients verify certificate trust and server identity;
 there is no plaintext fallback. Live player and NPC contacts are replicated,
 while shared asteroid depletion, player-to-player collision, and
 cross-connection/IP rate limiting remain future work.

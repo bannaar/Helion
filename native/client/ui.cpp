@@ -123,6 +123,18 @@ std::string maskedCommand(std::string_view command) {
   if (start == std::string::npos) return result;
   const auto end = normalized.find_first_of(" \t", start);
   const auto verb = normalized.substr(start, end - start);
+  if (verb == "COMPANION") {
+    const auto actionStart = normalized.find_first_not_of(" \t", end);
+    if (actionStart == std::string::npos) return result;
+    const auto actionEnd = normalized.find_first_of(" \t", actionStart);
+    if (normalized.substr(actionStart, actionEnd - actionStart) != "AUTH") return result;
+    const auto tokenStart = normalized.find_first_not_of(" \t", actionEnd);
+    if (tokenStart == std::string::npos) return result;
+    const auto tokenEnd = normalized.find_first_of(" \t", tokenStart);
+    result.replace(tokenStart, tokenEnd == std::string::npos ? result.size() - tokenStart : tokenEnd - tokenStart,
+                   "********");
+    return result;
+  }
   if (verb != "LOGIN" && verb != "CREATE") return result;
   const auto user = normalized.find_first_not_of(" \t", end);
   if (user == std::string::npos) return result;

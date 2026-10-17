@@ -140,6 +140,9 @@ if(HELION_BUILD_TESTS)
     add_test(NAME helion_binary_tls_integration COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/binary_tls_integration.py --server $<TARGET_FILE:helion_server>)
     set_tests_properties(helion_binary_tls_integration PROPERTIES TIMEOUT 90 RESOURCE_LOCK helion_gameplay_integration)
+    add_test(NAME helion_companion_tls_integration COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/companion_tls_integration.py --server $<TARGET_FILE:helion_server>)
+    set_tests_properties(helion_companion_tls_integration PROPERTIES TIMEOUT 90 RESOURCE_LOCK helion_gameplay_integration)
     add_test(NAME helion_galaxy_persistence COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/galaxy_persistence.py --server $<TARGET_FILE:helion_server>)
     set_tests_properties(helion_galaxy_persistence PROPERTIES TIMEOUT 90 RESOURCE_LOCK helion_gameplay_integration)

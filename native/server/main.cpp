@@ -2421,7 +2421,13 @@ int main(int argc, char** argv) {
       const auto marketsBefore = regionalMarkets;
       const auto telemetryBefore = economicTelemetry;
       const auto result = helion::economy::restock(regionalMarkets, pricingPolicy());
-      if (result.unitsAdded || result.demandAdded || result.budgetAdded) {
+      const bool marketsChanged = !std::equal(
+        regionalMarkets.begin(), regionalMarkets.end(), marketsBefore.begin(),
+        [](const auto& left, const auto& right) {
+          return left.station == right.station && left.commodityId == right.commodityId &&
+            left.stock == right.stock && left.demand == right.demand && left.buyBudget == right.buyBudget;
+        });
+      if (marketsChanged || result.unitsAdded || result.demandAdded || result.budgetAdded) {
         helion::economy::recordRestock(economicTelemetry, result);
         try { persistStateLocked(); }
         catch (const std::exception& error) {

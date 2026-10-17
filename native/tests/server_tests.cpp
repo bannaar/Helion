@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <sstream>
+#include "shared/economy.h"
 #include "shared/flight.h"
 #include "shared/tls.h"
 #include <map>
@@ -854,6 +855,73 @@ int main(int argc, char** argv) {
         parsedFlight && (std::abs(after.x - baseline.x) > 0.001 || std::abs(after.y - baseline.y) > 0.001 ||
           std::abs(after.vx - baseline.vx) > 0.001 || std::abs(after.vy - baseline.vy) > 0.001),
         "authoritative simulation remains available during slow client");
+
+  {
+    auto restockMarkets = helion::economy::seedMarkets(helion::economy::PricingPolicy::productionLike);
+    auto* keplerOre = helion::economy::findOrder(restockMarkets, 0, "ore");
+    check(keplerOre != nullptr, "find Kepler ore order for restock persistence test");
+    keplerOre->stock = 1;
+    keplerOre->demand = 299;
+    keplerOre->buyBudget = 17940;
+    const auto restockStep = helion::economy::restock(restockMarkets, helion::economy::PricingPolicy::productionLike);
+    check(keplerOre->stock == 0 && restockStep.unitsAdded == 0 &&
+          restockStep.demandAdded == 1 && restockStep.budgetAdded == 60,
+          "restock normalizes above-target ore stock without negative unitsAdded");
+    std::istringstream savedInput(content);
+    std::ostringstream restockedSave;
+    std::string line;
+    bool updatedTelemetry = false;
+    while (std::getline(savedInput, line)) {
+      if (line.rfind("K\t", 0) == 0) {
+        std::istringstream kInput(line);
+        std::string kind, stationText, commodity;
+        std::getline(kInput, kind, '\t');
+        std::getline(kInput, stationText, '\t');
+        std::getline(kInput, commodity, '\t');
+        const auto* order = helion::economy::findOrder(restockMarkets, std::stoi(stationText), commodity);
+        check(order != nullptr, "match persisted market row");
+        restockedSave << "K\t" << order->station << '\t' << order->commodityId << '\t'
+                      << order->stock << '\t' << order->demand << '\t' << order->buyBudget << '\n';
+      } else if (line.rfind("T\t", 0) == 0 && occurrences(line, "\t") == 1) {
+        auto parsedTelemetry = helion::economy::parseTelemetry(line.substr(2));
+        check(parsedTelemetry.has_value(), "parse persisted economic telemetry");
+        helion::economy::recordRestock(*parsedTelemetry, restockStep);
+        check(parsedTelemetry->restockedUnits == 0 && helion::economy::validateTelemetry(*parsedTelemetry),
+              "restock telemetry remains valid after above-target stock normalization");
+        restockedSave << "T\t" << helion::economy::serializeTelemetry(*parsedTelemetry) << '\n';
+        updatedTelemetry = true;
+      } else {
+        restockedSave << line << '\n';
+      }
+    }
+    check(updatedTelemetry, "rewrote persisted economic telemetry after restock normalization");
+    std::ofstream fixture(data, std::ios::trunc);
+    fixture << restockedSave.str();
+  }
+  childPid = fork();
+  check(childPid >= 0, "fork restock-reload server");
+  if (childPid == 0) {
+    execl(argv[1], argv[1], portText.c_str(), data.c_str(), "--cert", argv[2], "--key", argv[3], static_cast<char*>(nullptr));
+    _exit(127);
+  }
+  int restockReloadClient = -1;
+  for (int i = 0; i < 80 && restockReloadClient < 0; ++i) {
+    usleep(50000);
+    restockReloadClient = connectTo(port);
+  }
+  check(restockReloadClient >= 0, "server restarts cleanly after above-target restock normalization");
+  check(receiveUntil(restockReloadClient, "INFO commands=").find("WELCOME Helion/2") != std::string::npos,
+        "restock-reload server greeting");
+  command(restockReloadClient, "LOGIN explorer synthetic-password", "OK LOGIN");
+  const auto restockReloadEconomy = command(restockReloadClient, "ECONOMY", "ECONOMY END");
+  check(restockReloadEconomy.find("commodity=ore sell-price=0 buy-price=60 stock=0 demand=300 npc-buy-budget=18000") != std::string::npos &&
+        restockReloadEconomy.find("restocked-units=0 restocked-demand=1 restocked-npc-budget=60") != std::string::npos,
+        "restarted server reloads normalized ore stock and non-negative restock telemetry");
+  closeConnection(restockReloadClient);
+  kill(childPid, SIGTERM);
+  check(waitpid(childPid, &status, 0) == childPid && WIFEXITED(status) && WEXITSTATUS(status) == 0,
+        "restock-reload server shuts down cleanly");
+  childPid = -1;
 
   const std::string malformed = "P\tpilot\tlegacy-pass-one\tPilot\tfree-traders\tsidewinder\tbad-credits\t0\n";
   {

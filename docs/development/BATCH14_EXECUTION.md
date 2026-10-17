@@ -1,5 +1,88 @@
 # Batch 14 v0.20 execution record
 
+## Post-M4 `origin/main` integration and telemetry repair — 2026-10-17
+
+### Companion-auth merge boundary
+
+Commit `933537e0a577addd186fa48cce22c518065f1559` merged `origin/main`
+(`23cf90b`, scoped companion token authentication) into Batch 14 M4
+(`266bdda`) on branch `batch14/implementation-v0.11`. All seven merge conflicts
+were resolved preserving both the M4 negotiated binary transport and the
+scoped `profile.read` companion-token authentication, persistence (`T` rows
+with five tab-separated fields, distinguished from one-field economic
+telemetry `T` rows), revocation, and `helion_companion_tls_integration` test
+suite. `origin/main` is an ancestor of `HEAD`.
+
+### Post-merge regression, root cause, and repair
+
+During the post-merge parallel Combined Debug audit, `helion_graphical_acceptance`
+failed on server restart (`graphical_acceptance.py` line 177) when its first
+server phase ran past `kMarketRestockSeconds` (60 s):
+
+```text
+unable to load or securely migrate persistence: malformed economic telemetry
+```
+
+- **Root cause:** When a player sells mined ore or commodities so an order's
+  `stock` rises above `targetStock` (in the graphical journey, docking at
+  Kepler sells mined ore into Kepler's NPC buy-only `ore` order where
+  `npcSells = false` and `targetStock = 0`, raising `order.stock` from `0` to
+  `1`), the periodic 60-second `helion::economy::restock()` pass normalizes
+  `order.stock` back to `targetStock` via
+  `std::min(targetStock(*definition, policy), order.stock + stockStep)`.
+  Previously, `restock()` unconditionally accumulated
+  `result.unitsAdded += order.stock - stockBefore` (which became `-1`), and
+  `recordRestock()` unconditionally added `result.unitsAdded` into
+  `economicTelemetry.restockedUnits`, making `restockedUnits` negative (`-1`).
+  That negative counter was written to the `T` telemetry persistence record and
+  rejected by `validateTelemetry()` on the subsequent server restart.
+- **Repair:**
+  - In `native/shared/economy.cpp`, `restock()` continues to normalize
+    above-target `stock`, `demand`, and `buyBudget` toward target, but only
+    accumulates positive replenishment (`order.stock > stockBefore`,
+    `order.demand > demandBefore`, `order.buyBudget > budgetBefore`) into
+    `RestockResult::{unitsAdded, demandAdded, budgetAdded}`, and
+    `recordRestock()` guards against non-positive increments. Stock normalization
+    on one order never decrements `restockedUnits` or offsets positive
+    replenishment on another order.
+  - In `native/server/main.cpp`, the periodic market restock checkpoint also
+    checks whether `regionalMarkets` changed so stock-only normalization is
+    persisted and rolled back on save failure even when `unitsAdded`,
+    `demandAdded`, and `budgetAdded` are all zero.
+- **Regression tests added:**
+  - `native/tests/economy_tests.cpp`: reproduces the `npcSells = false`,
+    `targetStock = 0`, `stockBefore = 1` Kepler `ore` case, verifying that a
+    valid market order can begin above `targetStock`, `restock()` normalizes
+    `stock` to `0` with `unitsAdded == 0`, `recordRestock()` keeps
+    `restockedUnits == 0`, telemetry validates and round-trips through
+    `serializeTelemetry()` / `parseTelemetry()`, and positive replenishment on
+    another order (`food` `115 -> 120`, `unitsAdded == 5`) is not offset by
+    concurrent stock normalization.
+  - `native/tests/server_tests.cpp`: exercises the full save/restart/reload
+    path on `helion_server` after applying `restock()` and `recordRestock()` to
+    persisted market/telemetry state with Kepler `ore` at `stock = 1`
+    (`targetStock = 0`), confirming the server restarts cleanly and `ECONOMY`
+    reports `stock=0 demand=300 npc-buy-budget=18000` and
+    `restocked-units=0 restocked-demand=1 restocked-npc-budget=60`.
+
+### Final post-merge validation
+
+All required post-merge gates passed on 2026-10-17 with
+`HELION_WARNINGS_AS_ERRORS=ON`:
+
+| Configuration / gate | Result |
+| --- | --- |
+| Combined Debug, `/tmp/helion-merge-debug` | Build passed; complete CTest **31/31** passed (256.33 s) |
+| Debug ASan/UBSan server-only, `/tmp/helion-merge-sanitize` | Build passed; complete CTest **19/19** passed (79.28 s); no sanitizer diagnostics |
+| Release server-only, `/tmp/helion-b14-server` | Build passed; complete CTest **19/19** passed (61.43 s) |
+| Release client-only, `/tmp/helion-b14-client` | Build passed; complete CTest **20/20** passed (16.66 s) |
+| Packaging | Combined, server-only, and client-only TGZ and DEB: all six generated successfully |
+| Package & install smoke | `helion_install_smoke` and packaged TGZ/DEB companion-auth launcher smoke passed |
+| Graphical integration | Core gameplay, binary graphical acceptance (standalone 48.46 s and full-suite 46.30 s), legacy graphical acceptance (73.79 s), render states, and renderer fallback passed |
+| Whitespace & ancestry | `git diff --check` passed; `git merge-base --is-ancestor origin/main HEAD` returned `0` |
+
+Stop here at the post-merge M4 repair checkpoint; M5 has not been started.
+
 ## Current M4 continuation — 2026-10-16
 
 The user reviewed and approved M3 checkpoint

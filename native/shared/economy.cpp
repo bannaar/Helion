@@ -123,9 +123,9 @@ RestockResult restock(MarketState& state, PricingPolicy policy) {
     order.stock = std::min(targetStock(*definition, policy), order.stock + stockStep);
     order.demand = std::min(targetDemand(*definition, policy), order.demand + demandStep);
     order.buyBudget = std::min(targetBudget(*definition, policy), order.buyBudget + budgetStep);
-    result.unitsAdded += order.stock - stockBefore;
-    result.demandAdded += order.demand - demandBefore;
-    result.budgetAdded += order.buyBudget - budgetBefore;
+    if (order.stock > stockBefore) result.unitsAdded += order.stock - stockBefore;
+    if (order.demand > demandBefore) result.demandAdded += order.demand - demandBefore;
+    if (order.buyBudget > budgetBefore) result.budgetAdded += order.buyBudget - budgetBefore;
   }
   return result;
 }
@@ -219,9 +219,9 @@ void recordOreSale(Telemetry& telemetry, const flight::DockTransaction& transact
 }
 
 void recordRestock(Telemetry& telemetry, const RestockResult& result) {
-  telemetry.restockedUnits += result.unitsAdded;
-  telemetry.restockedDemand += result.demandAdded;
-  telemetry.restockedNpcBudget += result.budgetAdded;
+  if (result.unitsAdded > 0) telemetry.restockedUnits += result.unitsAdded;
+  if (result.demandAdded > 0) telemetry.restockedDemand += result.demandAdded;
+  if (result.budgetAdded > 0) telemetry.restockedNpcBudget += result.budgetAdded;
 }
 
 bool validateTelemetry(const Telemetry& t) {

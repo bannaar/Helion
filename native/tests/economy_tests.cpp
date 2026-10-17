@@ -135,5 +135,42 @@ int main() {
   check(!economy::parseTelemetry(encoded + ":1") && !economy::parseTelemetry("-1"),
         "malformed or negative telemetry is rejected");
 
+  auto aboveTarget = economy::seedMarkets(PricingPolicy::productionLike);
+  auto* keplerOreOrder = economy::findOrder(aboveTarget, 0, "ore");
+  check(keplerOre && !keplerOre->npcSells && keplerOre->targetStock == 0 && keplerOreOrder,
+        "Kepler ore order is NPC buy-only with targetStock=0");
+  keplerOreOrder->stock = 1;
+  keplerOreOrder->demand = 299;
+  keplerOreOrder->buyBudget = 17940;
+  check(economy::validateMarkets(aboveTarget, PricingPolicy::productionLike) &&
+        keplerOreOrder->stock > keplerOre->targetStock,
+        "valid market order can begin above targetStock after player ore sale");
+  const auto normalizedOnly = economy::restock(aboveTarget, PricingPolicy::productionLike);
+  check(keplerOreOrder->stock == 0 && keplerOreOrder->demand == 300 &&
+        keplerOreOrder->buyBudget == 18000 && normalizedOnly.unitsAdded == 0 &&
+        normalizedOnly.demandAdded == 1 && normalizedOnly.budgetAdded == 60,
+        "periodic restock normalizes above-target stock to targetStock without negative unitsAdded");
+  economy::Telemetry normalizedTelemetry;
+  economy::recordRestock(normalizedTelemetry, normalizedOnly);
+  const auto normalizedEncoded = economy::serializeTelemetry(normalizedTelemetry);
+  const auto normalizedDecoded = economy::parseTelemetry(normalizedEncoded);
+  check(normalizedTelemetry.restockedUnits == 0 &&
+        economy::validateTelemetry(normalizedTelemetry) && normalizedDecoded &&
+        normalizedDecoded->restockedUnits == 0 && normalizedDecoded->restockedDemand == 1 &&
+        normalizedDecoded->restockedNpcBudget == 60,
+        "telemetry after above-target stock normalization stays non-negative and round-trips");
+
+  auto mixedRestock = economy::seedMarkets(PricingPolicy::productionLike);
+  economy::findOrder(mixedRestock, 0, "ore")->stock = 1;
+  economy::findOrder(mixedRestock, 0, "food")->stock = 115;
+  const auto mixedResult = economy::restock(mixedRestock, PricingPolicy::productionLike);
+  economy::Telemetry mixedTelemetry;
+  economy::recordRestock(mixedTelemetry, mixedResult);
+  check(economy::findOrder(mixedRestock, 0, "ore")->stock == 0 &&
+        economy::findOrder(mixedRestock, 0, "food")->stock == 120 &&
+        mixedResult.unitsAdded == 5 && mixedTelemetry.restockedUnits == 5 &&
+        economy::validateTelemetry(mixedTelemetry),
+        "positive restocking increments telemetry without being offset by stock normalization");
+
   std::cout << "regional seeded market, pricing, transaction and telemetry tests passed\n";
 }

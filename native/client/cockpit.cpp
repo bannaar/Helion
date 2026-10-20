@@ -254,7 +254,9 @@ void buildUiScreenText(CockpitTextBatch& batch, const HudLayout& layout,
     appendUiLine(batch, layout, 354, false, "THE FRONTIER REMAINS ACTIVE. MINE, TRADE, REFIT AND PATROL.");
     appendUiLine(batch, layout, 386, false, "RECONNECT ANY TIME / YOUR RECOGNITION AND PROGRESSION REMAIN.", muted);
   } else if (ui.screen == UiScreen::error) {
-    appendUiLine(batch, layout, 124, false, "ACTION RESULT / NO AUTHORITATIVE STATE CHANGE", amber);
+    appendUiLine(batch, layout, 124, false, !ui.connected && !ui.authenticated ?
+      (ui.reconnectAvailable ? "COMMAND LINK LOST / CONTROLS DISABLED" : "CLIENT ERROR / CONTROLS DISABLED") :
+      "ACTION RESULT / NO AUTHORITATIVE STATE CHANGE", amber);
     appendUiLine(batch, layout, 164, false, ui.statusMessage.empty() ? "NO ERROR DETAILS" : ui.statusMessage, white, 880);
   }
   for (const auto& control : buildUiControls(ui)) {

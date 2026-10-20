@@ -1,6 +1,7 @@
 #pragma once
 #include "shared/flight.h"
 #include "client/ui.h"
+#include "client/engine_state.h"
 #include <string>
 #include <map>
 #include <vector>
@@ -8,6 +9,7 @@
 namespace helion::client {
 struct PresentationSnapshot;
 struct View {
+  GameStateController engine;
   flight::State ship;
   int credits = 1500, experience = 0;
   bool connected = false, commandReady = false, authenticated = false, console = true, thrust = false;

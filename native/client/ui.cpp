@@ -76,6 +76,7 @@ std::string uiControlName(UiControlId control) {
     case UiControlId::upgradeEngine: return "upgrade-engine";
     case UiControlId::upgradeHull: return "upgrade-hull";
     case UiControlId::quit: return "quit";
+    case UiControlId::reconnect: return "reconnect";
   }
   return "none";
 }
@@ -110,6 +111,7 @@ std::string uiButtonLabel(UiControlId control) {
     case UiControlId::upgradeEngine: return "ENGINE +";
     case UiControlId::upgradeHull: return "HULL +";
     case UiControlId::quit: return "EXIT / SAVED";
+    case UiControlId::reconnect: return "RECONNECT / ENTER OR R";
     default: return {};
   }
 }
@@ -175,8 +177,10 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::accountName, 24, 146, 890, 36, 0, true);
       addControl(controls, UiControlId::accountPassword, 24, 196, 890, 36, 1, true);
       addControl(controls, UiControlId::accountDisplay, 24, 246, 890, 36, 2, true);
-      addControl(controls, UiControlId::accountLogin, 24, 330, 260, 38, 3, state.connected && !state.commandPending);
-      addControl(controls, UiControlId::accountCreate, 310, 330, 300, 38, 4, state.connected && !state.commandPending);
+      addControl(controls, UiControlId::accountLogin, 24, 330, 260, 38, 3,
+        state.connected && state.playerLoginAvailable && !state.authenticated && !state.commandPending);
+      addControl(controls, UiControlId::accountCreate, 310, 330, 300, 38, 4,
+        state.connected && state.playerLoginAvailable && !state.authenticated && !state.commandPending);
       break;
     case UiScreen::station: {
       const std::array<UiControlId, 11> ids = {
@@ -249,7 +253,8 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::optionsTelemetry, 20, 144, 920, 34, 0, state.authenticated);
       break;
     case UiScreen::error:
-      addControl(controls, UiControlId::dismiss, 20, 442, 920, 34, 0, state.authenticated);
+      addControl(controls, state.reconnectAvailable ? UiControlId::reconnect : UiControlId::dismiss,
+        20, 442, 920, 34, 0, state.reconnectAvailable || state.authenticated);
       break;
     case UiScreen::profile:
     case UiScreen::graphics:
@@ -272,9 +277,9 @@ std::vector<UiControl> buildUiControls(const UiState& state) {
       addControl(controls, UiControlId::dismiss, 24, 440, 420, 34, 0, state.authenticated);
       break;
   }
-  if (state.screen != UiScreen::account && state.screen != UiScreen::help && state.screen != UiScreen::flight)
+  if (state.authenticated && state.screen != UiScreen::account && state.screen != UiScreen::help && state.screen != UiScreen::flight)
     addControl(controls, UiControlId::help, 640, 480, 130, 28, -1, true);
-  if (state.screen != UiScreen::account && state.screen != UiScreen::flight && state.screen != UiScreen::completion)
+  if (state.authenticated && state.screen != UiScreen::account && state.screen != UiScreen::flight && state.screen != UiScreen::completion)
     addControl(controls, UiControlId::dismiss, 780, 480, 150, 28, -1, true);
   if (state.screen == UiScreen::options)
     addControl(controls, UiControlId::quit, 24, 400, 230, 34, 0, true);

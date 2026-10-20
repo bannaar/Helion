@@ -9,10 +9,12 @@ class UiInput {
  public:
   std::string handle(View&, const SDL_Event&, int windowWidth, int windowHeight);
   void clearCredentials();
+  bool consumeReconnectRequest() { const bool result = reconnectRequested_; reconnectRequested_ = false; return result; }
  private:
   std::string username_, password_, display_;
   UiControlId field_ = UiControlId::accountName;
   bool leftDown_ = false;
+  bool reconnectRequested_ = false;
   std::string activate(View&, UiHitResult);
   void publishDraft(UiState&) const;
 };

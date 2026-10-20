@@ -1,5 +1,201 @@
 # Batch 14 v0.20 execution record
 
+## M5 client engine-state continuation — 2026-10-20
+
+### Verified starting boundary and scope
+
+The user explicitly authorized M5 and a single fully validated local checkpoint,
+then a stop before M6, without push or merge. This supersedes the historical
+stop-before-M5 notes below. Read-only preflight verified the expected branch
+`batch14/implementation-v0.11`, HEAD and freshly fetched origin branch both at
+`37c3e688dfb1c08f89beb0b1b9d24072272d7083` (`fix(economy): prevent negative
+restock telemetry`), a clean tracked tree/index, no unfinished merge/rebase/
+cherry-pick/revert, and `origin/main` (`23cf90b`) ancestry. There was no tracked
+post-baseline M5 work to preserve or duplicate. Recovery branch
+`backup/batch14-pre-m5-37c3e68` and the supplied Desktop recovery bundle exist
+and were left untouched. `git bundle verify` also confirmed complete valid
+history. `.agents/` and `plugins/` are pre-existing untracked
+tooling and are excluded from staging. Optional handoff files and GEMINI.md
+were absent. M0–M4 remain completed; no server/shared gameplay, M3 registry,
+persistence, M4 schema or companion-auth handler was rewritten.
+
+### Controller and transition audit
+
+`native/client/engine_state.*` introduces one `GameStateController` in the
+existing `View`. Transport, player session, server-derived flight mode and
+presentation are separate typed axes. The controller has no SDL/socket/OpenGL
+object, credentials, command sender, mutable ship or persistent gameplay state.
+The [native-client architecture](../native-client.md#client-state-controller-batch-14-m5)
+records the complete state mapping and runtime behavior.
+
+- BOOT enters CONNECTING explicitly. TLS verification plus protocol readiness
+  permits LOGIN. LOGIN/CREATE only mark a pending attempt; only the server's
+  success establishes the player session. A failed login stays unauthenticated.
+- An authenticated session without a fresh full server flight snapshot remains
+  at ORBIT_VIEW, a disabled waiting/integration presentation, not orbital
+  gameplay. Default ship flags and partial combat-status extensions cannot
+  establish docking or flight truth.
+- Validated binary/legacy snapshots derive docked, in-flight or recovery mode.
+  Authoritative launch/dock/recover snapshots select the existing flight or
+  station presentation; sending the requests alone changes neither. In legacy
+  mode, zero hull in a full server snapshot supplies recovery truth before the
+  optional combat-status line. Inconsistent full state fails closed.
+- Station hotkeys/navigation and station mutations require server-derived
+  docking. Active flight input and actions require SPACE_FLIGHT and in-flight
+  mode. Recovery uses the existing disabled cockpit and RECOVER request. UI
+  guards never replace server validation or apply economic/gameplay outcomes.
+- OPTIONS, GRAPHICS, HELP, PROFILE, GALNET, COMPLETION and ACTION_ERROR use a
+  bounded eight-entry return history. Back validates the return against current
+  authoritative context; stale station/flight context is discarded. Station
+  action-error modals return to their caller. Routine flight errors remain in
+  the existing status display rather than interrupting mining/combat.
+- Controller exit hooks clear every held flight latch and thrust. Main's focus/
+  console handling also clears them. Core and legacy share the gated held-input
+  path. The acceptance driver's physical-key model releases keys when production
+  disables flight, so a later leg issues new key presses instead of depending
+  on intentionally cleared controls.
+- Transport loss enters DISCONNECTED and clears session truth, pending output,
+  credentials and controls. R/Enter or the core Reconnect button explicitly
+  starts a fresh TLS connection, negotiation and login, clearing read models,
+  decoders, request IDs, smoothing and modal history. Fresh server snapshots
+  restore docked, flying or recovery state. Malformed/incompatible traffic or
+  inconsistent state enters terminal FATAL_ERROR; no silent downgrade/retry.
+
+The direct-screen-write audit found live assignments in `UiInput::open`,
+CAREER onboarding/completion handling, login success, launch/dock/recover reply
+handling and a legacy escape branch. All were replaced by controller events or
+navigation/projection. The only remaining client `.screen =` writes outside
+`GameStateController::project` are in `configureRenderFixture`; these deliberately
+offline fixtures return before the network loop. Renderer/unit fixtures remain
+free to construct raw snapshots. Connection/auth flags in live View/UiState
+are projections; console, local selection/focus, effects and server read-model
+fields remain appropriate independent presentation data.
+
+### Protocol, authority and liveness decisions
+
+TLS, binary v1, explicit negotiation, bounded framing/codecs, typed INPUT and
+flight state, malformed-frame closure, explicit legacy compatibility, request
+sequencing and companion scope enforcement remain in the existing paths. No
+protocol or server source changed. Companion authentication has explicit
+pending/read-only session variants that preserve scoped PROFILE reads without
+a player gameplay session. Existing player-to-companion demotion is supported:
+pending token authentication inhibits controls, rejection preserves the server
+player session, and success removes local player access. Live expiry/revocation
+errors fail the scoped session closed. There is no new character creator,
+local simulation, universe store, third transport or client gameplay authority.
+
+The server INPUT handler updates input age/dirty state even for neutral input;
+this is the validated existing liveness behavior. M5 preserves 10 Hz neutral
+INPUT in station/menu states, 1 Hz CONTACTS and pre-login STATE polling. It does
+not substitute Antigravity's proposed 2.5-second FLIGHT heartbeat. Optimizing
+liveness remains deferred. Existing terminal diagnostic behavior and initial
+command-line connection/renderer failure exits remain compatible.
+
+### Tests and implementation corrections
+
+- New `helion_engine_state_tests`: deterministic lifecycle, valid/invalid
+  transitions, failed login, unknown state, authoritative dock/launch/recovery,
+  request-only non-transitions, station/flight guards, modal/back return,
+  destruction, input clearing, transport loss, explicit retry, reconnect in
+  docked/flight states, inconsistent state, and absence of local ship mutation.
+  Scoped companion success/failure, preserved profile reads and gameplay denial
+  are also covered. It runs without SDL/display in every test configuration,
+  including ASan.
+- Extended `helion_ui_input_tests`: real SDL hotkeys cannot enter station views
+  while undocked; modal/back, retry intent, credential masking and input-latch
+  behavior remain covered. Existing assertions became runtime checks so their
+  expressions and actions also execute in Release; none were removed.
+- New `helion_client_state_integration`: the real guarded SDL client performs
+  transport loss, explicit retry, fresh negotiation/login, and restoration from
+  docked/in-flight/recovery snapshots against a controlled TLS peer in binary
+  and legacy modes. The existing real-server graphical journeys separately
+  cover character creation, career, economy, flight/combat and saved reconnect.
+
+Initial restricted graphical runs failed before execution because sandbox
+socket creation was denied; a restricted post-rebuild sanitizer invocation also
+encountered LeakSanitizer's ptrace limitation. Permissioned reruns passed
+without disabling leak detection and use the real desktop/TLS path.
+An early implementation opened a modal for mining cooldown rejections and
+blocked the journey; flight errors now retain the existing nonmodal status
+feedback. A subsequent journey exposed the acceptance driver's stale physical
+key model after the new production latch clearing; the driver now releases and
+re-presses controls across disabled-flight boundaries. The final source review
+also closed partial-status initialization from default ship data and preserved companion PROFILE reads through an explicit scoped
+session rather than treating a token session as a player login. No gameplay
+assertion, timeout, protocol check or server rule was weakened. Release
+compilation also caught an assertion-only unused variable; enabling UI-input checks in Release
+fixed that and strengthened their coverage.
+
+### Final M5 validation and checkpoint boundary
+
+All final builds used `HELION_WARNINGS_AS_ERRORS=ON`. The final source, including
+scoped companion demotion and partial-status initialization protection, passed:
+
+| Configuration / gate | Exact result |
+| --- | --- |
+| Combined Debug, `/tmp/helion-m5-debug` | Build passed; complete CTest **33/33**, **243.55 s** |
+| Server Debug ASan/UBSan, `/tmp/helion-m5-sanitize` | Build passed; complete CTest **20/20**, **84.71 s**; no ASan/LSan/UBSan diagnostics or suppressing environment overrides |
+| Release server-only, `/tmp/helion-m5-server` | Build passed; complete CTest **20/20**, **66.70 s** |
+| Release client-only, `/tmp/helion-m5-client` | Build passed; complete CTest **22/22**, **35.42 s** |
+| New controller / existing UI, UI-input, presentation, protocol, security tests | Passed in the applicable complete suites; UI-input checks execute in Release |
+| TLS / authoritative server integration | Passed, **41.77 s** in Combined Debug |
+| Binary TLS integration | Passed, **4.80 s** in Combined Debug |
+| Companion TLS integration | Passed, **13.22 s** in Combined Debug, plus both server configurations |
+| Binary graphical career/reconnect | Passed, **46.49 s** |
+| Explicit legacy graphical career/reconnect | Passed, **43.99 s** |
+| Client state/retry TLS + SDL integration | All six docked/flight/recovery × binary/legacy cases passed, **8.84 s** |
+| Core gameplay / render states / renderer fallback | Passed, **50.55 / 10.34 / 2.59 s** |
+| Combined install smoke | Passed, **1.95 s**; TLS, creation, saved login, permissions, desktop assets and shutdown |
+| Packaging | Combined Debug, server Release and client Release: all **six TGZ/DEB** artifacts generated |
+| Split package smoke | TGZ contents and extracted DEBs, headless dependencies, client launcher, certificate/name rejection, saved reconnect, isolated dpkg install/remove, upgrade and external-data preservation passed |
+| Combined TGZ and DEB smoke | Extracted launchers passed first-run TLS, account creation, saved login, companion issuance/profile-only scope/denied launch/revocation, owner-only data/TLS files and shutdown; updated controller documentation was present |
+| Visual inspection | Actual binary/legacy disconnect and restored-flight SDL captures inspected; visible content and retry control, on Intel HD 3000 / OpenGL 3.3 core / X11 |
+| Whitespace and ancestry | `git diff --check` passed; `git merge-base --is-ancestor origin/main HEAD` returned **0** |
+
+Commands: `cmake -S . -B <build> -DCMAKE_BUILD_TYPE=Debug|Release` with the
+client/server/test/sanitizer/flavor options above, `cmake --build <build>
+--parallel 2|3`, `ctest --test-dir <build> --output-on-failure`, and
+`cpack --config <build>/CPackConfig.cmake -B <build>/packages`. Cache files
+confirm all four configurations and warnings-as-errors. Full CTest output is
+in `<build>/Testing/Temporary/LastTest.log`. Sanitizer logs were also searched
+for ASan/LSan/UBSan/runtime-error diagnostics; none were present. The two new
+CTest registrations explain the **33/20/22** totals rather than the pre-M5
+**31/19/20** totals.
+
+The repository's `native/tests/split_package_smoke.py` ran with both split
+DEBs/TGZs and the two Release build directories. Temporary helper
+`/tmp/helion_m5_packages.py` additionally exercised both combined artifacts and
+scoped pairing/revocation without printing tokens. Persistent visual captures
+are under `/tmp/helion-m5-visual/`; the live retry test itself normally cleans
+its temporary captures. These local build/package/QA artifacts are outside the
+source checkpoint. An intermediate Release server CTest runner received
+SIGTERM (exit 143) without an assertion failure; the complete final rerun above
+passed. No final validation failure remains.
+
+M5 is implemented and validated. The local checkpoint contains only M5 source,
+tests and documentation and extends the verified `37c3e68` baseline. No push,
+merge to main, rebase, reset or cleanup of unrelated tooling is part of it.
+
+Known limits: ORBIT_VIEW is an integration/waiting seam, not orbital gameplay;
+retry is explicit and requires fresh credentials; initial command-line
+connection/renderer failures retain existing exit behavior and connection
+establishment still uses the existing blocking helper. Full graphical driver
+paths were tested on the actual X11/Intel GPU, while sanitizers cover the
+server configuration and display-independent controller, not the SDL/GL driver.
+The existing bounded text read models and UI pending-action response scheme
+remain; M5 does not redesign transport, liveness or rendering.
+
+Deferred and not started here: M6 TEST roles, audited admin operations and
+eligibility controls; M7 broader permission-filtered Companion/Public API read
+surfaces and trust separation beyond the existing token foundation; M8
+vendor-neutral production operations/status/observability/backup integration;
+M9 batch-wide completion/security review and later Batch 15 planning. Existing
+deferrals for orbital gameplay, discovery acquisition, galaxy-wide industry,
+enforcement fleets and strategic travel remain unchanged. Heartbeat
+optimization and asynchronous connection establishment are outside M5. Stop
+at the fully validated local M5 checkpoint.
+
+
 ## Post-M4 `origin/main` integration and telemetry repair — 2026-10-17
 
 ### Companion-auth merge boundary

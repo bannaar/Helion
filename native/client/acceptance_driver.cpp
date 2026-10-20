@@ -121,6 +121,10 @@ void AcceptanceDriver::navigate(const View& view, double x, double y) {
 
 void AcceptanceDriver::tick(const View& view, int width, int height, double now) {
   if (!enabled() || done_ || failed_) return;
+  // The production controller releases held controls on menu/dock/loss entry.
+  // Keep the test driver's physical-key model in step, so the next flight leg
+  // presses keys again rather than relying on a latch that was intentionally cleared.
+  if (!view.engine.flightInputAllowed()) setFlightKeys(false, false, false, false);
   if (stageStarted_ == 0) stageStarted_ = now;
   if (now - stageStarted_ > (phase_ == Phase::soak ? kSoakStageTimeout : kStageTimeout)) {
     fail("stage-timeout:x=" + std::to_string(static_cast<int>(view.ship.x)) +
@@ -138,10 +142,42 @@ void AcceptanceDriver::tick(const View& view, int width, int height, double now)
          ":supply=" + std::to_string(view.ui.career.supply) +
          ":mission-selected=" + std::to_string(view.ui.missionSelected) +
          ":pending=" + std::to_string(view.ui.commandPending) +
+         ":engine=" + engineStateName(view.engine.state()) +
+         ":held=" + std::to_string(view.engine.input().heldForward) +
+           std::to_string(view.engine.input().heldLeft) + std::to_string(view.engine.input().heldRight) +
+           std::to_string(view.engine.input().heldBrake) +
+         ":driver-held=" + std::to_string(forward_) + std::to_string(left_) +
+           std::to_string(right_) + std::to_string(brake_) +
          ":status=" + view.ui.statusMessage.substr(0, 80));
     return;
   }
   if (now < nextAction_) return;
+
+  if (phase_ == Phase::lifecycle) {
+    switch (stage_) {
+      case 0: case 3:
+        if (view.engine.state() != GameEngineState::LOGIN) return;
+        click(view.ui, UiControlId::accountName, -1, width, height); type(kUser);
+        click(view.ui, UiControlId::accountPassword, -1, width, height); type(kPassword);
+        click(view.ui, stage_ == 0 ? UiControlId::accountCreate : UiControlId::accountLogin, -1, width, height);
+        advance(stage_ == 0 ? 1 : 4, now); return;
+      case 1:
+        if (!view.engine.authenticated() || view.engine.flightMode() == AuthoritativeFlightMode::unknown) return;
+        advance(2, now); return;
+      case 2:
+        if (view.engine.state() != GameEngineState::DISCONNECTED) return;
+        if (!capture("disconnected")) return;
+        tap(SDLK_r); // ordinary explicit retry through the production SDL handler
+        advance(3, now); return;
+      case 4:
+        if (!view.engine.authenticated() || view.engine.flightMode() == AuthoritativeFlightMode::unknown) return;
+        if (!capture("restored")) return;
+        std::cout << "ACCEPTANCE PASS phase=lifecycle state=" << engineStateName(view.engine.state())
+                  << " flight=" << static_cast<int>(view.engine.flightMode()) << std::endl;
+        done_ = true; return;
+      default: return;
+    }
+  }
 
   if (phase_ == Phase::soak) {
     if (soakStarted_ > 0 && now - soakStarted_ >= soakSeconds_) {

@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -59,7 +60,7 @@ enum class UiControlId {
   optionsTelemetry,
   dismiss, help, introDismiss, accountName, accountPassword, accountDisplay,
   accountLogin, accountCreate, missionRow, mine, dock, target, fire, recover,
-  upgradeEngine, upgradeHull, quit
+  upgradeEngine, upgradeHull, quit, reconnect
 };
 
 struct UiPoint {
@@ -137,6 +138,10 @@ struct UiShipyardRow {
 };
 
 struct UiState {
+  // Renderer projection; live transitions are owned by GameStateController.
+  std::uint64_t controllerRevision = 0;
+  bool reconnectAvailable = false;
+  bool playerLoginAvailable = true;
   UiScreen screen = UiScreen::account;
   int selected = 0;
   int quantity = 1;

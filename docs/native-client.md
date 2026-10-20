@@ -152,6 +152,102 @@ Credits, XP, upgrades, market cargo, mined ore, position, velocity, and dock
 state survive server restarts. Each commander still has separate asteroid
 depletion, while GalNet chat and live contact positions are shared.
 
+## Client state controller (Batch 14 M5)
+
+`native/client/engine_state.*` defines the single live `GameStateController`.
+It is independent of SDL, OpenGL and sockets and cannot mutate a ship or send
+commands. `View::engine` owns it; `main.cpp` adapts verified network events and
+`UiInput` adapts ordinary mouse/keyboard navigation. The existing `View`,
+`UiState`, cockpit, presentation snapshot, renderer and acceptance driver remain.
+
+Four typed axes have distinct meanings:
+
+| Axis | Meaning |
+| --- | --- |
+| `TransportState` | Offline, connecting, TLS verified, protocol ready, lost or failed |
+| `SessionState` | Unauthenticated, pending player/companion authentication, authenticated player, or scoped read-only companion |
+| `AuthoritativeFlightMode` | Unknown, docked, in flight or destroyed/recovery, derived from validated server snapshots |
+| `GameEngineState` | Local presentation/navigation only |
+
+The presentation states are `BOOT`, `CONNECTING`, `LOGIN`, `ORBIT_VIEW`,
+`STATION_SERVICES`, `STATION_CAREER`, `STATION_MARKET`, `STATION_OUTFITTING`,
+`STATION_SHIPYARD`, `SPACE_FLIGHT`, `GALNET`, `OPTIONS`, `PROFILE`, `GRAPHICS`,
+`HELP`, `COMPLETION`, `ACTION_ERROR`, `DISCONNECTED` and `FATAL_ERROR`.
+`STATION_SERVICES` preserves the existing station menu; `STATION_CAREER` uses
+the existing contract panel. `ORBIT_VIEW` is the integration/waiting boundary
+for an authenticated player whose authoritative flight state is unknown. It
+uses the account/status presentation with gameplay disabled; it adds no orbital
+gameplay. GalNet's existing name, IDs and wire commands remain compatible.
+
+The normal path is `BOOT -> CONNECTING -> LOGIN`, after TLS and explicit
+protocol negotiation (or explicit legacy selection). Sending LOGIN/CREATE only
+marks authentication pending. A server success establishes the player session,
+then a fresh FLIGHT response selects station, flight or recovery presentation.
+Neither default-constructed ship data nor a partial combat-status extension can
+establish the initial flight mode. In legacy mode, zero hull in the validated
+FLIGHT snapshot supplies server-derived destruction truth before its optional
+COMBAT STATUS extension. Inconsistent full state fails closed.
+
+LAUNCH, DOCK and RECOVER requests do not change the presentation or ship state.
+Their validated server snapshots select the resulting presentation. Station
+hotkeys, views and mutations require authoritative docking; thrust, steering,
+mining, docking and firing require active flight presentation. Recovery keeps
+the existing disabled-ship cockpit and enables RECOVER. Client-side guards are
+input policy only: the server still validates every request and owns docking,
+location, assets, inventory, prices, missions, combat, progression and saves.
+
+Modals keep a bounded eight-entry return history. Escape/back restores the
+previous allowed presentation, including flight -> options -> flight and
+market -> action error -> market. A server update that invalidates the old
+context makes back return to the new authoritative base instead. Focus and
+selection reset on presentation entry. Flight action rejections remain in the
+existing status display, so ordinary mining/weapon cooldowns do not open a
+modal. Docked UI rejections can open the returnable action-error view.
+
+Leaving active flight, destruction, docking, disconnect, fatal failure, console
+entry or focus loss releases all client flight latches and thrust. Both
+renderers use the same gated held-input path and preserve A/left = positive turn
+and D/right = negative turn in the existing north-up flight basis. Returning to
+flight requires a new key press. This does not simulate braking or motion
+locally; the existing neutral INPUT request and server stale-input protection
+remain responsible for networked controls.
+
+Transport loss disables controls, discards pending output/actions and clears
+credential drafts. Press **R** or **Enter** to retry; core mode also provides a
+Reconnect button. Retry clears cached session/read-model data, decoders,
+request IDs, smoothing and modal history, then uses the same TLS and negotiated
+binary/explicit legacy path. It requires fresh login; passwords are never
+remembered or replayed. Only fresh server flight state chooses the restored
+station, flying or recovery context. There is no automatic retry/downgrade.
+Malformed/incompatible protocol and inconsistent state enter terminal
+`FATAL_ERROR`; close and restart the client. Initial command-line connection or
+renderer initialization failures retain their existing nonzero exit behavior.
+
+All live `UiState::screen` writes now come from controller projection. The
+remaining direct writes in `configureRenderFixture` and renderer/unit fixtures
+are intentionally offline and cannot establish a session. View connection/auth
+flags are renderer projections, not independent navigation decisions.
+
+M4 framing, version negotiation, TLS verification, scope checks, replay rules
+and companion-token behavior are unchanged. Companion authentication establishes a distinct read-only session, retains PROFILE
+reads, and never establishes a player gameplay session. Existing player-to-token
+demotion inhibits controls while pending, preserves the player session on token
+rejection, and removes player access on success. An expired or revoked grant
+cannot enable gameplay; expiry/revocation reported on a live read
+fails the scoped session closed. The validated 10 Hz neutral INPUT traffic
+in station/menu states, 1 Hz contact polling and pre-login STATE polling are
+preserved. No 2.5-second FLIGHT heartbeat optimization is part of M5.
+
+`helion_engine_state_tests` covers deterministic transitions, guards, authority,
+modal return, retry, unknown/inconsistent state and input safety without a
+display. Extended UI-input tests exercise real SDL events and run their checks
+in Release too. `helion_client_state_integration` drives explicit retry and fresh
+login in the same real SDL client against a controlled TLS peer for docked,
+flying and recovery snapshots in both transports. The unchanged real-server
+binary and legacy graphical journeys separately validate gameplay/persistence.
+The guarded `--acceptance-phase lifecycle` injects ordinary SDL events only;
+it does not bypass production guards or inject local gameplay state.
+
 ## 5. Graphics capability and context selection
 
 The fixed-function renderer first requests an OpenGL 3.0 compatibility

@@ -8,9 +8,11 @@ namespace helion::client {
 namespace {
 constexpr int kVisibleShipyardRows = 6;
 
-void open(UiState& ui, UiScreen screen) {
-  ui.screen = screen; ui.selected = 0; ui.scrollOffset = 0;
-  ui.focusedControl = UiControlId::none; ui.hoveredControl = UiControlId::none;
+bool open(View& view, GameEngineState state) {
+  const bool changed = view.engine.navigate(state);
+  view.engine.project(view.ui);
+  view.thrust = view.engine.input().thrust;
+  return changed;
 }
 }
 void UiInput::clearCredentials() { std::fill(password_.begin(), password_.end(), '\0'); password_.clear(); }
@@ -23,6 +25,9 @@ std::string UiInput::activate(View& view, UiHitResult hit) {
   if (hit.id == UiControlId::none || !hit.enabled) return {};
   ui.focusedControl = hit.id;
   switch (hit.id) {
+    case UiControlId::reconnect:
+      reconnectRequested_ = view.engine.state() == GameEngineState::DISCONNECTED;
+      return {};
     case UiControlId::accountName: case UiControlId::accountPassword: case UiControlId::accountDisplay:
       field_ = hit.id; return {};
     case UiControlId::accountLogin: case UiControlId::accountCreate: {
@@ -34,20 +39,21 @@ std::string UiInput::activate(View& view, UiHitResult hit) {
       }
       clearCredentials(); publishDraft(ui); return command;
     }
-    case UiControlId::stationMarket: open(ui, UiScreen::market); return "FLIGHT";
-    case UiControlId::stationMission: open(ui, UiScreen::mission); return "CAREER";
-    case UiControlId::stationOutfitting: open(ui, UiScreen::outfitting); return "OUTFIT LIST";
+    case UiControlId::stationMarket: return open(view, GameEngineState::STATION_MARKET) ? "FLIGHT" : "";
+    case UiControlId::stationMission: return open(view, GameEngineState::STATION_CAREER) ? "CAREER" : "";
+    case UiControlId::stationOutfitting: return open(view, GameEngineState::STATION_OUTFITTING) ? "OUTFIT LIST" : "";
     case UiControlId::stationShipyard:
-      ui.shipyardRows.clear(); open(ui, UiScreen::shipyard); return "SHIPYARD LIST";
-    case UiControlId::stationProfile: open(ui, UiScreen::profile); return "PROFILE";
-    case UiControlId::stationGalnet: open(ui, UiScreen::galnet); return "GALNET";
-    case UiControlId::stationOptions: open(ui, UiScreen::options); return {};
-    case UiControlId::stationGraphics: open(ui, UiScreen::graphics); return {};
-    case UiControlId::help: open(ui, UiScreen::help); return {};
+      if (!open(view, GameEngineState::STATION_SHIPYARD)) return {};
+      ui.shipyardRows.clear(); return "SHIPYARD LIST";
+    case UiControlId::stationProfile: return open(view, GameEngineState::PROFILE) ? "PROFILE" : "";
+    case UiControlId::stationGalnet: return open(view, GameEngineState::GALNET) ? "GALNET" : "";
+    case UiControlId::stationOptions: open(view, GameEngineState::OPTIONS); return {};
+    case UiControlId::stationGraphics: open(view, GameEngineState::GRAPHICS); return {};
+    case UiControlId::help: open(view, GameEngineState::HELP); return {};
     case UiControlId::dismiss:
-      open(ui, view.authenticated ? (view.ship.docked ? UiScreen::station : UiScreen::flight) : UiScreen::account); return {};
+      view.engine.back(); view.engine.project(ui); return {};
     case UiControlId::introDismiss:
-      open(ui, view.ship.docked ? UiScreen::station : UiScreen::flight); return "CAREER DISMISS";
+      view.engine.back(); view.engine.project(ui); return "CAREER DISMISS";
     case UiControlId::marketFood: case UiControlId::marketParts: case UiControlId::outfitRow:
       ui.selected = hit.index; return {};
     case UiControlId::shipyardRow: ui.selected = hit.index; return {};
@@ -67,8 +73,8 @@ std::string UiInput::activate(View& view, UiHitResult hit) {
 }
 std::string UiInput::handle(View& view, const SDL_Event& event, int width, int height) {
   auto& ui = view.ui;
-  ui.connected = view.connected; ui.authenticated = view.authenticated;
   populateUiDerived(ui, view.ship);
+  view.engine.project(ui);
   if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) leftDown_ = false;
   if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) { leftDown_ = false; return {}; }
   if (event.type == SDL_MOUSEMOTION) {
@@ -92,7 +98,7 @@ std::string UiInput::handle(View& view, const SDL_Event& event, int width, int h
     }
     return {};
   }
-  if (event.type == SDL_TEXTINPUT && ui.screen == UiScreen::account) {
+  if (event.type == SDL_TEXTINPUT && view.engine.state() == GameEngineState::LOGIN) {
     auto& text = field_ == UiControlId::accountPassword ? password_ : field_ == UiControlId::accountDisplay ? display_ : username_;
     const std::size_t limit = field_ == UiControlId::accountPassword ? 128 : field_ == UiControlId::accountDisplay ? 64 : 32;
     for (const unsigned char c : std::string(event.text.text)) {
@@ -104,12 +110,16 @@ std::string UiInput::handle(View& view, const SDL_Event& event, int width, int h
   }
   if (event.type != SDL_KEYDOWN || event.key.repeat) return {};
   const auto key = event.key.keysym.sym;
+  if (view.engine.state() == GameEngineState::DISCONNECTED) {
+    if (key == SDLK_RETURN || key == SDLK_r) reconnectRequested_ = true;
+    return {};
+  }
   const auto invoke = [&](UiControlId id) {
     for (const auto& control : buildUiControls(ui)) if (control.id == id)
       return activate(view, {id, control.index, control.enabled});
     return std::string{};
   };
-  if (ui.screen == UiScreen::account) {
+  if (view.engine.state() == GameEngineState::LOGIN) {
     if (key == SDLK_TAB) { field_ = field_ == UiControlId::accountName ? UiControlId::accountPassword :
       field_ == UiControlId::accountPassword ? UiControlId::accountDisplay : UiControlId::accountName; ui.focusedControl = field_; }
     if (key == SDLK_BACKSPACE) {
@@ -120,9 +130,9 @@ std::string UiInput::handle(View& view, const SDL_Event& event, int width, int h
     if (key == SDLK_RETURN) return invoke(event.key.keysym.mod & KMOD_SHIFT ? UiControlId::accountCreate : UiControlId::accountLogin);
     return {};
   }
-  if (!view.authenticated) return {};
+  if (!view.engine.authenticated()) return {};
   if (key == SDLK_ESCAPE) return activate(view, {UiControlId::dismiss, 0, true});
-  if (key == SDLK_F1 && view.ship.docked) { open(ui, UiScreen::station); return {}; }
+  if (key == SDLK_F1) { open(view, GameEngineState::STATION_SERVICES); return {}; }
   const UiControlId shortcuts[] = {UiControlId::stationProfile, UiControlId::stationOptions, UiControlId::stationMarket,
     UiControlId::stationMission, UiControlId::stationOutfitting, UiControlId::stationGalnet, UiControlId::stationGraphics, UiControlId::help};
   if (key >= SDLK_F2 && key <= SDLK_F9) return activate(view, {shortcuts[key - SDLK_F2], 0, true});

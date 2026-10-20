@@ -14,7 +14,7 @@ namespace helion::client {
 // server over the production TLS/protocol path.
 class AcceptanceDriver {
  public:
-  enum class Phase { journey, reconnect, soak };
+  enum class Phase { journey, reconnect, soak, lifecycle };
 
   AcceptanceDriver(Phase phase, std::string captureDirectory, double soakSeconds = 600.0);
   void tick(const View& view, int windowWidth, int windowHeight, double now);

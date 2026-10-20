@@ -262,8 +262,8 @@ void updateUiFromLine(helion::client::View& view, std::string_view line) {
     ui.career.introDismissed = integerField(line, "intro=") != 0;
     ui.career.complete = integerField(line, "complete=") != 0;
     ui.careerKnown = true;
-    if (first && !ui.career.introDismissed) ui.screen = helion::client::UiScreen::help;
-    if (!first && !wasComplete && ui.career.complete) ui.screen = helion::client::UiScreen::completion;
+    if (first && !ui.career.introDismissed) view.engine.navigate(helion::client::GameEngineState::HELP);
+    if (!first && !wasComplete && ui.career.complete) view.engine.navigate(helion::client::GameEngineState::COMPLETION);
   }
   if (line.rfind("SHIPYARD BEGIN ", 0) == 0) {
     ui.shipyardRows.clear(); ui.selected = 0; ui.scrollOffset = 0;
@@ -334,6 +334,8 @@ bool validRenderState(std::string_view state) {
 }
 
 void configureRenderFixture(helion::client::View& view, std::string_view state) {
+  // Offline renderer fixtures deliberately bypass lifecycle/navigation. They
+  // never run the network loop and cannot establish a live gameplay session.
   view.connected = true;
   view.authenticated = true;
   view.console = false;
@@ -455,8 +457,8 @@ int main(int argc,char** argv) {
       else if(arg=="--acceptance-run" && i+1<argc) { acceptanceRun=true; acceptanceDirectory=argv[++i]; }
       else if(arg=="--acceptance-phase" && i+1<argc) {
         acceptancePhase=argv[++i];
-        if(acceptancePhase!="journey" && acceptancePhase!="reconnect" && acceptancePhase!="soak")
-          throw std::runtime_error("acceptance phase must be journey, reconnect, or soak");
+        if(acceptancePhase!="journey" && acceptancePhase!="reconnect" && acceptancePhase!="soak" && acceptancePhase!="lifecycle")
+          throw std::runtime_error("acceptance phase must be journey, reconnect, soak, or lifecycle");
       }
       else if(arg=="--acceptance-seconds" && i+1<argc) {
         try { acceptanceSeconds = std::stod(argv[++i]); }
@@ -507,7 +509,10 @@ int main(int argc,char** argv) {
     return 2;
   }
   const bool noConnection = renderCheck || graphicsInfo;
-  const int fd=noConnection ? -1 : connectTo(host,port);
+  helion::client::View view;
+  auto& engine = view.engine;
+  if (!noConnection) engine.beginConnection();
+  int fd=noConnection ? -1 : connectTo(host,port);
   if(!noConnection && fd<0) { std::cerr<<"Unable to connect to "<<host<<':'<<port<<'\n'; return 1; }
   helion::tls::Context tlsContext(nullptr,SSL_CTX_free);
   std::unique_ptr<helion::tls::Connection> connection;
@@ -516,6 +521,7 @@ int main(int argc,char** argv) {
       tlsContext=helion::tls::clientContext(caFile);
       connection=std::make_unique<helion::tls::Connection>(tlsContext.get(),fd);
       connection->handshake(false,host);
+      engine.tlsVerified();
     } catch(const std::exception& error) {
       std::cerr<<error.what()<<'\n'; close(fd); return 1;
     }
@@ -591,7 +597,7 @@ int main(int argc,char** argv) {
     return 0;
   }
   SDL_SetWindowMinimumSize(window,960,600); SDL_GL_SetSwapInterval(1);
-  helion::client::View view; view.connected=!renderCheck;
+  view.connected = engine.connected();
   view.ui.connectionStatus = renderCheck ? "TLS VERIFIED / RENDER FIXTURE" : "TLS VERIFIED / CONNECTED TO " + host + ":" + port;
   view.ui.graphicsReport = helion::graphics::diagnosticLine(graphics.result);
   view.log={helion::graphics::diagnosticLine(graphics.result), "TLS verified / Connected to "+host+":"+port};
@@ -642,9 +648,14 @@ int main(int argc,char** argv) {
   std::uint32_t lastResponseRequestId = 0;
   std::string pendingUiAction;
   auto queue=[&](const std::string& request) {
-    if(!view.connected || !protocolReady) { view.log.push_back("Command link not ready"); return; }
+    if(!view.connected || !protocolReady) { view.log.push_back("Command link not ready"); return false; }
+    const auto parsedRequest = helion::protocol::parseRequest(request);
+    if (!engine.allowsCommand(parsedRequest)) {
+      view.ui.statusMessage = "ACTION UNAVAILABLE IN CURRENT CLIENT STATE";
+      return false;
+    }
     if(!helion::protocol::validWireLine(request)) {
-      view.log.push_back("Command queue full or invalid request"); return;
+      view.log.push_back("Command queue full or invalid request"); return false;
     }
     std::string encoded;
     if (binaryMode) {
@@ -660,15 +671,19 @@ int main(int argc,char** argv) {
           helion::protocol::binary::MessageType::textRequest, nextRequestId, request);
       }
       if (!frame || nextRequestId == std::numeric_limits<std::uint32_t>::max()) {
-        view.log.push_back("Command protocol sequence exhausted"); view.connected=false; return;
+        view.log.push_back("Command protocol sequence exhausted"); engine.fatal("PROTOCOL SEQUENCE EXHAUSTED"); view.connected=false; return false;
       }
       encoded = std::move(*frame);
       ++nextRequestId;
     } else encoded = request + "\n";
     if (outgoing.size() + encoded.size() > 65536) {
-      view.log.push_back("Command queue full or invalid request"); return;
+      view.log.push_back("Command queue full or invalid request"); return false;
     }
     outgoing += encoded;
+    if (parsedRequest.command == helion::protocol::Command::login ||
+        parsedRequest.command == helion::protocol::Command::create) engine.authenticationRequested();
+    if (parsedRequest.command == helion::protocol::Command::companion_auth) engine.companionAuthenticationRequested();
+    return true;
   };
   auto queueUi=[&](const std::string& request) {
     // Background INPUT/CONTACTS traffic is expected during flight and may
@@ -679,7 +694,7 @@ int main(int argc,char** argv) {
       return false;
     }
     if (!view.connected || !protocolReady || !helion::protocol::validWireLine(request)) return false;
-    queue(request);
+    if (!queue(request)) return false;
     view.ui.commandPending = true;
     const auto firstSpace = request.find(' ');
     pendingUiAction = request.substr(0, firstSpace);
@@ -691,6 +706,7 @@ int main(int argc,char** argv) {
   };
   helion::client::UiInput uiInput;
   helion::client::AcceptanceDriver acceptance(
+    acceptancePhase == "lifecycle" ? helion::client::AcceptanceDriver::Phase::lifecycle :
     acceptancePhase == "reconnect" ? helion::client::AcceptanceDriver::Phase::reconnect :
     acceptancePhase == "soak" ? helion::client::AcceptanceDriver::Phase::soak :
                                  helion::client::AcceptanceDriver::Phase::journey,
@@ -707,13 +723,66 @@ int main(int argc,char** argv) {
   if (coreMode) view.console = false;
   double lastTime=SDL_GetTicks64()/1000.0,lastInput=0,lastReply=lastTime;
   helion::flight::State visual=view.ship;
-  bool heldForward=false, heldLeft=false, heldRight=false, heldBrake=false;
+  auto& heldForward = engine.input().heldForward;
+  auto& heldLeft = engine.input().heldLeft;
+  auto& heldRight = engine.input().heldRight;
+  auto& heldBrake = engine.input().heldBrake;
+  auto reportedState = helion::client::GameEngineState::BOOT;
+  const auto syncPresentation = [&] {
+    view.connected = engine.connected();
+    view.commandReady = engine.commandReady();
+    view.authenticated = engine.authenticated();
+    engine.project(view.ui);
+    if (!engine.flightInputAllowed()) view.thrust = false;
+    if (acceptanceRun && engine.state() != reportedState) {
+      std::cout << "ENGINE state=" << helion::client::engineStateName(engine.state()) << std::endl;
+      reportedState = engine.state();
+    }
+  };
+  const auto loseConnection = [&](const std::string& reason, bool fatal = false) {
+    if (fatal) engine.fatal(reason); else engine.disconnected(reason);
+    view.log.push_back(reason);
+    syncPresentation();
+  };
+  const auto retryConnection = [&] {
+    if (!engine.beginConnection()) return;
+    if (connection) connection->closeNotify();
+    if (fd >= 0) { shutdown(fd, SHUT_RDWR); close(fd); }
+    connection.reset();
+    const auto retryEngine = engine;
+    const auto graphicsReport = view.ui.graphicsReport;
+    const bool telemetry = view.showTelemetry;
+    uiInput.clearCredentials();
+    uiInput = {};
+    view = {};
+    view.engine = retryEngine;
+    view.ui.graphicsReport = graphicsReport;
+    view.showTelemetry = telemetry;
+    decoder = {}; binaryDecoder = {};
+    outgoing.clear(); pendingUiAction.clear();
+    greetingSeen = protocolReady = binaryMode = negotiationSent = false;
+    nextRequestId = 1; lastResponseRequestId = 0;
+    transportClosed = false;
+    lastInput = 0; lastReply = SDL_GetTicks64() / 1000.0;
+    visual = view.ship;
+    fd = connectTo(host, port);
+    if (fd < 0) engine.disconnected("UNABLE TO CONNECT / RETRY WHEN SERVER IS AVAILABLE");
+    else {
+      try {
+        connection = std::make_unique<helion::tls::Connection>(tlsContext.get(), fd);
+        connection->handshake(false, host);
+        engine.tlsVerified();
+      } catch (const std::exception& error) {
+        engine.disconnected(std::string("TLS CONNECTION FAILED / ") + error.what());
+      }
+    }
+    syncPresentation();
+  };
   SDL_StartTextInput();
   while(running) {
     const double now=SDL_GetTicks64()/1000.0,dt=std::min(now-lastTime,0.1); lastTime=now; view.time=now;
-    view.ui.connected = view.connected;
-    view.ui.authenticated = view.authenticated;
     helion::client::populateUiDerived(view.ui, view.ship);
+    syncPresentation();
     if (soakMode && soakStart < 0 && view.authenticated && view.ui.career.complete) soakStart = now;
     if (soakMode && soakStart >= 0) {
       if (!view.connected) {
@@ -743,24 +812,32 @@ int main(int argc,char** argv) {
       if(event.type==SDL_QUIT) running=false;
       if(event.type==SDL_WINDOWEVENT) {
         if(event.window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
-          focused=false; heldForward=heldLeft=heldRight=heldBrake=false;
+          focused=false; engine.clearFlightInput(); view.thrust=false;
           if(view.authenticated) queue("INPUT 0 0 1");
         }
         if(event.window.event==SDL_WINDOWEVENT_FOCUS_GAINED) focused=true;
       }
+      if (engine.state() == helion::client::GameEngineState::DISCONNECTED &&
+          event.type == SDL_KEYDOWN && !event.key.repeat &&
+          (event.key.keysym.sym == SDLK_r || event.key.keysym.sym == SDLK_RETURN)) {
+        retryConnection();
+        continue;
+      }
+      if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !event.key.repeat) {
+        const bool down = event.type == SDL_KEYDOWN && engine.flightInputAllowed() && focused && !view.console;
+        const SDL_Keycode key = event.key.keysym.sym;
+        if (key == SDLK_w || key == SDLK_UP) heldForward = down;
+        if (key == SDLK_a || key == SDLK_LEFT) heldLeft = down;
+        if (key == SDLK_d || key == SDLK_RIGHT) heldRight = down;
+        if (key == SDLK_s || key == SDLK_DOWN) heldBrake = down;
+      }
       if (coreMode) {
-        if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !event.key.repeat) {
-          const bool down = event.type == SDL_KEYDOWN;
-          const SDL_Keycode key = event.key.keysym.sym;
-          if (key == SDLK_w || key == SDLK_UP) heldForward = down;
-          if (key == SDLK_a || key == SDLK_LEFT) heldLeft = down;
-          if (key == SDLK_d || key == SDLK_RIGHT) heldRight = down;
-          if (key == SDLK_s || key == SDLK_DOWN) heldBrake = down;
-        }
         int ww = 0, wh = 0; SDL_GetWindowSize(window, &ww, &wh);
         const auto request = uiInput.handle(view, event, ww, wh);
         if (request == "QUIT") running = false;
         else if (!request.empty()) queueUi(request);
+        if (uiInput.consumeReconnectRequest()) retryConnection();
+        syncPresentation();
         continue;
       }
       if(view.console && event.type==SDL_TEXTINPUT && view.typed.size()+std::strlen(event.text.text)<=helion::protocol::kMaxLine)
@@ -768,13 +845,8 @@ int main(int argc,char** argv) {
       if(event.type!=SDL_KEYDOWN || event.key.repeat) continue;
       const auto key=event.key.keysym.sym;
       if(key==SDLK_ESCAPE) {
-        if (coreMode && !view.console && view.ui.screen != helion::client::UiScreen::flight &&
-            view.ui.screen != helion::client::UiScreen::account) {
-          view.ui.screen = view.ship.docked ? helion::client::UiScreen::station : helion::client::UiScreen::flight;
-          view.ui.selected = 0;
-        } else {
-          view.console=!view.console; view.ui.consoleOpen=view.console; view.typed.clear();
-        }
+        view.console=!view.console; view.ui.consoleOpen=view.console; view.typed.clear();
+        engine.clearFlightInput(); view.thrust=false;
       }
       else if(key==SDLK_RETURN && (!coreMode || view.console ||
                view.ui.screen == helion::client::UiScreen::flight || !view.authenticated)) {
@@ -817,14 +889,10 @@ int main(int argc,char** argv) {
         if(key==SDLK_F3) { view.showTelemetry=!view.showTelemetry; }
       }
     }
-    const Uint8* keys=SDL_GetKeyboardState(nullptr);
-    const bool controls=focused && !view.console && view.authenticated && view.connected && !view.ship.destroyed &&
-      (!coreMode || view.ui.screen == helion::client::UiScreen::flight);
-    const auto input=helion::flight::controls(coreMode ? heldForward : keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP],
-      coreMode ? heldLeft : keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT],
-      coreMode ? heldRight : keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT],
-      coreMode ? heldBrake : keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN],controls);
-    view.thrust=input.thrust;
+    if (!focused || view.console || !engine.flightInputAllowed()) engine.clearFlightInput();
+    const bool controls=focused && !view.console && engine.flightInputAllowed();
+    const auto input=helion::flight::controls(heldForward, heldLeft, heldRight, heldBrake, controls);
+    view.thrust=input.thrust; engine.input().thrust=input.thrust;
     if(view.connected && protocolReady && now-lastInput>=0.1) {
       if(view.authenticated) queue("INPUT "+std::to_string(input.thrust)+" "+std::to_string(input.turn)+" "+std::to_string(input.brake));
       else if(now-lastInput>=5) queue("STATE");
@@ -838,12 +906,14 @@ int main(int argc,char** argv) {
         outgoing.erase(0,static_cast<std::size_t>(count));
         if (greetingSeen && !protocolReady && outgoing.empty()) negotiationSent = true;
       }
-      else if(count<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR) view.connected=false;
+      else if(count<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)
+        loseConnection("ERR command link write failed");
     }
     for(int batch=0;view.connected && batch<16;++batch) {
       char bytes[1024]; const ssize_t count=connection->read(bytes,sizeof(bytes));
       if(count<=0) {
-        if(count==0 || (errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)) view.connected=false;
+        if(count==0 || (errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR))
+          loseConnection("ERR command link closed");
         break;
       }
       // Before negotiation completes, consume only through each text newline.
@@ -864,13 +934,13 @@ int main(int argc,char** argv) {
             if (event.kind != helion::protocol::binary::DecodeKind::frame ||
                 event.frame.requestId >= nextRequestId ||
                 (event.frame.requestId != 0 && event.frame.requestId < lastResponseRequestId)) {
-              view.connected=false; view.log.push_back("ERR malformed binary response"); break;
+              loseConnection("ERR malformed binary response", true); break;
             }
             if (event.frame.requestId != 0) lastResponseRequestId = event.frame.requestId;
             const std::string payload(event.frame.payload.begin(), event.frame.payload.end());
             if (event.frame.type == helion::protocol::binary::MessageType::textResponse) {
               if (!helion::protocol::validWireLine(payload)) {
-                view.connected=false; view.log.push_back("ERR malformed binary text response"); break;
+                loseConnection("ERR malformed binary text response", true); break;
               }
               IncomingResponse response;
               response.frame = {helion::protocol::FrameKind::line, payload};
@@ -881,11 +951,11 @@ int main(int argc,char** argv) {
               response.binaryFlight = true;
               if (!helion::protocol::binary::decodeFlightSnapshotPayload(
                     payload, response.flight, response.credits, response.experience)) {
-                view.connected=false; view.log.push_back("ERR malformed binary flight state"); break;
+                loseConnection("ERR malformed binary flight state", true); break;
               }
               incoming.push_back(std::move(response));
             } else {
-              view.connected=false; view.log.push_back("ERR invalid binary response direction"); break;
+              loseConnection("ERR invalid binary response direction", true); break;
             }
           }
           responseOffset = static_cast<std::size_t>(count);
@@ -899,34 +969,52 @@ int main(int argc,char** argv) {
           responseOffset += fragmentSize;
         }
         for(auto& incomingResponse : incoming) {
+          if (!view.connected) break;
           lastReply=now;
           auto& frame = incomingResponse.frame;
           if(!greetingSeen) {
             if(frame.kind!=helion::protocol::FrameKind::line || !helion::protocol::compatibleWelcome(frame.line)) {
-              view.log.push_back("ERR incompatible server protocol"); view.connected=false; break;
+              loseConnection("ERR incompatible server protocol", true); break;
             }
             greetingSeen=true;
             if (legacyProtocol) {
               protocolReady = true;
-              view.commandReady = true;
+              engine.protocolReady();
+              syncPresentation();
             } else outgoing += "PROTOCOL BINARY " + std::to_string(helion::protocol::binary::kVersion) + "\n";
           }
-          if(frame.kind!=helion::protocol::FrameKind::line) { view.connected=false; view.log.push_back("ERR malformed response"); break; }
+          if(frame.kind!=helion::protocol::FrameKind::line) { loseConnection("ERR malformed response", true); break; }
           if (frame.line.rfind("OK PROTOCOL ", 0) == 0) {
             if (frame.line != "OK PROTOCOL BINARY 1" || !negotiationSent || protocolReady || legacyProtocol) {
-              view.log.push_back("ERR unexpected protocol acknowledgement"); view.connected=false; break;
+              loseConnection("ERR unexpected protocol acknowledgement", true); break;
             }
             binaryMode = true;
             protocolReady = true;
-            view.commandReady = true;
+            engine.protocolReady();
+            syncPresentation();
             continue;
           }
           if (!protocolReady && frame.line.rfind("ERR ", 0) == 0) {
-            view.log.push_back(frame.line); view.connected=false; break;
+            loseConnection(frame.line, true); break;
+          }
+          if (!incomingResponse.binaryFlight && frame.line.rfind("ERR ", 0) == 0) {
+            if (engine.session() == helion::client::SessionState::companionReadOnly &&
+                (frame.line == "ERR invalid-companion-token" || frame.line == "ERR companion-token-expired"))
+              engine.fatal(frame.line);
+            else if (engine.session() == helion::client::SessionState::authenticating ||
+                engine.session() == helion::client::SessionState::companionAuthenticating ||
+                engine.session() == helion::client::SessionState::playerAuthenticatingCompanion)
+              engine.authenticationRejected();
+            else if (view.ui.commandPending &&
+                     engine.flightMode() == helion::client::AuthoritativeFlightMode::docked)
+              engine.actionError(frame.line);
+            syncPresentation();
+            if (!view.connected) break;
           }
           if (!incomingResponse.binaryFlight) {
             updatePresentationMetadata(view, frame.line);
             updateUiFromLine(view, frame.line);
+            syncPresentation();
           }
           const auto& response = frame.line;
           const bool genericResult = response.rfind("OK ", 0) == 0 || response.rfind("ERR ", 0) == 0;
@@ -948,11 +1036,18 @@ int main(int argc,char** argv) {
             view.ship = incomingResponse.flight;
             view.credits = incomingResponse.credits;
             view.experience = incomingResponse.experience;
+            engine.observeFlight(view.ship);
+            syncPresentation();
             if (view.ship.docked) visual = view.ship;
           } else if(frame.line.rfind("FLIGHT ",0)==0) {
             if(!helion::flight::readSnapshot(frame.line,view.ship,view.credits,view.experience)) {
-              view.connected=false; view.log.push_back("ERR malformed flight state"); break;
+              loseConnection("ERR malformed flight state", true); break;
             }
+            // Legacy FLIGHT has hull but destruction is a separate optional extension.
+            // Zero hull is already server-owned recovery truth; do not wait for a later TLS read.
+            view.ship.destroyed = view.ship.hull == 0;
+            engine.observeFlight(view.ship);
+            syncPresentation();
             if(view.ship.docked) visual=view.ship;
           } else {
             if (frame.line.rfind("PROFILE ", 0) == 0) {
@@ -972,6 +1067,7 @@ int main(int argc,char** argv) {
             const bool combatStatus = helion::flight::readCombatStatus(frame.line, view.ship);
             helion::flight::Contact contact;
             if (fuelFrame || combatStatus) {
+              if (combatStatus && engine.flightMode() != helion::client::AuthoritativeFlightMode::unknown) { engine.observeFlight(view.ship); syncPresentation(); }
               // Fuel is an additive frame so older clients can still parse FLIGHT snapshots.
             } else if (helion::flight::readContact(frame.line, contact)) {
               view.contacts.push_back(std::move(contact));
@@ -988,18 +1084,28 @@ int main(int argc,char** argv) {
             }
             if(frame.line.rfind("OK LOGIN",0)==0 || frame.line.rfind("OK CREATED",0)==0) {
               uiInput.clearCredentials();
-              view.authenticated=true; view.console=false; view.ui.consoleOpen=false;
-              view.ui.screen = view.ship.docked ? helion::client::UiScreen::station : helion::client::UiScreen::flight;
-              view.ui.connectionStatus = "TLS VERIFIED / COMMANDER AUTHENTICATED";
+              if (!engine.authenticationAccepted()) {
+                engine.fatal("UNEXPECTED SERVER AUTHENTICATION RESULT");
+                syncPresentation(); break;
+              }
+              view.console=false; view.ui.consoleOpen=false;
+              syncPresentation();
               queue("FLIGHT"); queue("PROFILE"); queue("GALNET"); queue("OUTFIT LIST"); queue("CAREER");
             }
+            if (frame.line.rfind("OK COMPANION AUTH ", 0) == 0) {
+              if (!engine.companionAuthenticationAccepted()) {
+                engine.fatal("UNEXPECTED COMPANION AUTHENTICATION RESULT");
+                syncPresentation(); break;
+              }
+              uiInput.clearCredentials();
+              syncPresentation();
+              queue("PROFILE");
+            }
             if (frame.line.rfind("OK ", 0) == 0 && frame.line.rfind("OK LOGIN",0) != 0 &&
-                frame.line.rfind("OK CREATED",0) != 0 && frame.line.rfind("OK BYE",0) != 0) {
+                frame.line.rfind("OK CREATED",0) != 0 && frame.line.rfind("OK BYE",0) != 0 &&
+                frame.line.rfind("OK COMPANION AUTH ",0) != 0) {
               queue("PROFILE"); queue("CAREER"); queue("GALNET"); queue("OUTFIT LIST");
             }
-            if (coreMode && (frame.line.rfind("OK LAUNCHED",0) == 0)) view.ui.screen = helion::client::UiScreen::flight;
-            if (coreMode && (frame.line.rfind("OK DOCKED",0) == 0 || frame.line.rfind("OK RECOVERED",0) == 0))
-              view.ui.screen = helion::client::UiScreen::station;
             if(frame.line.rfind("OK MINED",0)==0) view.beamUntil=now+0.45;
             if(frame.line.rfind("COMBAT HIT",0)==0 || frame.line.rfind("COMBAT DESTROYED target",0)==0)
               view.weaponUntil=now+0.28;
@@ -1027,12 +1133,16 @@ int main(int argc,char** argv) {
         }
       }
     }
-    if(view.connected && now-lastReply>10) { view.connected=false; view.log.push_back("ERR command link timed out"); }
+    if(view.connected && now-lastReply>10) loseConnection("ERR command link timed out");
     if(!view.connected) {
+      engine.disconnected(view.log.empty() ? "COMMAND LINK LOST" : view.log.back());
+      syncPresentation();
+      uiInput.clearCredentials();
+      view.typed.clear(); view.ui.passwordMask.clear();
       outgoing.clear(); view.thrust=false; view.ui.commandPending=false; pendingUiAction.clear();
       if (!transportClosed) {
-        connection->closeNotify();
-        shutdown(fd, SHUT_RDWR);
+        if (connection) connection->closeNotify();
+        if (fd >= 0) shutdown(fd, SHUT_RDWR);
         transportClosed = true;
       }
     }
@@ -1045,6 +1155,8 @@ int main(int argc,char** argv) {
         helion::client::CoreRenderStats soakStats;
         if (!coreRenderer->render(width, height, snapshot, soakMode,
                                   soakMode ? &soakStats : nullptr, coreError)) {
+          engine.fatal("CORE RENDER ERROR / " + coreError);
+          syncPresentation();
           view.log.push_back("CORE RENDER ERROR / " + coreError);
           if (soakMode) {
             std::cerr << "SOAK FAIL renderer=" << coreError << '\n';
@@ -1117,8 +1229,8 @@ int main(int argc,char** argv) {
       if (quit) connection->sendAll(*quit, 500);
     } else connection->sendAll("QUIT\n", 500);
   }
-  connection->closeNotify();
-  shutdown(fd,SHUT_RDWR); close(fd);
+  if (connection) connection->closeNotify();
+  if (fd >= 0) { shutdown(fd,SHUT_RDWR); close(fd); }
   coreRenderer.reset();
   helion::client::destroyGraphicsContext(graphics); SDL_Quit(); return acceptance.failed() || soakFailed ? 1 : 0;
 }

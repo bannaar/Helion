@@ -227,9 +227,19 @@ def main():
             [args.server, '--environment', 'staging', '--cert', str(cert), '--key', str(key)],
             capture_output=True, text=True, timeout=8)
         assert unknown.returncode == 2 and 'usage: helion_server' in unknown.stderr
-        process, test_port = start_server(args.server, root, cert, key, 'test.db', ['--environment', 'test'])
+        # Private TEST now requires an isolated trusted invitation and TLS root.
+        test_root = root / 'private-test'
+        test_root.mkdir(mode=0o700)
+        test_cert, test_key = certificate(test_root, 'private', 'DNS:localhost,IP:127.0.0.1')
+        test_cert.chmod(0o600)
+        verifier = run([args.server, '--hash-password'], input='synthetic-password\n').stdout.strip()
+        access = test_root / 'access'
+        access.write_text('HELION_ACCESS_V1 test tls-test\ntestidentity INVITED_TESTER ' + verifier + '\n')
+        access.chmod(0o600)
+        process, test_port = start_server(args.server, test_root, test_cert, test_key, 'test.db',
+                                         ['--environment', 'test', '--access-file', str(access)])
         try:
-            test_context = ssl.create_default_context(cafile=str(cert))
+            test_context = ssl.create_default_context(cafile=str(test_cert))
             with socket.create_connection(('127.0.0.1', test_port), timeout=3) as raw:
                 with test_context.wrap_socket(raw, server_hostname='localhost') as secure:
                     assert b'WELCOME Helion/2' in secure.recv(4096)
@@ -251,7 +261,7 @@ def main():
                     secure.sendall(b'QUIT\n')
         finally:
             stop(process)
-        assert (root / 'test.db').read_text().startswith('E\ttest\n')
+        assert (test_root / 'test.db').read_text().startswith('E\ttest\n')
         process, port = start_server(args.server, root, cert, key)
         stalled = socket.create_connection(('127.0.0.1', port), timeout=3)
         time.sleep(.1)

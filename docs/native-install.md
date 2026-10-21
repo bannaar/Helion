@@ -147,3 +147,13 @@ build use `-DHELION_BUILD_SERVER=OFF`. Both now require OpenSSL. The combined
 build provides the local-play launcher; separate builds provide their native
 executable for manual remote connections. Headless tests require Python 3 and
 the OpenSSL command-line tool, and generate disposable test certificates.
+
+## Private TEST and canonical Production
+
+The standard local launcher remains DEVELOPMENT. Explicit TEST and Production
+servers require separate owner-only state directories (`0700`), with protected
+environment/instance/economy markers. Private TEST additionally requires colocated
+independent TLS files and a server invitation/role policy; player UI choices never
+select the environment. Follow [private TEST administration](private-test-admin.md)
+from the server or combined package for provisioning and safe offline recovery.
+Client-only packages do not provide server administration tools.

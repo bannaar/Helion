@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cmath>
 #include <deque>
+#include <filesystem>
+#include <charconv>
 #include <cstdint>
 #include <ctime>
 #include <fcntl.h>
@@ -38,6 +40,7 @@
 #include "server/connection_limit.h"
 #include "server/data_lock.h"
 #include "server/environment.h"
+#include "server/test_admin.h"
 #include "shared/flight.h"
 #include "shared/combat.h"
 #include "shared/binary_protocol.h"
@@ -64,7 +67,11 @@ constexpr const char* kCompanionProfileReadScope = "profile.read";
 constexpr double kFlightCheckpointSeconds = 1.0;
 constexpr double kMarketRestockSeconds = 60.0;
 std::string dataPath = "helion-server.db";
-helion::server::RuntimeEnvironment runtimeEnvironment = helion::server::RuntimeEnvironment::development;
+helion::server::EnvironmentPolicy environmentPolicy;
+auto& runtimeEnvironment = environmentPolicy.environment;
+std::string accessFile;
+struct AdminReceipt { std::string fingerprint, result; };
+std::map<std::string, AdminReceipt> adminReceipts;
 std::string dummyPasswordHash;
 volatile std::sig_atomic_t stopping = 0;
 
@@ -141,12 +148,13 @@ struct Transport {
 std::unordered_map<int, std::shared_ptr<Transport>> transports;
 
 helion::economy::PricingPolicy pricingPolicy() {
-  return helion::server::usesTestEconomy(runtimeEnvironment) ?
+  return environmentPolicy.cheapEconomy() ?
     helion::economy::PricingPolicy::testConvenience : helion::economy::PricingPolicy::productionLike;
 }
 
 int configuredPurchasePrice(int canonicalPrice, bool testAvailable = true) {
-  const auto price = helion::server::purchasePrice(runtimeEnvironment, canonicalPrice, testAvailable);
+  const auto price = helion::server::purchasePrice(environmentPolicy.cheapEconomy() ?
+    helion::server::RuntimeEnvironment::private_test : helion::server::RuntimeEnvironment::production, canonicalPrice, testAvailable);
   if (!price) throw std::logic_error("invalid runtime economy policy");
   return *price;
 }
@@ -346,13 +354,13 @@ std::string ownedShipLine(const Profile& profile, const helion::ships::OwnedShip
 }
 
 template <typename ResponseContainer>
-void appendShipyardState(ResponseContainer& responses, const Profile& profile, bool includeOffers = true) {
+void appendShipyardState(ResponseContainer& responses, const Profile& profile, bool includeOffers = true, bool testBypass = false) {
   const auto& current = activeShip(profile);
   const int station = current.flight.station;
   responses.push_back("SHIPYARD BEGIN station=" + std::to_string(station));
   if (includeOffers) {
     for (const auto* hull : helion::shipyard::availableAt(station,
-      helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad, profile.reputation)) {
+      helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad, profile.reputation, testBypass)) {
       if (std::any_of(profile.ownedShips.begin(), profile.ownedShips.end(),
           [hull](const auto& owned) { return owned.hullId == hull->id; })) continue;
       responses.push_back(shipDefinitionLine(*hull));
@@ -393,6 +401,9 @@ void saveStateLocked() {
   snapshot << std::setprecision(17);
   snapshot << "E\t" << helion::server::runtimeEnvironmentName(runtimeEnvironment) << '\n';
   snapshot << "V\tGALAXY_KNOWLEDGE\t1\n";
+  snapshot << "L\tTEST_ADMIN\t1\t" << adminReceipts.size() << '\n';
+  for (const auto& [key, receipt] : adminReceipts)
+    snapshot << "A\t" << key << '\t' << receipt.fingerprint << '\t' << encode(receipt.result) << '\n';
   for (const auto& system : galaxyState)
     snapshot << "Y\t" << system.systemId << '\t' << system.securitySteps << '\t'
       << helion::galaxy::sovereignTypeName(system.sovereignty.type) << '\t'
@@ -492,13 +503,13 @@ void persistStateLocked() {
 }
 
 void loadState() {
-  const int fd = open(dataPath.c_str(), O_RDONLY | O_NOFOLLOW);
+  const int fd = open(dataPath.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
   if (fd < 0) {
     if (errno == ENOENT) return;
     throw std::runtime_error("cannot open persistence file");
   }
   struct stat info{};
-  if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_nlink != 1 ||
+  if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_nlink != 1 || info.st_uid != geteuid() ||
       fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
     close(fd);
     throw std::runtime_error("cannot protect persistence file");
@@ -517,6 +528,7 @@ void loadState() {
   std::string galaxyEndRecord;
   std::size_t persistenceRecords = 0;
   bool firstRecord = true;
+  std::optional<std::size_t> receiptCount;
   try {
     ssize_t length;
     while ((length = ::getline(&buffer, &capacity, file)) >= 0) {
@@ -549,7 +561,20 @@ void loadState() {
       } else if (kind == "E") {
         throw std::runtime_error("persistence environment record must be first and unique");
       }
-      if (kind == "Z") {
+      if (kind == "L") {
+        if (receiptCount || first != "TEST_ADMIN" || second != "1" || third.empty() ||
+            std::count(line.begin(), line.end(), '\t') != 3 || third.find_first_not_of("0123456789") != std::string::npos)
+          throw std::runtime_error("invalid admin ledger version");
+        receiptCount = std::stoul(third);
+        if (*receiptCount > 4096) throw std::runtime_error("admin ledger capacity exceeded");
+      } else if (kind == "A") {
+        if (!receiptCount || first.size() != 64 || second.size() != 64 || third.size() > 256 ||
+            first.find_first_not_of("0123456789abcdef") != std::string::npos ||
+            second.find_first_not_of("0123456789abcdef") != std::string::npos ||
+            !adminReceipts.emplace(first, AdminReceipt{second, decode(third)}).second ||
+            std::count(line.begin(), line.end(), '\t') != 3)
+          throw std::runtime_error("invalid admin receipt");
+      } else if (kind == "Z") {
         if (!knowledgeVersionRecord) throw std::runtime_error("unexpected persistence terminator");
         galaxyEndRecord = line;
       } else if (kind == "V") {
@@ -902,6 +927,7 @@ void loadState() {
       throw std::runtime_error("incomplete galaxy persistence");
     if (!helion::galaxy::validateGalaxy(galaxyState))
       throw std::runtime_error("invalid persisted galaxy state");
+    if (receiptCount && *receiptCount != adminReceipts.size()) throw std::runtime_error("incomplete admin ledger");
     galaxyMigrationPending = galaxyRecords.size() != helion::galaxy::kSystemCount;
     if (!marketRecords.empty() && marketRecords.size() != helion::economy::kMarketCount)
       throw std::runtime_error("incomplete market persistence");
@@ -1176,6 +1202,323 @@ void removeClient(int fd) {
   }
 }
 
+// All callers hold stateMutex (or run before listening). Client-supplied text is
+// parsed into a narrow operation; no field offset, file path, SQL or script API.
+std::string executeTestAdmin(std::string_view payload, const std::string& user, AuthKind kind, int fd, bool withinBudget) {
+  using namespace helion::server;
+  const auto op = parseAdminOperation(payload);
+  AuditRecord audit;
+  audit.account = user.empty() ? "anonymous" : user;
+  audit.session = std::to_string(getpid()) + ":" + std::to_string(fd);
+  audit.action = op ? op->verbText : "INVALID";
+  audit.target = op && (profiles.count(op->target) || op->target == "universe") ? op->target : "unknown";
+  audit.parameters = op ? op->field : "redacted";
+  audit.request = op ? op->id : "invalid";
+  auto record = [&](const std::string& result, const std::string& reason) {
+    audit.result = result; audit.reason = reason;
+    appendAudit(dataPath, environmentPolicy, audit);
+  };
+  try {
+    const auto denied = withinBudget ? authorizeTestAdmin({environmentPolicy, user, kind == AuthKind::player}) :
+      std::string("admin-request-limit");
+    if (!denied.empty() || !op) {
+      const auto reason = denied.empty() ? "invalid-test-operation" : denied;
+      record("denied", reason);
+      return "ERR " + reason;
+    }
+    const auto key = digest(user + ":" + op->id);
+    const auto fingerprint = digest(op->canonical());
+    const auto previous = adminReceipts.find(key);
+    if (previous != adminReceipts.end()) {
+      if (previous->second.fingerprint != fingerprint) {
+        record("denied", "request-id-conflict"); return "ERR request-id-conflict";
+      }
+      record("replayed", "already-committed");
+      return previous->second.result + " replay=1";
+    }
+    if (adminReceipts.size() >= 4096) throw std::runtime_error("admin-ledger-full");
+    const auto found = profiles.find(op->target);
+    const bool marketReset = op->verb == AdminVerb::reset && op->target == "universe" &&
+      op->field == "markets" && op->value == "seed";
+    if (found == profiles.end() && !marketReset) throw std::runtime_error("unknown-target");
+    auto next = found == profiles.end() ? Profile{} : found->second;
+    auto nextMarkets = regionalMarkets;
+    auto nextTelemetry = economicTelemetry;
+    auto nextTokens = companionTokens;
+    std::string before, after;
+    bool numeric = false;
+    if (marketReset) {
+      const auto summary = [](const helion::economy::MarketState& markets) {
+        std::ostringstream out;
+        for (const auto& order : markets) out << order.station << ':' << order.commodityId << ':' <<
+          order.stock << ':' << order.demand << ':' << order.buyBudget << ';';
+        return out.str();
+      };
+      before = summary(regionalMarkets);
+      nextMarkets = helion::economy::seedMarkets(pricingPolicy());
+      after = summary(nextMarkets);
+      audit.requested = "seed";
+    } else if (op->field == "player" && op->verb == AdminVerb::reset && op->value == "starter") {
+      before = "gsc:" + std::to_string(next.credits) + ",xp:" + std::to_string(next.experience) +
+        ",ships:" + std::to_string(next.ownedShips.size());
+      const auto password = next.passwordHash, display = next.display;
+      next = Profile{}; next.passwordHash = password; next.display = display;
+      initializeReputation(next); next.galaxyKnowledge = helion::galaxy::seedKnowledge(galaxyState);
+      addStarterShip(next, op->target);
+      resetCombatTarget(next);
+      after = "gsc:1500,xp:0,ships:1";
+      audit.requested = "starter";
+      for (auto it = nextTokens.begin(); it != nextTokens.end();)
+        if (it->second.user == op->target) it = nextTokens.erase(it); else ++it;
+    } else {
+      auto& ship = activeShip(next);
+      auto& flight = ship.flight;
+      if (op->field == "ship" && op->verb == AdminVerb::grant) {
+        const auto* hull = helion::ships::find(op->value);
+        if (!hull) throw std::runtime_error("unknown-hull");
+        audit.requested = hull->id;
+        audit.before = std::to_string(next.ownedShips.size());
+        if (!flight.docked || flight.destroyed || !helion::ships::supportsPad(
+              helion::flight::kStations[static_cast<std::size_t>(flight.station)].maximumPad, hull->padSize))
+          throw std::runtime_error("ship-location-constraint");
+        if (next.ownedShips.size() >= helion::ships::registry().size()) throw std::runtime_error("ship-limit");
+        if (std::any_of(next.ownedShips.begin(), next.ownedShips.end(),
+            [hull](const auto& owned) { return owned.hullId == hull->id; })) throw std::runtime_error("ship-already-owned");
+        before = std::to_string(next.ownedShips.size());
+        const auto instance = helion::ships::deterministicInstanceId(op->target, next.nextShipSequence++);
+        next.ownedShips.push_back(helion::ships::makePurchasedShip(instance, *hull, flight.station));
+        after = std::to_string(next.ownedShips.size()); audit.requested = hull->id;
+      } else if (op->field == "module" && (op->verb == AdminVerb::grant || op->verb == AdminVerb::revoke)) {
+        const auto* module = helion::loadout::find(op->value);
+        if (!module) throw std::runtime_error("unknown-module");
+        audit.requested = module->id;
+        audit.before = std::to_string(ship.ownedModules.size());
+        if (!flight.docked || flight.destroyed) throw std::runtime_error("dock-required");
+        auto& owned = ship.ownedModules;
+        const auto match = std::find(owned.begin(), owned.end(), op->value);
+        before = std::to_string(owned.size());
+        if (op->verb == AdminVerb::grant) {
+          if (match != owned.end()) throw std::runtime_error("module-already-owned");
+          owned.push_back(op->value);
+        } else {
+          if (match == owned.end()) throw std::runtime_error("module-not-owned");
+          if (std::find(ship.fittedModules.begin(), ship.fittedModules.end(), op->value) != ship.fittedModules.end())
+            throw std::runtime_error("module-is-fitted");
+          owned.erase(match);
+        }
+        after = std::to_string(owned.size()); audit.requested = module->id;
+      } else if (op->field == "station" && op->verb == AdminVerb::teleport) {
+        int station = -1;
+        const auto parsed = std::from_chars(op->value.data(), op->value.data() + op->value.size(), station);
+        if (parsed.ec != std::errc{} || parsed.ptr != op->value.data() + op->value.size() ||
+            station < 0 || station >= static_cast<int>(helion::flight::kStations.size()) ||
+            !helion::ships::supportsPad(helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad,
+              helion::ships::definition(ship).padSize)) throw std::runtime_error("invalid-station");
+        if (flight.destroyed) throw std::runtime_error("recovery-required");
+        before = std::to_string(flight.station);
+        flight.station = station; flight.docked = true; flight.destroyed = false;
+        flight.x = helion::flight::kStations[static_cast<std::size_t>(station)].x;
+        flight.y = helion::flight::kStations[static_cast<std::size_t>(station)].y;
+        flight.vx = flight.vy = 0; flight.input = {}; flight.inputAge = 1;
+        after = std::to_string(station); audit.requested = after;
+        resetCombatTarget(next);
+      } else {
+        int* destination = nullptr;
+        if (op->field == "gsc") destination = &next.credits;
+        if (op->field == "experience") destination = &next.experience;
+        if (op->field == "salvage") destination = &next.salvage;
+        if (op->field == "ore") destination = &flight.cargo;
+        if (op->field == "food") destination = &flight.food;
+        if (op->field == "parts") destination = &flight.parts;
+        if (op->field == "hull") destination = &flight.hull;
+        if (!destination && op->field != "fuel") throw std::runtime_error("unsupported-operation");
+        if (op->field != "gsc" && op->field != "experience" && op->field != "salvage" &&
+            (!flight.docked || flight.destroyed)) throw std::runtime_error("dock-required");
+        const long long old = destination ? *destination : static_cast<long long>(flight.fuel);
+        before = destination ? std::to_string(*destination) : std::to_string(flight.fuel);
+        audit.before = before;
+        long long value = old;
+        if (op->verb == AdminVerb::get) {
+          if (op->value != "-") throw std::runtime_error("get-requires-placeholder");
+          audit.requested = "-";
+        } else {
+          long long amount = 0;
+          const auto parsed = std::from_chars(op->value.data(), op->value.data() + op->value.size(), amount);
+          if (parsed.ec != std::errc{} || parsed.ptr != op->value.data() + op->value.size() || amount < 0 || amount > 1000000000)
+            throw std::runtime_error("invalid-quantity");
+          audit.requested = std::to_string(amount);
+          if (op->verb == AdminVerb::set) value = amount;
+          else if (op->verb == AdminVerb::add) value += amount;
+          else if (op->verb == AdminVerb::remove) value -= amount;
+          else throw std::runtime_error("invalid-numeric-operation");
+          if (value < 0 || value > 1000000000 || (op->field == "hull" && (value == 0 || value > flight.maxHull)) ||
+              (op->field == "fuel" && value > flight.maxFuel)) throw std::runtime_error("quantity-out-of-range");
+          if (destination) *destination = static_cast<int>(value); else flight.fuel = static_cast<double>(value);
+          audit.requested = std::to_string(amount);
+        }
+        after = op->verb == AdminVerb::get ? before : std::to_string(value);
+        numeric = true;
+      }
+      for (const auto& owned : next.ownedShips)
+        if (!helion::ships::validate(owned)) throw std::runtime_error("ship-invariant-violation");
+    }
+    audit.before = before; audit.after = after;
+    if (found != profiles.end()) {
+      const long long delta = static_cast<long long>(next.credits) - found->second.credits;
+      if (delta != 0) helion::economy::recordCurrency(nextTelemetry, delta > 0 ?
+        helion::economy::CurrencyFlow::faucet : helion::economy::CurrencyFlow::sink, std::abs(delta));
+    }
+    if (!helion::economy::validateMarkets(nextMarkets, pricingPolicy()) ||
+        !helion::economy::validateTelemetry(nextTelemetry)) throw std::runtime_error("economy-invariant-violation");
+    const std::string response = "OK TESTADMIN id=" + op->id + " field=" + op->field + " value=" + (marketReset ? "seeded" : after);
+    if (numeric && op->verb == AdminVerb::get) { record("success", "read-only"); return response; }
+    record("intent", "validated"); // Must be durable before any live mutation.
+    const auto oldProfile = found == profiles.end() ? Profile{} : found->second;
+    const auto oldMarkets = regionalMarkets;
+    const auto oldTelemetry = economicTelemetry;
+    const auto oldTokens = companionTokens;
+    const bool oldDirty = flightStateDirty;
+    if (found != profiles.end()) found->second = std::move(next);
+    regionalMarkets = nextMarkets; economicTelemetry = nextTelemetry; companionTokens = std::move(nextTokens);
+    adminReceipts.emplace(key, AdminReceipt{fingerprint, response});
+    try { persistStateLocked(); }
+    catch (...) {
+      if (found != profiles.end()) found->second = oldProfile;
+      regionalMarkets = oldMarkets; economicTelemetry = oldTelemetry; companionTokens = oldTokens;
+      adminReceipts.erase(key); flightStateDirty = oldDirty;
+      throw std::runtime_error("persistence-failed");
+    }
+    // A crash here leaves a durable intent and receipt, allowing reconciliation
+    // and an idempotent retry. Never undo a committed operation on log failure.
+    try { record("success", "committed"); }
+    catch (...) { return "ERR audit-outcome-unavailable retry-same-id=1"; }
+    return response;
+  } catch (const std::exception& error) {
+    audit.after = audit.before;
+    try { record("failure", error.what()); }
+    catch (...) { return "ERR audit-unavailable"; }
+    return "ERR " + std::string(error.what());
+  }
+}
+
+int performTestRecovery(const std::string& action, const std::string& id, const std::string& account) {
+  using namespace helion::server;
+  AuditRecord audit;
+  audit.account = environmentPolicy.accounts.count(account) ? account : "unknown";
+  audit.session = "local:" + std::to_string(getpid());
+  audit.action = action; audit.target = "TEST-universe"; audit.request = id;
+  auto log = [&](const std::string& result, const std::string& reason) {
+    audit.result = result; audit.reason = reason;
+    appendAudit(dataPath, environmentPolicy, audit);
+  };
+  try {
+    std::string password;
+    // Password is supplied on stdin, never argv, environment or an audit record.
+    if (!std::getline(std::cin, password)) password.clear();
+    const auto actor = profiles.find(account);
+    const bool authenticated = actor != profiles.end() && environmentPolicy.admits(account) &&
+      actor->second.passwordHash == environmentPolicy.invitationCredentials.at(account) &&
+      helion::security::verifyPassword(password, actor->second.passwordHash);
+    password.assign(password.size(), '\0');
+    const auto denied = authorizeTestAdmin({environmentPolicy, account, authenticated});
+    if (!denied.empty()) { log("denied", denied); std::cerr << denied << '\n'; return 1; }
+    namespace fs = std::filesystem;
+    const auto directory = fs::path(dataPath).parent_path() / ".helion-test-snapshots";
+    if (!fs::exists(directory)) {
+      if (mkdir(directory.c_str(), 0700)) throw std::runtime_error("cannot-create-snapshot-directory");
+    }
+    struct stat st{};
+    if (lstat(directory.c_str(), &st) || !S_ISDIR(st.st_mode) || st.st_uid != geteuid() || (st.st_mode & 077) != 0)
+      throw std::runtime_error("unsafe-snapshot-directory");
+    const auto snapshot = (directory / (id + ".snapshot")).string();
+    if (action == "SNAPSHOT") {
+      persistStateLocked();
+      const auto content = readPrivateFile(dataPath, 64 * 1024 * 1024);
+      const auto header = "HELION_TEST_SNAPSHOT_V1 test " + environmentPolicy.instance + " " +
+        (environmentPolicy.cheapEconomy() ? "convenience" : "production-like") + " " + id + " " +
+        std::to_string(std::time(nullptr)) + " native-0.2.0-admin1 " + digest(content) + "\n";
+      audit.before = digest(content); audit.after = audit.before; audit.requested = id;
+      log("intent", "snapshot");
+      writePrivateFile(snapshot, header + content);
+      log("success", "snapshot-created");
+      return 0;
+    }
+    if (action != "RESTORE" && action != "RESET") throw std::runtime_error("unsupported-recovery");
+    const auto key = digest(account + ":recovery:" + id);
+    if (adminReceipts.count(key)) throw std::runtime_error("recovery-id-already-used");
+    if (adminReceipts.size() >= 4096) throw std::runtime_error("admin-ledger-full");
+    const auto existingReceipts = adminReceipts;
+    const auto actorProfile = actor->second;
+    audit.before = digest(readPrivateFile(dataPath, 64 * 1024 * 1024));
+    audit.requested = action + ":" + id;
+    if (action == "RESTORE") {
+      const auto content = readPrivateFile(snapshot, 64 * 1024 * 1024);
+      const auto end = content.find('\n');
+      if (end == std::string::npos) throw std::runtime_error("invalid-snapshot-header");
+      std::istringstream header(content.substr(0, end));
+      std::string version, env, instance, policy, snapshotId, timestamp, build, checksum, extra;
+      if (!(header >> version >> env >> instance >> policy >> snapshotId >> timestamp >> build >> checksum) ||
+          (header >> extra) || version != "HELION_TEST_SNAPSHOT_V1" || env != "test" ||
+          instance != environmentPolicy.instance || snapshotId != id || build != "native-0.2.0-admin1" ||
+          timestamp.empty() || timestamp.find_first_not_of("0123456789") != std::string::npos ||
+          policy != (environmentPolicy.cheapEconomy() ? "convenience" : "production-like") ||
+          checksum != digest(std::string_view(content).substr(end + 1))) throw std::runtime_error("snapshot-compatibility-failed");
+      // Validate with the normal strict loader in this offline process. The live
+      // file is untouched on any failure, including partial/inconsistent saves.
+      const auto original = dataPath;
+      std::string candidate = dataPath + ".restore.XXXXXX";
+      const int fd = mkstemp(candidate.data());
+      if (fd < 0) throw std::runtime_error("cannot-stage-restore");
+      close(fd);
+      writePrivateFile(candidate, std::string_view(content).substr(end + 1), false);
+      try {
+        profiles.clear(); companionTokens.clear(); messages.clear(); galnetEvents.clear(); adminReceipts.clear();
+        galaxyState = helion::galaxy::seedState(); regionalMarkets = helion::economy::seedMarkets(pricingPolicy());
+        economicTelemetry = {};
+        dataPath = candidate;
+        loadState();
+        dataPath = original;
+        unlink(candidate.c_str());
+      } catch (...) { dataPath = original; unlink(candidate.c_str()); throw; }
+      if (!profiles.count(account) || profiles.at(account).passwordHash != actorProfile.passwordHash)
+        throw std::runtime_error("snapshot-operator-mismatch");
+      for (const auto& [receiptKey, receipt] : existingReceipts) {
+        const auto old = adminReceipts.find(receiptKey);
+        if (old != adminReceipts.end() && old->second.fingerprint != receipt.fingerprint)
+          throw std::runtime_error("snapshot-ledger-conflict");
+        adminReceipts[receiptKey] = receipt;
+      }
+    } else {
+      // Keep identities/passwords, reset implemented progression, ships, market,
+      // knowledge and messages. The invitation policy and audit never roll back.
+      for (auto& [name, profile] : profiles) {
+        const auto passwordHash = profile.passwordHash, display = profile.display;
+        profile = Profile{}; profile.passwordHash = passwordHash; profile.display = display;
+        initializeReputation(profile); addStarterShip(profile, name); resetCombatTarget(profile);
+        profile.galaxyKnowledge = helion::galaxy::seedKnowledge(helion::galaxy::seedState());
+      }
+      regionalMarkets = helion::economy::seedMarkets(pricingPolicy());
+      galaxyState = helion::galaxy::seedState(); messages.clear(); galnetEvents.clear(); economicTelemetry = {};
+      for (const auto& entry : profiles) {
+        (void)entry;
+        helion::economy::recordCurrency(economicTelemetry, helion::economy::CurrencyFlow::faucet, 1500);
+        economicTelemetry.starterGrants += 1500;
+      }
+    }
+    if (adminReceipts.size() >= 4096) throw std::runtime_error("admin-ledger-full");
+    companionTokens.clear(); // Restores never resurrect old bearer credentials.
+    adminReceipts.emplace(key, AdminReceipt{digest(action + ":" + id), "OK RECOVERY"});
+    log("intent", "validated-offline-recovery");
+    persistStateLocked();
+    audit.after = digest(readPrivateFile(dataPath, 64 * 1024 * 1024));
+    log("success", "recovery-committed-companion-tokens-revoked");
+    return 0;
+  } catch (const std::exception& error) {
+    try { log("failure", "recovery-validation-or-io-failed"); } catch (...) {}
+    std::cerr << "TEST recovery failed: " << error.what() << '\n'; return 1;
+  }
+}
+
 void clientLoop(int fd, helion::tls::Connection& connection) {
   {
     std::lock_guard<std::mutex> lock(stateMutex);
@@ -1189,6 +1532,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
   std::string authenticatedTokenId;
   int authFailures = 0;
   int authRequests = 0;
+  int adminRequests = 0;
   helion::protocol::LineDecoder decoder;
   helion::protocol::binary::Decoder binaryDecoder;
   bool binaryMode = false;
@@ -1307,6 +1651,17 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         sendLine(fd, "ERR " + request.error);
         continue;
       }
+      if (request.command == helion::protocol::Command::test_admin) {
+        const bool withinBudget = ++adminRequests <= 64;
+        std::string response;
+        {
+          std::lock_guard<std::mutex> lock(stateMutex);
+          response = executeTestAdmin(request.payload, user, authKind, fd, withinBudget);
+        }
+        sendLine(fd, response);
+        if (!withinBudget) { running = false; break; }
+        continue;
+      }
       if (authKind == AuthKind::companion &&
           request.command != helion::protocol::Command::profile &&
           request.command != helion::protocol::Command::state &&
@@ -1318,6 +1673,13 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         const auto& name = request.first;
         const auto& password = request.second;
         const auto& display = request.payload;
+        if (!environmentPolicy.admits(name) ||
+            (runtimeEnvironment == helion::server::RuntimeEnvironment::private_test &&
+             !helion::security::verifyPassword(password, environmentPolicy.invitationCredentials.at(name)))) {
+          sendLine(fd, "ERR private-test-access-denied");
+          if (++authFailures >= kMaxAuthFailures) { running = false; break; }
+          continue;
+        }
         if (password.size() < helion::security::kMinNewPassword || password.size() > helion::security::kMaxPassword) {
           sendLine(fd, "ERR password-length");
           if (++authFailures >= kMaxAuthFailures) { running = false; break; }
@@ -1338,7 +1700,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             Profile profile;
             initializeReputation(profile);
             profile.galaxyKnowledge = helion::galaxy::seedKnowledge(galaxyState);
-            profile.passwordHash = encoded;
+            profile.passwordHash = runtimeEnvironment == helion::server::RuntimeEnvironment::private_test ?
+              environmentPolicy.invitationCredentials.at(name) : encoded;
             profile.display = display;
             addStarterShip(profile, name);
             profiles.emplace(name, std::move(profile));
@@ -1378,7 +1741,9 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         const bool found = !encoded.empty();
         if (!found) encoded = dummyPasswordHash;
         const bool authenticated = helion::security::verifyPassword(password, encoded);
-        if (!found || !authenticated) {
+        if (!found || !authenticated || !environmentPolicy.admits(name) ||
+            (runtimeEnvironment == helion::server::RuntimeEnvironment::private_test &&
+             encoded != environmentPolicy.invitationCredentials.at(name))) {
           sendLine(fd, "ERR invalid-login");
           if (++authFailures >= kMaxAuthFailures) { sendLine(fd, "ERR too-many-auth-attempts"); running = false; break; }
         } else {
@@ -1404,7 +1769,9 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             if (!expired && helion::security::verifyCompanionToken(
                     request.second, token->second.id, token->second.tokenHash)) {
               const auto profile = profiles.find(token->second.user);
-              if (profile != profiles.end()) {
+              if (profile != profiles.end() && environmentPolicy.admits(token->second.user) &&
+                  (runtimeEnvironment != helion::server::RuntimeEnvironment::private_test ||
+                   profile->second.passwordHash == environmentPolicy.invitationCredentials.at(token->second.user))) {
                 authenticated = true;
                 tokenUser = token->second.user;
                 display = profile->second.display;
@@ -1587,7 +1954,10 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 " destroyed=" + std::to_string(flight.destroyed) +
                 " organizations=" + helion::organizations::organizationSummary() +
                 " reputation=" + helion::organizations::reputationSummary(profile.reputation) +
-                " " + loadoutLine(profile);
+                " " + loadoutLine(profile) +
+                " environment=" + std::string(helion::server::runtimeEnvironmentName(runtimeEnvironment)) +
+                " role=" + std::string(helion::server::roleName(environmentPolicy.role(user))) +
+                " channel=" + std::string(environmentPolicy.releaseChannel());
             }
           }
           sendLine(fd, response);
@@ -1901,7 +2271,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
           if (!current.flight.docked || current.flight.destroyed) {
             responses.push_back("ERR dock-required");
           } else if (request.first == "LIST" || request.first == "OWNED") {
-            appendShipyardState(responses, profile, request.first == "LIST");
+            appendShipyardState(responses, profile, request.first == "LIST", environmentPolicy.bypassShipRequirements(user));
           } else if (request.first == "BUY") {
             const auto* hull = helion::ships::find(request.second);
             const int station = current.flight.station;
@@ -1909,7 +2279,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
             if (!hull) responses.push_back("ERR unknown-hull");
             else if (!helion::shipyard::available(station,
               helion::flight::kStations[static_cast<std::size_t>(station)].maximumPad,
-              hull->id, profile.reputation)) responses.push_back("ERR hull-unavailable");
+              hull->id, profile.reputation, environmentPolicy.bypassShipRequirements(user))) responses.push_back("ERR hull-unavailable");
             else if (std::any_of(profile.ownedShips.begin(), profile.ownedShips.end(),
               [hull](const auto& owned) { return owned.hullId == hull->id; }))
               responses.push_back("ERR ship-already-owned");
@@ -1937,7 +2307,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 std::cerr << error.what() << '\n';
               }
             }
-            appendShipyardState(responses, profile);
+            appendShipyardState(responses, profile, true, environmentPolicy.bypassShipRequirements(user));
           } else if (request.first == "SWITCH") {
             const auto target = std::find_if(profile.ownedShips.begin(), profile.ownedShips.end(),
               [&request](const auto& owned) { return owned.instanceId == request.second; });
@@ -1962,7 +2332,7 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
                 std::cerr << error.what() << '\n';
               }
             }
-            appendShipyardState(responses, profile);
+            appendShipyardState(responses, profile, true, environmentPolicy.bypassShipRequirements(user));
             appendFlightState(responses, profile);
           }
         }
@@ -2286,6 +2656,13 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc == 2 && std::string(argv[1]) == "--hash-password") {
+    std::string password;
+    if (!std::getline(std::cin, password) || password.size() < helion::security::kMinNewPassword ||
+        password.size() > helion::security::kMaxPassword) return 2;
+    try { std::cout << helion::security::hashPassword(password) << '\n'; return 0; }
+    catch (...) { return 1; }
+  }
   std::signal(SIGPIPE, SIG_IGN);
   std::signal(SIGINT, stopSignal);
   std::signal(SIGTERM, stopSignal);
@@ -2294,6 +2671,8 @@ int main(int argc, char** argv) {
   std::string bindAddress = "127.0.0.1";
   std::string certificate, privateKey;
   int positional = 0;
+  bool economySelected = false;
+  std::string recoveryAction, recoveryId, recoveryOperator;
   if (!helion::ships::validateRegistry() || !helion::loadout::validateRegistry() ||
       !helion::galaxy::validateGalaxy(helion::galaxy::seedState())) {
     std::cerr << "invalid canonical ship, module, or galaxy registry\n";
@@ -2314,9 +2693,24 @@ int main(int argc, char** argv) {
       else if (arg == "--max-clients" && i + 1 < argc) maxClients = number(argv[++i], 1024);
       else if (arg == "--environment" && i + 1 < argc) {
         const auto parsed = helion::server::parseRuntimeEnvironment(argv[++i]);
-        if (!parsed) throw std::invalid_argument("unknown environment");
+        if (!parsed || environmentPolicy.explicitEnvironment) throw std::invalid_argument("unknown or repeated environment");
+        environmentPolicy.explicitEnvironment = true;
         runtimeEnvironment = *parsed;
       }
+      else if (arg == "--access-file" && i + 1 < argc && accessFile.empty()) accessFile = argv[++i];
+      else if (arg == "--test-economy" && i + 1 < argc && !economySelected) {
+        const std::string value = argv[++i];
+        if (value != "convenience" && value != "production-like") throw std::invalid_argument("invalid economy policy");
+        environmentPolicy.convenienceEconomy = value == "convenience";
+        economySelected = true;
+      }
+      else if (arg == "--test-recovery" && i + 3 < argc && recoveryAction.empty()) {
+        if (std::string(argv[++i]) != "TEST") throw std::invalid_argument("explicit TEST target required");
+        recoveryAction = argv[++i]; recoveryId = argv[++i];
+        if ((recoveryAction != "SNAPSHOT" && recoveryAction != "RESTORE" && recoveryAction != "RESET") ||
+            !helion::server::safeIdentifier(recoveryId)) throw std::invalid_argument("invalid recovery operation");
+      }
+      else if (arg == "--operator" && i + 1 < argc && recoveryOperator.empty()) recoveryOperator = argv[++i];
       else if (arg.rfind("--", 0) == 0) throw std::invalid_argument("unknown option");
       else if (positional++ == 0) port = static_cast<int>(number(arg, 65535));
       else if (positional == 2) dataPath = arg;
@@ -2326,6 +2720,12 @@ int main(int argc, char** argv) {
     std::cerr << "usage: helion_server [port] [data-file] [--environment development|test|production] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem\n";
     return 2;
   }
+  if ((!recoveryOperator.empty() && recoveryAction.empty()) ||
+      ((economySelected || !recoveryAction.empty()) && runtimeEnvironment != helion::server::RuntimeEnvironment::private_test)) {
+    std::cerr << "TEST-only startup option rejected\n"; return 2;
+  }
+  try { if (!accessFile.empty()) environmentPolicy.loadAccessFile(accessFile); }
+  catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
   regionalMarkets = helion::economy::seedMarkets(pricingPolicy());
   galaxyState = helion::galaxy::seedState();
   sockaddr_in address{};
@@ -2344,7 +2744,9 @@ int main(int argc, char** argv) {
     std::lock_guard<std::mutex> lock(stateMutex);
     dummyPasswordHash = helion::security::hashPassword(std::string(12, 'x'));
     loadState();
+    environmentPolicy.protectStorage(dataPath, accessFile, certificate, privateKey);
     migrateLegacyProfiles();
+    if (!recoveryAction.empty()) return performTestRecovery(recoveryAction, recoveryId, recoveryOperator);
   } catch (const std::exception& error) {
     std::cerr << "unable to load or securely migrate persistence: " << error.what() << '\n';
     return 1;
@@ -2361,6 +2763,7 @@ int main(int argc, char** argv) {
   }
   std::cout << "Helion server listening on " << bindAddress << ':' << port
             << " TLS enabled; environment=" << helion::server::runtimeEnvironmentName(runtimeEnvironment)
+            << "; channel=" << environmentPolicy.releaseChannel() << "; instance=" << environmentPolicy.instance
             << "; max-clients=" << maxClients << '\n';
   helion::server::ConnectionLimit limit(maxClients);
   struct Worker { std::thread thread; std::shared_ptr<std::atomic<bool>> done; };

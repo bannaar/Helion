@@ -23,9 +23,11 @@ struct Offer {
 };
 
 const std::vector<Offer>& inventory();
+bool meetsGameplayRequirements(const Offer& offer, const std::map<std::string, int>& reputation,
+                               bool testBypass = false);
 std::vector<const ships::Definition*> availableAt(int station, ships::PadSize maximumPad,
-  const std::map<std::string, int>& reputation);
+  const std::map<std::string, int>& reputation, bool testBypass = false);
 bool available(int station, ships::PadSize maximumPad, std::string_view hullId,
-  const std::map<std::string, int>& reputation);
+  const std::map<std::string, int>& reputation, bool testBypass = false);
 
 } // namespace helion::shipyard

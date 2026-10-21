@@ -51,7 +51,10 @@ Request parseRequest(std::string_view line) {
   std::istringstream input{std::string(line)};
   std::string command;
   input >> command;
-  if (command == "PROTOCOL") {
+  if (command == "TESTADMIN") {
+    request.command = Command::test_admin;
+    std::getline(input, request.payload);
+  } else if (command == "PROTOCOL") {
     std::string mode, version, extra;
     if (!(input >> mode >> version) || mode != "BINARY" || (input >> extra) ||
         version.empty() || version.size() > 3 ||

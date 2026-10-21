@@ -94,3 +94,15 @@ Additional typed schemas need volume measurements and a new explicit version if
 their existing wire meaning changes. Per-environment approved build policies,
 durable idempotency keys, compression/deltas and client engine restructuring are
 not implemented by M4. M5 must be separately authorized after this checkpoint.
+
+## M6 TEST administration extension
+
+`TESTADMIN TEST id verb target field value` uses the existing bounded text request
+parser over explicit legacy TLS or the negotiated binary v1 text-request envelope.
+It adds no frame type, transport, fallback or client-authoritative metadata.
+The server loads environment and roles from trusted startup/access policy and
+audits/denies unauthorized attempts, including companion-authenticated requests.
+Administrative mutation IDs persist beyond connection-local binary request IDs;
+retry uses the same admin ID. See [private TEST administration](../private-test-admin.md).
+Existing typed input, replay/order checks, framing bounds and negotiation remain
+unchanged. M5 neutral INPUT/liveness behavior is unchanged.

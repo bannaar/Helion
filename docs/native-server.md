@@ -106,11 +106,13 @@ their established migration path; TEST and production deliberately reject
 untagged state. This prevents an operator from silently mounting copied writable
 state from another environment.
 
-Use separate paths, credentials, certificates, logs, and backups for each
-environment. The identity is an isolation guard, not a claim that private-test
-administration, launcher release channels, or production orchestration are
-already implemented. Current local-play, LAN, and hardware-validation guides
-therefore select `development` explicitly.
+TEST and Production now claim separate owner-only (`0700`) state directories
+with an environment/instance/economy marker. A fresh filename cannot bypass a
+claimed directory's identity. TEST requires protected colocated TLS/access files
+and a server-owned invitation roster. See [private TEST administration](private-test-admin.md)
+for provisioning, roles, canonical GSC terminology, commands, audit, offline
+snapshot/restore and reset safety. Current local-play and hardware guides retain
+`development` explicitly. Production orchestration remains future work.
 
 `--bind` accepts a numeric IPv4 address. The default remains loopback-only;
 remote servers must opt into a non-loopback bind. All connections require
@@ -134,7 +136,7 @@ with `--ca`. The private key stays on the server. For an installed local game,
 Create the data directory before startup and restrict it to the service user:
 
 ```sh
-sudo install -d -o helion -g helion -m 750 /var/lib/helion
+sudo install -d -o helion -g helion -m 700 /var/lib/helion
 ```
 
 The server writes updates to a uniquely named temporary file with mode `0600`
@@ -278,7 +280,8 @@ password on the companion device. See `docs/companion-auth.md`.
 
 ## 8. Persistence and security limitations
 
-The line-oriented data file begins with an `E` environment record and then
+The line-oriented data file begins with an `E` environment record, a versioned
+bounded administrative receipt ledger (`L`/`A`), and then
 contains galaxy/knowledge, economy, profile, owned-ship, companion-token,
 GalNet, and chat records. Economic telemetry and companion tokens retain their
 legacy `T` tags with distinct, strictly validated two- and six-column shapes. New passwords must be

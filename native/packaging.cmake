@@ -23,6 +23,7 @@ elseif(HELION_BUILD_CLIENT)
 endif()
 set(HELION_PACKAGE_DOCS README.md ${PROJECT_SOURCE_DIR}/docs/native-install.md
   ${PROJECT_SOURCE_DIR}/docs/companion-auth.md
+  ${PROJECT_SOURCE_DIR}/docs/private-test-admin.md
   ${PROJECT_SOURCE_DIR}/docs/PROJECT_STATE.md
   ${PROJECT_SOURCE_DIR}/docs/compaq610-server-elitebook-client.md)
 if(HELION_BUILD_SERVER)

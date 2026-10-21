@@ -1,5 +1,217 @@
 # Batch 14 v0.20 execution record
 
+## M6 private TEST administration continuation — 2026-10-20
+
+### Verified M5 start gate
+
+The current user authorized M6 only after a clean committed/validated M5 boundary,
+then one local checkpoint and a stop without push/merge/M7/Batch 15. Read-only
+preflight found branch `batch14/implementation-v0.11`, exact M5 commit
+`e06f1de75e26d0426885026397db8d594a341fc3`
+(`feat(native-client): add explicit engine state controller`), clean tracked tree
+and index, and no merge/rebase/cherry-pick/revert operation. Fresh fetch found
+origin's Batch 14 branch already synchronized at that M5 commit (0/0 divergence).
+`origin/main` remained `23cf90b0b7bdd0996c513f610fab21dc9a4af2e0` and an ancestor.
+Recovery branch `backup/batch14-post-m5-e06f1de` points at the exact checkpoint.
+The completed M5 validation table below was present. Optional handoffs/GEMINI.md
+were absent. Existing untracked `.agents/` and `plugins/` remain untouched and
+excluded from staging. No validated history was rewritten; no push was performed.
+
+### Architecture and authority
+
+Audit covered server startup/configuration, the existing environment/pricing
+seam, secure sidecar locking, atomic persistence/migrations, player/companion
+sessions, domain transactions, shipyard eligibility, TLS/binary dispatch,
+packaging/install guides and integration tests. Existing environment identity,
+TEST economy constants, persistence lock and authoritative domain validators were
+extended rather than replaced. No client engine-state/rendering or M4 frame,
+negotiation, heartbeat or typed-input redesign was needed.
+
+`server/test_admin.*` centralizes EnvironmentPolicy, server-owned roles/admission,
+AuthorizationContext, typed bounded AdminOperation parsing, protected configuration,
+storage guards and structured audit. `server/main.cpp` integrates the policy with
+existing authenticated sessions and locked domain transactions. Runtime environment
+is a reference to the policy's single typed identity, never client metadata.
+
+- DEVELOPMENT retains legacy startup/account compatibility and canonical prices;
+  implicit selection never authorizes TEST administration.
+- Explicit TEST requires protected, separate state/TLS/access files and an
+  invitation roster. Invitations bind names/roles to scrypt verifiers; an attacker
+  cannot claim an administrator name using a different CREATE password. Existing
+  CREATE/login/commander behavior remains the enrollment flow, with verifier
+  binding on TEST login, companion authentication and offline recovery.
+- Explicit Production uses canonical pricing and persistence, admits normal
+  accounts, and rejects every TEST administrative operation even for a rostered
+  DEV_ADMIN. TEST-only startup/economy/recovery options cannot run in Production.
+- Owner-only directory markers bind environment/instance/economy. Existing
+  environment-tagged saves and stable exclusive locks remain. Fresh filenames,
+  nested cross-environment directories and credential paths inside a differently
+  claimed environment cannot bypass isolation. TEST's access and TLS files must
+  be owner-only, colocated and free of symlink/hardlink aliases.
+- INVITED_TESTER can play TEST and use its ship eligibility convenience but cannot
+  administer it. Explicitly rostered NORMAL_PLAYER may enter with ordinary ship
+  requirements. Unlisted accounts are denied. Companion sessions cannot elevate
+  into DEV_ADMIN, including when their owner has that role; existing scopes,
+  revocation, expiry and token validation remain in force.
+
+### Implemented operations, transactions and recovery
+
+The existing legacy TLS / binary v1 text-request path now recognizes
+`TESTADMIN TEST id verb target field value`. Server authorization precedes domain
+mutation. Implemented operations cover GSC, experience, salvage, ore/food/parts,
+hull/fuel, registered ship/module grants, unfitted module revocation, teleport to
+implemented stations, player reset and market reseed. Numeric bounds, cargo/hull/
+fuel capacities, known registries, ownership, pad/docking and destroyed-ship
+recovery constraints are enforced. Changes are planned on copies, validated,
+audited, applied under the state lock, and atomically persisted with rollback on
+persistence failure. GSC changes enter faucet/sink telemetry. No arbitrary memory,
+SQL, file path or scripting operation is exposed.
+
+A bounded, versioned `L`/`A` receipt ledger joins the existing atomic save. Actor
+and administrative request ID identify a transaction; a canonical fingerprint
+rejects conflicting reuse. Successful grant/retry behavior survives reconnect and
+restart. GET stays read-only. The 4096-entry bound fails closed without eviction.
+Existing connection-local binary request IDs/order checks remain unchanged.
+
+TEST defaults to the already implemented abundant 100-GSC market/hull/module
+policy; `--test-economy production-like` supports realistic testing separately.
+Production definitions remain unchanged. TEST admin/tester ship access bypasses
+only the implemented reputation predicate; station/pad/location/ownership/funds
+checks remain. Current canonical offers have no active reputation gate; a
+synthetic gated offer exercises the real predicate in deterministic tests. Future
+rank/license/permit/career gates are not fabricated.
+
+The fsynced owner-only JSONL audit records identities, role/environment/instance,
+process/session, action/target/field/correlation, normalized before/requested/after
+values, outcomes and reasons. Denials, malformed requests, failures, reads and
+replays are recorded. A per-connection 64-request administrative budget prevents
+an unbounded audit stream on one connection; limit rejection is audited and
+closes it. Exact account bytes are retained in `account_id_hex` alongside the
+readable account identity, including legacy non-ASCII accounts. Invalid/raw payloads and credentials never enter the audit
+API. A durable intent precedes mutation; the committed receipt supports recovery
+if a crash occurs before the separate outcome record. Pre-commit audit failure
+denies mutation; post-commit audit failure returns an uncertain outcome with a
+same-ID retry instruction. The separate state file and audit are not a cross-file
+atomic transaction and the journal is not tamper-proof against its OS owner.
+
+Offline `--test-recovery TEST SNAPSHOT|RESTORE|RESET id --operator account` uses
+the same exclusive lock, explicit TEST target, rostered DEV_ADMIN and password on
+stdin. Immutable protected snapshot wrappers include environment, instance,
+economy, schema/format, timestamp, identity, build compatibility and digest.
+Restore validates the wrapper and normal strict persistence payload before any
+live-file replacement, preserves the operator binding, merges current receipts,
+and revokes companion credentials. RESET preserves account credentials/identities
+while reseeding implemented TEST world/progression. Audit/roster files never roll
+back. Existing zero-player operation, periodic checkpoints, logout-independent
+state and shutdown flush behavior remain; no artificial simulation was added.
+
+PROFILE exposes trusted environment/role/channel metadata. EnvironmentPolicy
+provides DEVELOPMENT/TEST/STABLE release identity and a small future experimental
+policy seam; no experimental gameplay or generic feature-toggle platform exists.
+
+### Validation evidence
+
+All four final configurations built with `HELION_WARNINGS_AS_ERRORS=ON`.
+Configurations ran sequentially after compilation to avoid cross-build resource
+interference. Exact results from the complete suites are:
+
+| Gate | Result |
+| --- | --- |
+| Combined Debug, `/tmp/helion-m6-debug` | **35/35 PASS**, **275.08 s** |
+| Server Debug ASan/UBSan, `/tmp/helion-m6-sanitize` | **22/22 PASS**, **113.22 s** |
+| Release server-only, `/tmp/helion-m6-server` | **22/22 PASS**, **103.79 s** |
+| Release client-only, `/tmp/helion-m6-client` | **22/22 PASS**, **30.71 s** |
+| Final focused M6 unit + real TLS/binary administration | **2/2 PASS**, **32.21 s** after strengthening XP replay to ADD (no double progression grant) |
+| M5 engine state, UI/input/presentation, protocol, security, economy and ship tests | PASS in all applicable complete configurations |
+| TLS / authoritative gameplay | PASS; Debug **45.60 s**, sanitizer **42.82 s** |
+| Binary TLS | PASS; Debug **6.03 s**, sanitizer **6.51 s** |
+| Companion TLS | PASS; Debug **14.52 s**, sanitizer **23.32 s** |
+| Binary graphical career/reconnect | PASS, **73.96 s**, Intel HD 3000 / OpenGL 3.3 core / X11 |
+| Explicit legacy graphical career/reconnect | PASS, **45.45 s**, same real SDL/core renderer |
+| Existing client state/retry integration | PASS, **10.34 s**, all docked/flight/recovery × binary/legacy cases |
+| Existing galaxy/persistence migration/corruption suite | PASS in all three server configurations; Debug **8.28 s** |
+| Combined install smoke | PASS, **5.15 s** |
+| Six combined/server/client TGZ + DEB packages | **PASS**, generated all six artifacts under the three build `packages/` directories |
+| Split package/install smoke | **PASS**: headless server/client-only dependencies and contents, TLS identity rejection, restart persistence, isolated dpkg install/remove, upgrade and external-data preservation |
+| Combined TGZ + DEB smoke | **PASS**: extracted launcher TLS, create/saved login, companion scope/denied launch/revocation, owner-only files, clean shutdown, and packaged M6 guide |
+| `git diff --check` / origin/main ancestry | **PASS**; fresh fetch still `origin/main=23cf90b`, ancestry exit **0** |
+
+The two new server-side CTest registrations explain **35/22/22**, compared with
+M5's **33/20/22**. `helion_test_admin_tests` checks explicit/invalid environments,
+roles, admission, authorization, typed grammar, malicious role/environment/path
+claims and the real ship reputation predicate. `helion_test_admin_integration`
+uses actual TLS and negotiated binary v1 to exercise invitation binding, all
+three roles, Production denials, GSC/commodity/module/ship/progression operations,
+capacity failures, audit outcomes/redaction/exact account identity, audit-write
+failure with no mutation, per-connection administration limits, durable grant
+replay across restart/restore, private/Production/production-like TEST pricing,
+storage/credential/ancestor isolation, offline locking/reset/snapshot/restore,
+invalid snapshot wrappers and payloads, companion non-authority/revocation, zero-
+player operation and legitimate Production purchase persistence across logout
+and restart. The existing TEST economy fixture now supplies an isolated TLS root
+and bound invitation; all its prior price/stock/ship/module assertions remain.
+No existing test assertion or timeout was reduced or weakened.
+
+Sanitizer execution used `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1` and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`, inherited by subprocesses.
+No ASan/LSan/UBSan/runtime-error diagnostics were found in captured test logs;
+no sanitizer suppressions were used. An earlier diagnostic run overlapped heavy
+Release compilation and timed out the existing 60-second TLS gameplay subprocess;
+a concurrent legacy acceptance run also encountered a driver/presentation error.
+The final isolated complete Debug and sanitizer matrices above passed with all
+original assertions/timeouts intact. The new request-budget test also correctly
+failed against the earlier binary before that guard was rebuilt; final suites
+and focused checks use the rebuilt implementation.
+
+Commands used `cmake -S . -B <build>` with Debug/Release, client/server/flavor/
+sanitizer options above, `cmake --build <build> -j2`, complete
+`ctest --test-dir <build> --output-on-failure -j2`, the focused M6 filter, and
+`cpack --config <build>/CPackConfig.cmake -B <build>/packages`. CTest evidence is
+in each build's `Testing/Temporary/LastTest.log`, plus preserved complete logs
+`/tmp/helion-m6-{debug,sanitize,server,client}-validated.log` and
+`/tmp/helion-m6-focused-final.log`. Build/package helpers and artifacts remain
+outside tracked source. `/tmp/helion_m6_packages.py` ran the repository's split
+package smoke with all four split archives and both Release builds, then exercised
+both combined archives without printing companion credentials. Its complete
+success log is `/tmp/helion-m6-package-smoke.log`. CPack logs are
+`/tmp/helion-m6-{debug,server,client}-packages.log`. No package contains runtime
+credentials or universe state. Native-client/controller source remains unchanged.
+
+The reviewed checkpoint contains only the 17 intended server/shared/test/build/
+documentation files; `.agents/` and `plugins/` are excluded. The local M6 commit
+is `feat(server): add isolated private test administration`, directly after the
+verified M5 checkpoint. The final report supplies its exact Git ID. No push,
+merge, M7 implementation or Batch 15 work is authorized by this continuation.
+
+
+### Limits and explicit M7+ deferrals
+
+See [private TEST administration](../private-test-admin.md) for complete command,
+configuration, isolation, audit, snapshot and credential instructions. The guide
+is included in server and combined packages; native-server/install guidance and
+the protocol extension record are updated. M5 controller files are unchanged.
+
+Deferred implemented-domain administration: mission/career graph transitions,
+reputation/faction editing, active-ship edits beyond the normal validated shipyard
+switch, plus richer asset adapters; these need dedicated domain services. Rank,
+loyalty, licenses, permits, unlocks and cross-system relocation remain unimplemented
+or metadata and were not invented. Operational limits: local filesystem/service-
+account trust, offline-only restore, strict snapshot compatibility, one-use
+recovery IDs, a bounded ledger without compaction, no live invitation reload or
+remote immutable audit collection. Restored receipts are historical: a rolled-back
+grant's retry is acknowledged without reapplying the grant.
+
+M7 remains broader permission-filtered Companion/Public API read surfaces and
+trust separation; M8 remains vendor-neutral production operations/status/
+observability/backup integration; M9 remains batch-wide completion/security
+review. Additional deferred operational work includes separate production-admin
+permissions, ledger/audit lifecycle, credential/invitation rotation and recovery,
+remote backup/snapshot orchestration, migration rehearsal automation, binary
+rollback/deployment tooling, experimental feature implementations and release
+content distribution. Earlier orbital gameplay, discovery acquisition, strategic
+travel, universe-wide industry/enforcement, heartbeat optimization and asynchronous
+client connection work remain deferred. Batch 15 is not started.
+
 ## M5 client engine-state continuation — 2026-10-20
 
 ### Verified starting boundary and scope

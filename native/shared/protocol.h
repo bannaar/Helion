@@ -27,7 +27,7 @@ class LineDecoder {
   bool malformed_ = false;
 };
 
-enum class Command { protocol, create, login, companion_issue, companion_auth, companion_list, companion_revoke, chat, profile, state, quit, galnet, economy, galaxy, launch, input, flight, mine, dock, contacts, buy, sell, mission, accept, turnin, upgrade, repair, refuel, outfit, shipyard, fire, recover, career, invalid };
+enum class Command { test_admin, protocol, create, login, companion_issue, companion_auth, companion_list, companion_revoke, chat, profile, state, quit, galnet, economy, galaxy, launch, input, flight, mine, dock, contacts, buy, sell, mission, accept, turnin, upgrade, repair, refuel, outfit, shipyard, fire, recover, career, invalid };
 struct Request {
   Command command = Command::invalid;
   std::string first;

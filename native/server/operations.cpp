@@ -1,4 +1,5 @@
 #include "server/operations.h"
+#include "shared/build_identity.h"
 #include <cerrno>
 #include <ctime>
 #include <filesystem>
@@ -89,7 +90,8 @@ void publishStatus(const std::string& data, const EnvironmentPolicy& policy, Ser
   std::ostringstream out;
   out << "{\"schema\":1,\"timestamp\":" << std::time(nullptr) << ",\"pid\":" << getpid()
     << ",\"environment\":\"" << runtimeEnvironmentName(policy.environment) << "\",\"instance\":\"" << policy.instance
-    << "\",\"channel\":\"" << policy.releaseChannel() << "\",\"phase\":\"" << phaseName(phase)
+    << "\",\"channel\":\"" << policy.releaseChannel() << "\",\"build_channel\":\"" << build::channel
+    << "\",\"build_id\":\"" << build::id << "\",\"phase\":\"" << phaseName(phase)
     << "\",\"ready\":" << (ready ? "true" : "false") << ",\"durable\":" << (durable ? "true" : "false")
     << ",\"uptime_seconds\":" << uptime << ",\"connections\":" << connections << ",\"players\":" << players
     << ",\"connections_total\":" << m.connections << ",\"rejected_total\":" << m.rejected

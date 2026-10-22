@@ -212,10 +212,13 @@ known-good TEST snapshot and compatible server binary for rehearsal.
 
 ## Experimental/release foundation and deferred work
 
-EnvironmentPolicy computes TEST/STABLE/DEVELOPMENT release identity on the server;
+EnvironmentPolicy's existing PROFILE/status `channel` is an environment-derived
+audience label (TEST/STABLE/DEVELOPMENT). M8 adds a separate STABLE/TEST **artifact**
+channel and build identity; status uses `build_channel`/`build_id` for those.
+See [release/deployment](release-deployment.md). Neither label grants authorization.
 Production cannot select TEST economy/recovery options or reuse credential paths
-inside a claimed TEST directory. This small policy seam
-supports future experimental capability checks. M6 adds no experimental gameplay
+inside a claimed TEST directory. The existing policy seam supports future
+experimental capability checks. M6 adds no experimental gameplay
 feature, arbitrary feature-name activation, launcher CDN or deployment service.
 
 Deferred follow-up remains subject to separate authorization and the Batch 14

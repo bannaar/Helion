@@ -1,9 +1,10 @@
 # Helion project state
 
-Status: 2026-10-22, after M7 and before M8. **M0–M7 complete; M8 not started;
-M9 not started; Batch 14 not complete; Batch 15 not started.** The current
-implementation checkpoint is `f02d9e38c32f22678664e55946bef3b700ac5d3c`.
-This canon/docs reconciliation is not an engineering milestone or final acceptance.
+Status: 2026-10-22, after M8 acceptance. **M0–M8 complete; M9 not started;
+Batch 14 not complete; Batch 15 not started.** M8 extends the verified post-canon
+`52255923de2ad26edeb74018a8acce656383b92f` baseline. Its local checkpoint and exact
+validation evidence are recorded by Git and the execution record. M9 requires
+separate authorization; this is not final Batch 14 acceptance.
 
 Current lore authority is [DraftComp8](lore/HELION_World_Bible_draftcomp8.txt) and
 [canon sync v0.21](lore/HELION_CANON_CHANGELOG_AI_SYNC_v0.21.txt). Lore describes
@@ -81,8 +82,11 @@ structured operational events, maintenance warning and bounded drain, durable
 shutdown checkpoints, immutable verified Production backups, non-destructive
 restore planning and portable headless systemd examples. Production backups are
 separate from M6 TEST snapshots; no destructive Production restore exists. See
-[Production operations](production-operations.md). Deployment/release/migration
-automation and final Batch 14 acceptance remain M8/M9 work.
+[Production operations](production-operations.md). M8 adds explicit release identity,
+STABLE/TEST artifact channels, installed-package checks, TEST-first migration and
+lifecycle rehearsal, verified backup-before-upgrade and same-format M7 binary
+rollback. See [release/deployment](release-deployment.md) for supported boundaries.
+Final Batch 14 acceptance remains M9 work.
 
 The combined install includes `helion_server`, `helion_client`,
 `helion-dev-cert`, `helion-play`, a desktop entry, icon, and documentation.
@@ -169,3 +173,10 @@ about 0.20–0.38 ms per captured frame, with 248–364 glyphs, 1,488–2,184 te
 vertices, 47,616–69,888 text bytes, and one atlas texture. This is a bounded
 diagnostic comparison rather than a performance target. Core UI hit regions now
 share the render layout and support mouse hover, click, and bounded scrolling.
+
+## M8 release and upgrade workflow
+
+See [native release/deployment/recovery](release-deployment.md) for 0.2.1 build identity,
+STABLE/TEST artifact channels, installed manifests, package inspection, TEST-first
+rehearsal and verified backup-before-upgrade. Production restore remains offline
+verification/planning; no destructive restore or M9 completion is claimed.

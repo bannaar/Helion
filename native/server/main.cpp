@@ -36,6 +36,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include "shared/protocol.h"
+#include "shared/build_identity.h"
 #include "server/security.h"
 #include "server/connection_limit.h"
 #include "server/data_lock.h"
@@ -932,9 +933,11 @@ void loadState() {
             !companionTokens.emplace(token.id, std::move(token)).second) {
           throw std::runtime_error("malformed companion token record");
         }
-      } else if (kind == "M" && !first.empty() && !second.empty()) {
+      } else if (kind == "M" && !first.empty() && !second.empty() && third.empty() &&
+                 std::count(line.begin(), line.end(), '\t') == 2) {
         messages.push_back({decode(first), decode(second)});
-      } else if (kind == "G" && !first.empty() && !second.empty() && third.empty()) {
+      } else if (kind == "G" && !first.empty() && !second.empty() && third.empty() &&
+                 std::count(line.begin(), line.end(), '\t') == 2) {
         const std::string id = decode(first);
         const std::string headline = decode(second);
         if (!addGalNetEvent(id, headline)) throw std::runtime_error("duplicate GalNet event");
@@ -1013,6 +1016,12 @@ void loadState() {
   }
   free(buffer);
   fclose(file);
+}
+
+bool migrationRequired() {
+  return ownershipMigrationPending || environmentMigrationPending || economyMigrationPending ||
+    galaxyMigrationPending || knowledgeMigrationPending || std::any_of(profiles.begin(), profiles.end(),
+      [](const auto& entry) { return entry.second.legacyCredential; });
 }
 
 void migrateLegacyProfiles() {
@@ -1589,43 +1598,57 @@ void validateBackupPayload(std::string_view payload) {
 
 int performProductionOperation(const std::string& action, const std::string& id, const std::string& reason) {
   using namespace helion::server;
+  bool backupCompleted = false;
+  std::string outcome;
   // OS ownership/exclusive lock is the operator boundary. No player/admin role
   // grants this access. The independent append-only journal never rolls back.
   auto audit = [&](const char* result) {
     const std::string record = "{\"timestamp\":" + std::to_string(std::time(nullptr)) +
       ",\"environment\":\"production\",\"uid\":" + std::to_string(geteuid()) +
       ",\"action\":\"" + action + "\",\"backup\":\"" + id + "\",\"reason\":\"" + reason +
+      "\",\"actor_build_id\":\"" + std::string(helion::build::id) +
       "\",\"result\":\"" + result + "\"}\n";
     writePrivateFile(dataPath + ".operations.jsonl", record, false);
     syncDirectory(dataPath + ".operations.jsonl");
   };
   try {
     audit("intent");
-    if (action == "BACKUP") {
+    if (action == "BACKUP" || action == "PREPARE_UPGRADE") {
       // loadState already validated live state. Preserve its exact original
       // format, including migration candidates, rather than migrating first.
       const auto payload = readPrivateFile(dataPath, 64 * 1024 * 1024);
       validateBackupPayload(payload);
       createBackup(dataPath, environmentPolicy, id);
+      backupCompleted = true;
       ++serviceMetrics.backups; serviceMetrics.lastBackup = std::time(nullptr);
+      if (action == "PREPARE_UPGRADE") {
+        migrateLegacyProfiles();
+        if (serviceMetrics.storageFatal) throw std::runtime_error("migration durability failed");
+        validateBackupPayload(readPrivateFile(dataPath, 64 * 1024 * 1024));
+        outcome = "{\"backup_id\":\"" + id + "\",\"source_sha256\":\"" + digest(payload) +
+          "\",\"build_id\":\"" + std::string(helion::build::id) + "\",\"prepared\":true}\n";
+      }
     } else {
       const auto payload = readBackup(dataPath, environmentPolicy, id);
       validateBackupPayload(payload);
       // A plan is deliberately non-destructive, even if live state is corrupt.
       // Restoration must be separately reviewed with a preserved current copy.
-      std::cout << "{\"backup_id\":\"" << id << "\",\"sha256\":\"" << digest(payload)
-        << "\",\"compatible\":true,\"replaces_live_state\":false}\n";
+      outcome = "{\"backup_id\":\"" + id + "\",\"sha256\":\"" + digest(payload) +
+        "\",\"compatible\":true,\"replaces_live_state\":false}\n";
     }
     audit("success");
-    publishStatus(dataPath, environmentPolicy, ServicePhase::offline, serviceMetrics, 0, 0, 0, action == "BACKUP");
+    publishStatus(dataPath, environmentPolicy, ServicePhase::offline, serviceMetrics, 0, 0, 0,
+                  action == "BACKUP" || action == "PREPARE_UPGRADE");
     operationLog(environmentPolicy, "offline-operation", "verified");
+    std::cout << outcome;
     return 0;
   } catch (...) {
-    if (action == "BACKUP") ++serviceMetrics.backupFailures;
+    if ((action == "BACKUP" || action == "PREPARE_UPGRADE") && !backupCompleted) ++serviceMetrics.backupFailures;
     try { publishStatus(dataPath, environmentPolicy, ServicePhase::fatal, serviceMetrics, 0, 0, 0, false); } catch (...) {}
     try { audit("failed"); } catch (...) {}
     operationLog(environmentPolicy, "offline-operation", "failed");
-    std::cerr << "Production operation failed; live state was not replaced\n";
+    std::cerr << (action == "PREPARE_UPGRADE" ? "Production upgrade preparation failed; inspect state and retained backup\n" :
+                                               "Production operation failed; live state was not replaced\n");
     return 1;
   }
 }
@@ -2775,6 +2798,9 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc == 2 && (std::string(argv[1]) == "--build-info" || std::string(argv[1]) == "--version")) {
+    std::cout << helion::build::info("server"); return 0;
+  }
   if (argc == 2 && std::string(argv[1]) == "--hash-password") {
     std::string password;
     if (!std::getline(std::cin, password) || password.size() < helion::security::kMinNewPassword ||
@@ -2795,7 +2821,7 @@ int main(int argc, char** argv) {
   std::string recoveryAction, recoveryId, recoveryOperator;
   std::string operationAction, operationId, operationReason;
   unsigned drainSeconds = 1, warningSeconds = 60;
-  bool drainSelected = false, warningSelected = false;
+  bool drainSelected = false, warningSelected = false, validateOnly = false;
   if (!helion::ships::validateRegistry() || !helion::loadout::validateRegistry() ||
       !helion::galaxy::validateGalaxy(helion::galaxy::seedState())) {
     std::cerr << "invalid canonical ship, module, or galaxy registry\n";
@@ -2814,6 +2840,7 @@ int main(int argc, char** argv) {
       if (arg.rfind("--", 0) == 0 && !selectedOptions.insert(arg).second)
         throw std::invalid_argument("repeated startup option");
       if (arg == "--bind" && i + 1 < argc) bindAddress = argv[++i];
+      else if (arg == "--validate-state") validateOnly = true;
       else if (arg == "--cert" && i + 1 < argc) certificate = argv[++i];
       else if (arg == "--key" && i + 1 < argc) privateKey = argv[++i];
       else if (arg == "--max-clients" && i + 1 < argc) maxClients = number(argv[++i], 1024);
@@ -2826,7 +2853,8 @@ int main(int argc, char** argv) {
       else if (arg == "--operations" && i + 3 < argc && operationAction.empty()) {
         if (std::string(argv[++i]) != "PRODUCTION") throw std::invalid_argument("explicit PRODUCTION target required");
         operationAction = argv[++i]; operationId = argv[++i];
-        if ((operationAction != "BACKUP" && operationAction != "VERIFY_BACKUP" && operationAction != "PLAN_RESTORE") ||
+        if ((operationAction != "BACKUP" && operationAction != "VERIFY_BACKUP" && operationAction != "PLAN_RESTORE" &&
+             operationAction != "PREPARE_UPGRADE") ||
             !helion::server::safeIdentifier(operationId, 80)) throw std::invalid_argument("invalid operation");
       }
       else if (arg == "--reason" && i + 1 < argc && operationReason.empty()) {
@@ -2869,9 +2897,13 @@ int main(int argc, char** argv) {
   }
 
   if ((!operationAction.empty() && (runtimeEnvironment != helion::server::RuntimeEnvironment::production ||
-        !environmentPolicy.explicitEnvironment || !recoveryAction.empty() || operationReason.empty())) ||
+        !environmentPolicy.explicitEnvironment || !recoveryAction.empty() || validateOnly || operationReason.empty())) ||
       (!operationReason.empty() && operationAction.empty())) {
     std::cerr << "explicit Production operation/environment/reason required\n"; return 2;
+  }
+  if ((validateOnly && !recoveryAction.empty()) ||
+      (runtimeEnvironment == helion::server::RuntimeEnvironment::production && helion::build::channel == "TEST")) {
+    std::cerr << "incompatible release channel or offline operation\n"; return 2;
   }
   helion::server::operationLog(environmentPolicy, "startup", "validating");
   if (runtimeEnvironment == helion::server::RuntimeEnvironment::production &&
@@ -2917,10 +2949,22 @@ int main(int argc, char** argv) {
     dummyPasswordHash = helion::security::hashPassword(std::string(12, 'x'));
     helion::server::operationLog(environmentPolicy, "persistence-load", "loading");
     // Verification can diagnose backups even when the live file is damaged.
-    if (operationAction.empty() || operationAction == "BACKUP") loadState();
-    if (operationAction.empty() || operationAction == "BACKUP")
+    if (validateOnly && !std::filesystem::exists(dataPath)) throw std::runtime_error("validation requires existing state");
+    if (operationAction.empty() || operationAction == "BACKUP" || operationAction == "PREPARE_UPGRADE") loadState();
+    if (validateOnly) {
+      std::cout << "{\"valid\":true,\"migration_required\":" << (migrationRequired() ? "true" : "false")
+        << ",\"environment\":\"" << helion::server::runtimeEnvironmentName(runtimeEnvironment)
+        << "\",\"build_id\":\"" << helion::build::id << "\"}\n";
+      return 0;
+    }
+    if (operationAction.empty() || operationAction == "BACKUP" || operationAction == "PREPARE_UPGRADE")
       environmentPolicy.protectStorage(dataPath, accessFile, certificate, privateKey);
     if (!operationAction.empty()) return performProductionOperation(operationAction, operationId, operationReason);
+    if (runtimeEnvironment == helion::server::RuntimeEnvironment::production &&
+        std::filesystem::exists(dataPath) && migrationRequired()) {
+      if (performProductionOperation("BACKUP", helion::server::uniqueBackupId("pre-migration"),
+                                     "startup-migration") != 0) throw std::runtime_error("pre-migration backup failed");
+    }
     migrateLegacyProfiles();
     if (serviceMetrics.storageFatal) throw std::runtime_error("startup persistence durability failed");
     serviceMetrics.loadMicros = std::chrono::duration_cast<std::chrono::microseconds>(

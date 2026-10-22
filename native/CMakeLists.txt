@@ -1,5 +1,5 @@
 add_library(helion_protocol STATIC shared/protocol.cpp shared/binary_protocol.cpp shared/flight.cpp shared/combat.cpp shared/organizations.cpp shared/career.cpp shared/ships.cpp shared/shipyard.cpp shared/owned_ship.cpp shared/loadout.cpp shared/economy.cpp shared/galaxy.cpp)
-target_include_directories(helion_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(helion_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_BINARY_DIR}/generated)
 target_compile_options(helion_protocol PRIVATE -Wall -Wextra -Wpedantic)
 
 if(HELION_BUILD_CLIENT OR HELION_BUILD_TESTS)
@@ -18,7 +18,7 @@ endif()
 
 if(HELION_BUILD_SERVER)
   add_library(helion_security STATIC server/security.cpp server/connection_limit.cpp server/data_lock.cpp server/environment.cpp server/test_admin.cpp server/operations.cpp)
-  target_include_directories(helion_security PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_include_directories(helion_security PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_BINARY_DIR}/generated)
   target_link_libraries(helion_security PUBLIC OpenSSL::Crypto)
   target_compile_options(helion_security PRIVATE -Wall -Wextra -Wpedantic)
   add_executable(helion_server server/main.cpp)
@@ -211,4 +211,29 @@ if(HELION_BUILD_TESTS AND HELION_BUILD_CLIENT)
   add_test(NAME helion_renderer_fallback COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/renderer_fallback.py --client $<TARGET_FILE:helion_client>)
   set_tests_properties(helion_renderer_fallback PROPERTIES TIMEOUT 120 RESOURCE_LOCK helion_graphics_display)
+endif()
+
+if(HELION_BUILD_TESTS)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  foreach(component server client)
+    if(TARGET helion_${component})
+      add_test(NAME helion_${component}_release_identity COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/release_identity.py --binary $<TARGET_FILE:helion_${component}>
+        --component ${component} --manifest ${PROJECT_BINARY_DIR}/generated/release-manifest.json)
+    endif()
+  endforeach()
+  if(HELION_BUILD_SERVER)
+    set(release_arguments --server $<TARGET_FILE:helion_server> --build ${PROJECT_BINARY_DIR})
+    if(HELION_BUILD_CLIENT)
+      list(APPEND release_arguments --client $<TARGET_FILE:helion_client>)
+    endif()
+    add_test(NAME helion_release_rehearsal COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/release_rehearsal.py ${release_arguments})
+    set_tests_properties(helion_release_rehearsal PROPERTIES TIMEOUT 180 RESOURCE_LOCK helion_gameplay_integration)
+  endif()
+endif()
+if(HELION_BUILD_TESTS AND (HELION_BUILD_SERVER OR HELION_BUILD_CLIENT))
+  add_test(NAME helion_release_inspection COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/release_inspection.py --build ${PROJECT_BINARY_DIR}
+    --kind ${HELION_PACKAGE_FLAVOR})
 endif()

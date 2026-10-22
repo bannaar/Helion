@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Inspect a trusted installed prefix. Metadata is not a signature or authority."""
+import argparse
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+
+
+def inspect(prefix, kind, channel=None):
+    path = prefix / 'share/helion' / kind / 'release-manifest.json'
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_size > 16384 or info.st_mode & 0o022:
+        raise ValueError('unsafe manifest')
+    manifest = json.loads(path.read_text())
+    required = ['server', 'client'] if kind == 'combined' else [kind]
+    if (manifest['manifest_version'] != 1 or manifest['project'] != 'HELION' or
+            manifest['package_kind'] != kind or manifest['components'] != required or
+            manifest['release_channel'] not in ('STABLE', 'TEST') or
+            manifest['binary_protocol'] != 1 or manifest['legacy_protocol'] != 2 or
+            manifest['persistence_compatibility'] != 'persistence-admin1' or
+            manifest['client_server_compatibility'] != 'helion-tls-legacy2-binary1' or
+            (channel and manifest['release_channel'] != channel)):
+        raise ValueError('incompatible manifest/channel')
+    for component in required:
+        binary = prefix / 'bin' / ('helion_' + component)
+        mode = binary.lstat().st_mode
+        if not stat.S_ISREG(mode) or mode & 0o6022 or not os.access(binary, os.X_OK):
+            raise ValueError('unsafe or missing executable')
+        result = subprocess.run([str(binary), '--build-info'], check=True, capture_output=True,
+                                text=True, timeout=10)
+        identity = json.loads(result.stdout)
+        if identity.pop('component') != component or identity != manifest:
+            raise ValueError('binary/manifest mismatch')
+    if 'server' in required:
+        for asset in ('helion-server.service', 'helion-maintenance.service', 'helion-maintenance.timer'):
+            if not (prefix / 'share/doc/helion-server/examples' / asset).is_file():
+                raise ValueError('missing service example')
+        for helper in ('helion-service-status', 'helion-dev-cert'):
+            if not os.access(prefix / 'bin' / helper, os.X_OK):
+                raise ValueError('missing server helper')
+    if kind == 'combined' and not os.access(prefix / 'bin/helion-play', os.X_OK):
+        raise ValueError('missing local helper')
+    if kind == 'client' and not os.access(prefix / 'bin/helion-client-launch', os.X_OK):
+        raise ValueError('missing client helper')
+    return manifest
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--prefix', type=Path, required=True, help='installed prefix, e.g. /usr')
+    parser.add_argument('--kind', choices=('combined', 'server', 'client'), required=True)
+    parser.add_argument('--channel', choices=('STABLE', 'TEST'))
+    args = parser.parse_args()
+    try:
+        manifest = inspect(args.prefix.resolve(), args.kind, args.channel)
+        print(json.dumps({'valid': True, 'build_id': manifest['build_id'],
+                          'release_channel': manifest['release_channel'], 'package_kind': args.kind}))
+        return 0
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+        print('release inspection failed; no state changed', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

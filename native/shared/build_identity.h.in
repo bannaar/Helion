@@ -1,0 +1,13 @@
+#pragma once
+#include <string>
+#include <string_view>
+namespace helion::build {
+inline constexpr std::string_view channel = "@HELION_RELEASE_CHANNEL@";
+inline constexpr std::string_view id = "@HELION_BUILD_ID@";
+inline std::string info(std::string_view component) {
+  std::string result = R"helion(@HELION_MANIFEST_JSON@)helion";
+  const auto end = result.rfind('}');
+  result.replace(end, 1, ",\"component\":\"" + std::string(component) + "\"}");
+  return result;
+}
+}

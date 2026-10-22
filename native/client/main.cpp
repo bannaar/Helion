@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "shared/protocol.h"
+#include "shared/build_identity.h"
 #include "shared/binary_protocol.h"
 #include "shared/organizations.h"
 #include "shared/loadout.h"
@@ -434,6 +435,9 @@ void configureRenderFixture(helion::client::View& view, std::string_view state) 
 } // namespace
 
 int main(int argc,char** argv) {
+  if (argc == 2 && (std::string(argv[1]) == "--build-info" || std::string(argv[1]) == "--version")) {
+    std::cout << helion::build::info("client"); return 0;
+  }
   std::signal(SIGPIPE, SIG_IGN);
   bool renderCheck=false, graphicsInfo=false, terminal=false, acceptanceRun=false, legacyProtocol=false;
   helion::graphics::RendererMode rendererMode = helion::graphics::RendererMode::auto_mode;

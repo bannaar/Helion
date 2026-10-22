@@ -1,5 +1,123 @@
 # Batch 14 v0.20 execution record
 
+## M8 Deployment, Packaging, Migration, Release and Recovery — 2026-10-22
+
+Status: **M8 COMPLETE**, local checkpoint only. M0–M8 are complete; M9 and
+Batch 15 remain unstarted. **Batch 14 is not complete.** Stop for user review,
+without push, merge, M9 or gameplay expansion.
+
+Preflight found branch `batch14/implementation-v0.11`, HEAD and freshly fetched
+origin development ref at `52255923de2ad26edeb74018a8acce656383b92f`, clean tracked
+tree/index and only the known `.agents/` / `plugins/` tooling. No unfinished Git
+operation existed. Public origin/main is `41b21607db7179cf24b73c17c2d742df3febd1e6`;
+its divergence from the shared `23cf90b` baseline contains only README.md and
+CURRENT_DEVELOPMENT.md. It is intentionally not merged into this implementation
+branch. Recovery branch `backup/batch14-pre-m8-5225592` preserves the exact starting
+point. Full-history bundle
+`/home/bannaar/Desktop/HELION_PRE_M8_2026-10-22_064211.bundle` verified successfully
+and records complete history. No untracked tooling was removed or staged.
+
+Audit covered CMake/CPack/install rules, helpers and systemd assets, existing
+migration/loader/atomic-save paths, environment and TLS preflight, M7 backup/audit/
+status operations, protocol/client compatibility and current acceptance tooling.
+The implementation extends these systems rather than replacing them. Release
+version is 0.2.1, with inspectable JSON build identities/manifests and explicit
+STABLE/TEST artifact channels separate from server environments. TEST server
+artifacts refuse Production; STABLE candidates can rehearse in PRIVATE TEST.
+Versioned backup compatibility tags remain unchanged.
+
+`--validate-state` uses the current strict loader and exclusive lock without
+migration/listening. `PREPARE_UPGRADE` verifies an immutable M7 source backup
+before migration, revalidates the result and publishes success only after audit
+and status finalization. Normal Production startup independently enforces the
+same backup-first boundary for existing migration candidates. Failures stop the
+workflow; an uncertain rename is never claimed as an atomic deployment rollback.
+Strict chat/news record arity now rejects unknown appended required fields rather
+than silently dropping them; valid existing record formats are unchanged.
+
+Packages preserve combined/server/client layouts, distinct split manifests and
+required installed helpers/docs, with explicit combined/split Debian conflicts.
+The inspector binds trusted installed manifests to executable identities. The
+package acceptance harness audits actual artifacts and rehearses installed TEST/
+Production workflows, supported legacy migrations, failures and known-compatible
+M7 binary rollback. Test-only migration/finalization faults are never linked into
+or shipped with the service. Production destructive restore remains unsupported:
+verification/planning and isolated offline rehearsal retain the M7 boundary.
+See [release/deployment/recovery](../release-deployment.md) for exact commands,
+compatibility, upgrade/recovery boundaries and limitations.
+
+Validation on Linux Mint/EliteBook, after the package-permission repair:
+
+| Gate | Actual result |
+| --- | --- |
+| Combined Debug, warnings as errors | **42/42 PASS**, 326.95 s |
+| Server Debug ASan/UBSan | **28/28 PASS**, 212.01 s |
+| Server-only Release | **28/28 PASS**, 164.01 s |
+| Client-only Release | **24/24 PASS**, 30.30 s |
+| Combined Release | **42/42 PASS**, 329.68 s |
+| M4/M5/M6/M7 regression | **PASS** in applicable full suites: engine/controller, binary/legacy, TLS, companion, environment/admin, economy, galaxy/persistence/migration, lifecycle/health/drain/backup/restore planning |
+| Binary graphical acceptance | **PASS**: Debug 48.62 s; combined Release 49.14 s; real SDL/core renderer, TLS career and restart/reconnect |
+| Legacy graphical acceptance | **PASS**: Debug 48.82 s; combined Release 48.50 s; same career/reconnect/reward checks |
+| Artifact acceptance | **8/8 PASS**: STABLE combined/server/client TGZ+DEB, TEST server TGZ+DEB; identities, archive paths/types/modes, dependencies, secret checks, installed helpers/TLS/client, invalid archive rejection |
+| STABLE installed TEST-first rehearsal | **PASS**: 31 process starts, 18 binary/legacy checkpoints, 10 migration rehearsals, 25 intentional failure cases; TEST then Production then DEVELOPMENT |
+| TEST artifact rehearsal | **PASS**: 20 process starts, 12 binary/legacy checkpoints, 6 migration rehearsals, 11 intentional failures including Production refusal |
+| Prior M7 package upgrade / binary rollback | **PASS**: exact verified M7 source, rebuilt with safe packaging umask; full record preservation and current-loader verification, no reverse migration |
+| Split package/install smoke | **PASS**, TGZ and DEB: TLS/name rejection, saved restart, reinstall/upgrade preservation, data-safe removal and isolated dpkg install/remove |
+| systemd examples | **PASS**, systemd-analyze verify, with only ExecStart's unavailable system path mapped to the extracted executable |
+| Documentation local links / whitespace | **PASS**, changed Markdown paths checked; git diff --check |
+
+All six build configurations (including TEST server) used warnings as errors.
+ASan used `detect_leaks=1:halt_on_error=1`; UBSan used
+`halt_on_error=1:print_stacktrace=1`. Actual totals are 164/164 across the five
+full suites; counts are not inherited from M7. Full logs live under
+`/tmp/helion-m8-*-validated.log`. The package report
+`/tmp/helion-m8-package-report.json` records exact artifact SHA-256/build identities,
+prior artifact identity and rehearsal counts; split logs are
+`/tmp/helion-m8-split-TGZ.log` and `/tmp/helion-m8-split-DEB.log`.
+These local evidence/artifact files are not installed or committed.
+
+The first archive audit exposed inherited `0775` implicit directories under
+umask `0002`. CMake now explicitly creates `0755` install directories; fresh
+package staging and installed-tree checks pass without relaxing the audit.
+Cached mismatched combined/split flavors and invalid channels now fail configuration.
+The original M7 package is preserved; the prior-package rehearsal uses a rebuild
+from `f02d9e38c32f22678664e55946bef3b700ac5d3c`, umask `022`, SHA-256
+`fd7a82140d3d5563df747611903fedb234a03fa64a6e2467ac9c1664711709f9`.
+
+Early new-fixture assumptions about BUY replies/cargo queries and global byte
+ordering were corrected against actual protocol/save semantics. Rollback still
+checks exact bytes of every record, allowing only companion-record order from
+M7's unordered container; every other row remains ordered, and the resulting
+file must pass the current strict loader. No credential/field difference is ignored.
+The initial Debug run had one timing-sensitive legacy graphical failure at the
+mission screen. It passed unchanged in isolation and both subsequent full Debug
+runs, and the final combined Release run passed too. No assertion or timeout
+was weakened; the isolated run was 49.83 s. M9 can investigate intermittent
+acceptance timing further; no reproduced gameplay defect was identified here.
+
+After evidence/docs reconciliation, identities and installed release checks are
+refreshed and all eight artifacts regenerated/revalidated so packaged documents
+match the final tree. Candidate identities honestly label the pre-commit dirty
+working tree and bind it by source/configuration digests; this local checkpoint
+is not a published clean release or an unattended promotion.
+
+Production destructive restore remains verification/planning only. There is no
+atomic package-plus-state rollback, reverse migration, signing/update platform,
+cloud dependency or new gameplay. Physical Compaq/LAN deployment, a live enabled
+systemd unit, arbitrary-distribution ABI support, real full-disk hardware failure,
+remote retention/replication and unattended rollouts are not claimed. ENOSPC/save
+faults are deterministic test-only injection. Existing TLS, binary v1, explicit
+legacy, authority/isolation and companion boundaries remain intact; package
+metadata grants no authority. DraftComp8/v0.21 and all compatibility identifiers
+are preserved. M9's full Batch 14 hardening/final acceptance remains unstarted.
+
+Before the local commit: review all tracked/new milestone files, diff/index and
+whitespace; exclude `.agents/`, `plugins/`, build output and temporary evidence.
+No push or merge is authorized. After review, the next sequence is M8 backup,
+authorized push/synchronization, then separately authorized M9.
+
+
+
 ## Post-M7 canon/document reconciliation v0.21 — 2026-10-22
 
 This is a documentation/canon checkpoint, not M8 implementation or M9 final

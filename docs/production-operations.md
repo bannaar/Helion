@@ -225,9 +225,10 @@ that rehearsal. An operator-reviewed offline file replacement must separately
 preserve the current recovery point, account for credential revocation and retain
 the stable `.lock` inode. Never copy Production secrets into the real PRIVATE
 TEST service; the M7 rehearsal is an isolated Production-identity disposable
-recovery target. Automated TEST-first migrations, reviewed restore replacement,
-companion revocation during Production restore and release rollback belong to
-M8. Do not manually transplant an envelope as the live persistence file.
+recovery target. M8 adds TEST-first migration/upgrade rehearsal and a tested
+same-format M7 binary rollback; see [release recovery](release-deployment.md).
+Reviewed destructive replacement and companion revocation during Production
+restore remain unsupported. Do not transplant an envelope as the live file.
 
 ## Security review and limits
 
@@ -251,5 +252,12 @@ Copy examples to `/etc/systemd/system`, provision protected state/TLS first,
 review the bind address/firewall and run the health probe after startup. The
 automated gate checks headless packaged processes and unit syntax where available;
 it does not enable a system service or claim physical-host deployment acceptance.
-M8 deployment/release/migration/recovery tooling, M9 final Batch 14 acceptance,
-and all Ship AI Core/Batch 15 work remain unstarted.
+M8 deployment/release/migration/recovery tooling is described below. M9 final
+Batch 14 acceptance and all Ship AI Core/Batch 15 work remain unstarted.
+
+## M8 release and upgrade workflow
+
+See [native release/deployment/recovery](release-deployment.md) for 0.2.1 build identity,
+STABLE/TEST artifact channels, installed manifests, package inspection, TEST-first
+rehearsal and verified backup-before-upgrade. Production restore remains offline
+verification/planning; no destructive restore or M9 completion is claimed.

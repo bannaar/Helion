@@ -41,7 +41,7 @@ Install a downloaded Helion `.deb` package with APT:
 
 ```bash
 cd ~/Downloads
-sudo apt install ./helion-0.2.0-Linux-x86_64.deb
+sudo apt install ./helion-0.2.1-STABLE-Linux-x86_64.deb
 ```
 
 Launch **Helion** from the XFCE Games menu or run:
@@ -455,7 +455,7 @@ cmake --build build-native --target package
 CMake produces versioned `.deb` and `.tar.gz` packages. Test a package before distributing it:
 
 ```bash
-sudo apt install ./helion-0.2.0-Linux-x86_64.deb
+sudo apt install ./helion-0.2.1-STABLE-Linux-x86_64.deb
 helion-play --check
 ```
 
@@ -478,9 +478,10 @@ separately; never overwrite the only recovery copy. The local DEVELOPMENT copy
 above is not a Production backup envelope.
 
 The following commands rebuild a clean source checkout; they are not a
-validated arbitrary-version Production upgrade/rollback procedure. M8 migration,
-TEST-first release and failed-deployment recovery rehearsal are not started.
-Use an approved compatible release and a verified pre-upgrade recovery point.
+validated arbitrary-version Production upgrade/rollback procedure. Follow the
+[M8 release workflow](release-deployment.md) for the supported M7-to-M8 package,
+migration and TEST-first failure/recovery rehearsal. Use an approved compatible
+release and a verified pre-upgrade recovery point.
 
 Update a clean Git checkout:
 
@@ -602,3 +603,10 @@ owned ships, and authoritative shipyards. Remaining major systems include
 broader mission chains, deeper regional economy simulation, shared asteroid
 depletion, player collision, multi-system travel, complete outfitting and
 shields, and richer exploration.
+
+## M8 release and upgrade workflow
+
+See [native release/deployment/recovery](release-deployment.md) for 0.2.1 build identity,
+STABLE/TEST artifact channels, installed manifests, package inspection, TEST-first
+rehearsal and verified backup-before-upgrade. Production restore remains offline
+verification/planning; no destructive restore or M9 completion is claimed.

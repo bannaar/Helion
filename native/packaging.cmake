@@ -23,6 +23,7 @@ elseif(HELION_BUILD_CLIENT)
 endif()
 set(HELION_PACKAGE_DOCS README.md ${PROJECT_SOURCE_DIR}/docs/native-install.md
   ${PROJECT_SOURCE_DIR}/docs/companion-auth.md
+  ${PROJECT_SOURCE_DIR}/docs/release-deployment.md
   ${PROJECT_SOURCE_DIR}/docs/private-test-admin.md
   ${PROJECT_SOURCE_DIR}/docs/PROJECT_STATE.md
   ${PROJECT_SOURCE_DIR}/docs/compaq610-server-elitebook-client.md)
@@ -37,3 +38,19 @@ install(FILES ${HELION_PACKAGE_DOCS}
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${HELION_DOC_PACKAGE_NAME})
 install(FILES ${PROJECT_SOURCE_DIR}/docs/development/BATCH14_PROTOCOL.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${HELION_DOC_PACKAGE_NAME}/development)
+install(FILES ${PROJECT_BINARY_DIR}/generated/release-manifest.json
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/helion/${HELION_PACKAGE_FLAVOR})
+if(HELION_BUILD_SERVER)
+  install(PROGRAMS scripts/helion-release-check DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+# Preserve source-relative documentation links in installed packages. Existing
+# flat guide paths remain for compatibility with earlier installers/operators.
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/docs/
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${HELION_DOC_PACKAGE_NAME}/docs
+  FILES_MATCHING PATTERN "*.md" PATTERN "*.txt" PATTERN "*.docx" PATTERN "*.png")
+install(FILES ${PROJECT_SOURCE_DIR}/README.md
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${HELION_DOC_PACKAGE_NAME})
+install(FILES README.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${HELION_DOC_PACKAGE_NAME}/native)
+install(FILES ${PROJECT_SOURCE_DIR}/screenshots/native-mining.png
+  ${PROJECT_SOURCE_DIR}/screenshots/station.png ${PROJECT_SOURCE_DIR}/screenshots/approach.png
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${HELION_DOC_PACKAGE_NAME}/screenshots)

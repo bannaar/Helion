@@ -37,7 +37,7 @@ actual two-machine setup before relying on it for public play.
 
 These release artifacts are dynamically linked on the build distribution.
 Before choosing the Debian package on an older Compaq installation, inspect
-its dependencies with `dpkg-deb -f helion-server_0.2.0_amd64.deb Depends` and
+its dependencies with `dpkg-deb -f helion-server_0.2.1_amd64.deb Depends` and
 confirm that distribution provides them. In particular, the supplied Mint 22
 build needs a recent glibc and `libssl3t64`; it is not a universal binary for
 older Debian releases. Build the server-only flavor on a compatible older
@@ -49,13 +49,13 @@ libraries merely to satisfy this package.
 On the Compaq:
 
 ```sh
-sudo apt install ./helion-server_0.2.0_amd64.deb
+sudo apt install ./helion-server_0.2.1_amd64.deb
 ```
 
 On the EliteBook:
 
 ```sh
-sudo apt install ./helion-client_0.2.0_amd64.deb
+sudo apt install ./helion-client_0.2.1_amd64.deb
 ```
 
 The server package has no SDL, OpenGL, X11, desktop-launcher, or client-binary
@@ -68,14 +68,14 @@ On the Compaq:
 
 ```sh
 sudo install -d -m 0755 /opt/helion-server
-sudo tar -xzf helion-server-0.2.0-Linux-x86_64.tar.gz -C /opt/helion-server
+sudo tar -xzf helion-server-0.2.1-STABLE-Linux-x86_64.tar.gz -C /opt/helion-server
 ```
 
 On the EliteBook:
 
 ```sh
 mkdir -p "$HOME/helion-client"
-tar -xzf helion-client-0.2.0-Linux-x86_64.tar.gz -C "$HOME/helion-client"
+tar -xzf helion-client-0.2.1-STABLE-Linux-x86_64.tar.gz -C "$HOME/helion-client"
 ```
 
 Tarballs are dynamically linked. Install the normal OpenSSL runtime on the
@@ -298,11 +298,13 @@ sudo tar -czf "$HOME/helion-backup-$(date +%F).tar.gz" \
 sudo systemctl start helion-server
 ```
 
-Upgrade by installing the new package over the old one. Packages do not own or
-delete `/var/lib/helion`, `/etc/helion`, or client preferences, so the database,
+Follow [release/deployment/recovery](release-deployment.md) for candidate identity
+inspection, TEST-first rehearsal and verified PREPARE_UPGRADE before installing
+the new Production package. Retain the previous artifact and recovery point.
+Packages do not own or delete `/var/lib/helion`, `/etc/helion`, or client preferences, so the database,
 TLS material, and `~/.config/helion/client.conf` survive upgrades. This describes
-package ownership behavior; TEST-first migration/release and failed-deployment
-recovery rehearsal remain unstarted M8 work. Do not infer arbitrary version
+package ownership behavior; the M8 guide specifies the tested upgrade/recovery
+path and its limits. Do not infer arbitrary version
 compatibility or a supported reverse migration from file preservation.
 
 Remove binaries without silently deleting player data:

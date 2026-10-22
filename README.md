@@ -22,9 +22,10 @@ See [installation](docs/native-install.md) and
 [v0.21 canon checksum](docs/lore/HELION_CANON_CHANGELOG_AI_SYNC_v0.21.txt).
 The World Bible controls canon; repository source/tests and the
 [execution record](docs/development/BATCH14_EXECUTION.md) establish implementation
-truth. Batch 14 **M0–M7 are complete**; **M8 and M9 are not started**. Batch 14 is
-not complete, and Batch 15 is not started. The latest implementation checkpoint is
-`f02d9e38c32f22678664e55946bef3b700ac5d3c` (M7).
+truth. Batch 14 **M0–M8 are complete**; **M9 is not started**. Batch 14 is
+not complete, and Batch 15 is not started. The execution record contains M8's
+starting checkpoint, acceptance evidence and recovery boundaries. M9 requires
+separate authorization.
 
 Current canon begins in **1087 AS**, exactly **900 years after the Severance**
 (187 AS). Known Space has exactly **200 persistent systems**: **120
@@ -190,3 +191,10 @@ This repository is evolving incrementally. Keep changes focused, preserve the
 OpenGL 2.1 compatibility target, and run the native CMake validation relevant
 to every native change. Run browser checks when modifying the legacy `src/`
 reference, but do not use browser behavior as evidence of native completion.
+
+## M8 release and upgrade workflow
+
+See [native release/deployment/recovery](docs/release-deployment.md) for 0.2.1 build identity,
+STABLE/TEST artifact channels, installed manifests, package inspection, TEST-first
+rehearsal and verified backup-before-upgrade. Production restore remains offline
+verification/planning; no destructive restore or M9 completion is claimed.

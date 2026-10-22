@@ -15,7 +15,7 @@ On Debian/Ubuntu, install the `.deb` using your package manager (which also
 installs SDL2, OpenGL, OpenSSL and launcher dependencies):
 
 ```sh
-sudo apt install ./helion-0.2.0-Linux-x86_64.deb
+sudo apt install ./helion-0.2.1-STABLE-Linux-x86_64.deb
 ```
 
 Open **Helion** from the Games menu, or run `helion-play`. The launcher creates
@@ -62,10 +62,10 @@ For the Compaq 610 server and EliteBook 8460p client, follow the dedicated
 [two-machine guide](compaq610-server-elitebook-client.md). Split packages are:
 
 ```text
-helion-server-0.2.0-Linux-x86_64.tar.gz
-helion-client-0.2.0-Linux-x86_64.tar.gz
-helion-server_0.2.0_amd64.deb
-helion-client_0.2.0_amd64.deb
+helion-server-0.2.1-STABLE-Linux-x86_64.tar.gz
+helion-client-0.2.1-STABLE-Linux-x86_64.tar.gz
+helion-server_0.2.1_amd64.deb
+helion-client_0.2.1_amd64.deb
 ```
 
 The server package has no SDL/OpenGL/X11 dependency. The client package has a
@@ -171,3 +171,10 @@ systemd service/optional maintenance timer examples, and the
 explicitly selects Production and requires protected state/TLS provisioning.
 Packages do not enable it. TEST snapshots remain separate; Production backup
 verification/restore planning never replaces live state.
+
+## M8 release and upgrade workflow
+
+See [native release/deployment/recovery](release-deployment.md) for 0.2.1 build identity,
+STABLE/TEST artifact channels, installed manifests, package inspection, TEST-first
+rehearsal and verified backup-before-upgrade. Production restore remains offline
+verification/planning; no destructive restore or M9 completion is claimed.

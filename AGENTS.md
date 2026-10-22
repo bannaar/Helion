@@ -371,7 +371,7 @@ instructions control authorized work. Keep those claims separate. Use GSC,
 UniNet, IGG, Crownspire, Ironstar Forge, Verdance and Zero Space in current prose.
 Do not cosmetically rename compatibility IDs, wire/save fields or fixtures.
 
-Batch 14 M0–M7 are complete; M8 and M9 are not started; Batch 14 is not complete.
+Batch 14 M0–M8 are complete; M9 is not started; Batch 14 is not complete.
 Batch 15/Ship AI Cores remain future direction and require completed Batch 14 plus
 explicit authorization. The post-M7 docs checkpoint starts no engineering milestone.
 Preserve untracked `.agents/` and `plugins/`; do not stage them. Respect the active

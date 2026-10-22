@@ -1,153 +1,150 @@
-# Helion
+# HELION
 
-Helion is a low-resource space career game prototype with two runtimes:
+HELION is an actively developed **native, server-authoritative, persistent online
+science-fiction game**. Its authoritative architecture is a **C++17 server** and
+**native SDL2/OpenGL client**. The browser application under `src/` is retained as
+legacy/reference material, not the authoritative Production game runtime.
 
-- **Browser reference game** — a playable Three.js/TanStack application used for
-  rapid gameplay and UI development.
-- **Standalone native foundation** — a C++17 TCP server and SDL2/OpenGL client
-  designed for Linux systems with OpenGL 2.1-era hardware, including older
-  Intel integrated graphics.
+**Development status — 22 October 2026:** `main` is the previous accepted code
+baseline. Active Batch 14 development lives on
+[**batch14/implementation-v0.11**](https://github.com/bannaar/Helion/tree/batch14/implementation-v0.11),
+where **M0–M7 are complete**. **M8 and M9 are not started; Batch 14 is not complete.**
+The development reference is checkpoint
+[`5225592`](https://github.com/bannaar/Helion/commit/52255923de2ad26edeb74018a8acce656383b92f).
+This public documentation refresh does not bring Batch 14 implementation into main.
+See [current development](docs/CURRENT_DEVELOPMENT.md) for branch-specific references.
 
-The native runtime now provides a playable mining career loop, procedural
-ship/station/asteroid assets, account creation/login, durable commander
-profiles, shared chat, and mandatory verified TLS transport. Linux packages
-and a desktop local-play launcher are available. See [installation](docs/native-install.md)
-and [project state](docs/PROJECT_STATE.md). It is not yet a complete port of
-the browser simulation.
+## Playable alpha-development slice
 
-## Gameplay concept renders
+HELION is a playable vertical slice in active alpha development, with substantial
+work still ahead. The branches contain different stages of that slice:
 
-These presentation renders visualize native gameplay systems represented in
-the current development build. They are concept renders, not pixel-perfect
-screenshots of the SDL/OpenGL client.
-
-| Ore extraction | Station return and trading | Live multiplayer contacts |
-| --- | --- | --- |
-| ![A Helion commander extracting ore from an asteroid](docs/renders/mining-extraction.png) | ![A Helion ship returning to a station to trade and refit](docs/renders/station-return.png) | ![Helion commander and NPC ships sharing a live sector](docs/renders/multiplayer-contacts.png) |
-
-## Repository layout
-
-| Path | Purpose |
+| Branch | Implemented scope at this documentation checkpoint |
 | --- | --- |
-| `src/` | Browser game, simulation, UI, audio, and persistence adapters |
-| `native/server/` | Standalone POSIX TCP server |
-| `native/client/` | Standalone SDL2/OpenGL client |
-| `native/README.md` | Native quick start and protocol reference |
-| `docs/installation.md` | Complete source, package, server, and client installation guide |
-| `docs/native-server.md` | Server installation and production configuration |
-| `docs/native-client.md` | Client installation, launcher usage, and graphics troubleshooting |
-| `migrations/` | Browser database migrations |
-| `CMakeLists.txt` | Native build entry point |
-| `startup.sh` | Browser preview startup contract |
+| `main` | Native account creation/login, flight, launch/docking, mining, station trading/markets, First Ore mission and upgrades, persistent commander/flight/cargo state, chat and live player/NPC contacts; mandatory TLS and scoped companion credentials |
+| Active Batch 14 development | Extends that foundation with the Kepler career arc, persistent owned ships/shipyards, basic combat/recovery, reputation and UniNet event foundations, plus the galaxy/protocol/environment/operations foundations below |
 
-## Quick start: browser game
+Deep combat, full outfitting, industry, large-scale faction warfare, player
+sovereignty, full dynamic-universe simulation and Riftspace gameplay remain future
+work. Neither AI Cores nor a full player launcher or finished companion ecosystem
+is implemented. A galaxy data foundation does not imply complete multi-system gameplay.
 
-Requirements: Node.js 22 or newer and npm.
+## Architecture and Batch 14 foundations
 
-```sh
-npm install
-npm run dev
-```
+The standalone native server owns authoritative gameplay and persistent world
+state. Clients request actions and render permitted data; client presentation
+never grants movement, assets, rewards, roles or administrative authority.
+The Linux client retains an OpenGL 2.1 compatibility target; the development
+branch also has its separate OpenGL 3.3 core renderer.
 
-Open the preview served by the development environment. Useful checks:
+**The active development branch, not main, contains the completed M0–M7 work:**
 
-```sh
-npm run typecheck
-npm run test
-npm run build
-```
+- mandatory TLS 1.2+, negotiated bounded binary protocol v1, explicit legacy
+  protocol compatibility, and companion authentication/scope boundaries;
+- persistent commander/world state and an authoritative **200-system Known Space**
+  foundation: **120 faction-controlled systems and 80 Zero Space systems**;
+- DEVELOPMENT / PRIVATE TEST / PRODUCTION separation and TEST-only administration;
+- Production service lifecycle, fail-closed startup, health/readiness, lightweight
+  metrics, maintenance preparation, bounded draining and graceful durable shutdown;
+- Production backup/integrity verification and non-destructive restore-planning
+  foundations, plus packaged combined/server/client builds.
 
-The browser version uses local save storage by default. Authenticated profile,
-market, news, and GalNet persistence use the existing database adapters when
-configured.
+These are development foundations, not a completed Batch 14 release or a claim
+that a public Production service is available. M7 supplies no destructive
+Production restore command. Detailed evidence and limitations are linked from
+[current development](docs/CURRENT_DEVELOPMENT.md).
 
-## Quick start: standalone native runtime
+## Production, PRIVATE TEST and alpha direction
 
-On Debian/Ubuntu, install the native build dependencies:
+Batch 14 establishes server-controlled environments: **DEVELOPMENT** for local and
+diagnostic work, **PRIVATE TEST** for isolated, noncanonical, resettable developer
+and invited-tester sessions, and **PRODUCTION** for the canonical persistent universe.
+TEST administrator privileges do not grant Production gameplay mutation authority;
+invited testers are not automatically developers or administrators.
 
-```sh
-sudo apt install build-essential cmake libsdl2-dev libgl1-mesa-dev libssl-dev python3 openssl
-```
+Planned testing progression is internal testing → trusted PRIVATE TEST closed
+alpha → small persistent Production alpha → expanded closed alpha → later wider
+testing. This is a readiness plan, not an open-alpha invitation or announcement.
 
-Build from the repository root:
+## Current canon
 
-```sh
-cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
-cmake --build build-native --parallel
-```
+The current working canon master is
+[**HELION World Bible DraftComp8**](https://github.com/bannaar/Helion/blob/52255923de2ad26edeb74018a8acce656383b92f/docs/lore/HELION_World_Bible_draftcomp8.txt),
+with [**canon synchronization/checksum v0.21**](https://github.com/bannaar/Helion/blob/52255923de2ad26edeb74018a8acce656383b92f/docs/lore/HELION_CANON_CHANGELOG_AI_SYNC_v0.21.txt).
+These documents live on the development branch; they are linked here, not copied
+into this older main baseline. Lore describes the setting; source and tests
+establish what is implemented.
 
-Start the server:
+- The Severance occurred in **187 AS**. The current/game-start era is **1087 AS**,
+  exactly **900 years after the Severance**.
+- Known Space comprises **200 persistent systems**: **120 faction-controlled** and
+  **80 Zero Space**. Zero Space is the 0.0 frontier, distinct from **The Null**.
+  **Riftspace** lies outside that count and remains future gameplay direction.
+- **Inter-Galactic Governance (IGG)** is an independent, non-sovereign treaty/service
+  framework. **UniNet** is the information network; **Galactic Standard Credit
+  (GSC)** is the currency. **Crownspire**, **Ironstar Forge** and **Verdance** are
+  current canon names.
 
-```sh
-native/scripts/helion-dev-cert /tmp/helion-local-tls
-./build-native/native/helion_server 4242 helion-server.db \
-  --cert /tmp/helion-local-tls/server.crt --key /tmp/helion-local-tls/server.key
-```
+## Installation and development links
 
-Connect with the graphical client:
+Use documentation matching the branch you build:
 
-```sh
-./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt
-```
+| Previous accepted `main` baseline | Current Batch 14 development |
+| --- | --- |
+| [Native installation](docs/native-install.md), [complete installation guide](docs/installation.md) | [Development installation](https://github.com/bannaar/Helion/blob/batch14/implementation-v0.11/docs/native-install.md) |
+| [Server guide](docs/native-server.md), [client guide](docs/native-client.md), [native quick start](native/README.md) | [Production operations](https://github.com/bannaar/Helion/blob/batch14/implementation-v0.11/docs/production-operations.md), [PRIVATE TEST administration](https://github.com/bannaar/Helion/blob/batch14/implementation-v0.11/docs/private-test-admin.md) |
+| [Baseline project state](docs/PROJECT_STATE.md), [companion credentials](docs/companion-auth.md) | [Development project state](https://github.com/bannaar/Helion/blob/batch14/implementation-v0.11/docs/PROJECT_STATE.md), [canon index](https://github.com/bannaar/Helion/blob/batch14/implementation-v0.11/docs/lore/README.md) |
 
-For protocol diagnostics without a graphical session:
+Baseline guides may retain historical terminology and earlier setup instructions;
+they do not define current canon or imply that newer development features exist
+on main. Do not apply Batch 14-only flags or save assumptions to the older binary.
 
-```sh
-./build-native/native/helion_client 127.0.0.1 4242 --ca /tmp/helion-local-tls/server.crt --terminal
-```
+## Launcher and future roadmap
 
-See the [native server guide](docs/native-server.md) and
-[native client guide](docs/native-client.md) for service setup, firewall
-configuration, data-file handling, and troubleshooting.
+The existing **local-play launcher/helper**, `helion-play`, prepares local TLS,
+starts a local native server and client, and stops the server when the client
+closes. It is distinct from the **future full player launcher**, which may add
+account sign-in, authorized Production/PRIVATE TEST presentation, server status,
+maintenance messages, version checks, updates, repair/verify, release channels,
+diagnostics, news/status and launch configuration. That full launcher is not implemented.
 
-## Native protocol snapshot
+| Stage | Status / direction |
+| --- | --- |
+| Batch 14 M0–M7 | Complete on the development branch |
+| Batch 14 M8 | Not started: Deployment, Packaging, Migration, Release and Recovery |
+| Batch 14 M9 | Not started: Final Hardening, Security Review, Documentation Reconciliation and Completion |
+| Alpha Readiness / full launcher bridge | Future planning after Batch 14 acceptance |
+| Batch 15 | Future ships, systems, combat, outfitting and AI Cores |
+| Batch 16 | Provisional equipment economy, manufacturing, salvage and industry |
+| Batch 17 | Provisional missions, NPC careers and shared-world activity |
+| Batch 18+ | Provisional Riftspace, xenotech and advanced/Sovereign intelligence |
 
-Requests are newline-terminated:
+Future entries are direction, not completed features. Batch 15 is not started and
+requires completed Batch 14 plus explicit authorization.
 
-```text
-CREATE username password display
-LOGIN username password
-COMPANION ISSUE
-COMPANION AUTH bearer-token
-COMPANION LIST
-COMPANION REVOKE token-id
-CHAT message
-PROFILE
-STATE
-LAUNCH
-INPUT 1 0 0
-FLIGHT
-MINE
-DOCK
-QUIT
-```
+## Optional companions and future Ship AI Cores
 
-The native server stores salted scrypt password hashes and requires TLS 1.2+
-for all connections. Scoped companion bearer credentials can be issued from a
-normal player session; only their SHA-256 verifiers are persisted, they expire
-after 30 days, and their initial authority is limited to `profile.read`.
-See [companion authentication](docs/companion-auth.md). Clients verify certificate trust and server identity;
-there is no plaintext fallback. Live player and NPC contacts are replicated,
-while shared asteroid depletion, player-to-player collision, and
-cross-connection/IP rate limiting remain future work.
+Potential companion surfaces include HELION Commander, mobile/tablet applications,
+cockpit devices, Linux cyberdeck-style interfaces and other cockpit clients.
+They are optional and non-authoritative: permitted data and requests go through
+the authoritative server. Scoped credential foundations exist; the complete
+companion ecosystem and interoperability are not implemented. No device is required to play.
 
-## Graphics compatibility
+Future Ship AI Cores are intended as physical ship equipment with deterministic
+native automation, validated by the authoritative server and usable without LLMs.
+Optional asynchronous cognitive providers and companion interfaces may extend them;
+persistent identity/personality/memory are possible future capabilities. AI Cores
+are not implemented and require no particular provider/vendor. See the
+[development overview](docs/CURRENT_DEVELOPMENT.md) for design and planning links.
 
-The client requests an OpenGL 2.1 context and uses fixed-function calls only.
-It avoids shaders, VAOs, and modern OpenGL-only features. A 960×600 window is
-created by default and can be resized. Software rendering may work for
-diagnostics but is not recommended for gameplay.
+## Historical browser reference and contribution
 
-## Current gameplay scope
+The Three.js/TanStack application under `src/`, its browser migrations and preview
+helpers remain available for legacy/reference work. Their state is not a second
+canonical universe or a peer Production backend. Browser feature coverage is not
+evidence of native implementation.
 
-The browser reference currently includes low-poly ships and stations, multiple
-ship classes and factions, outfitting, trading, cargo, missions, mining,
-salvage, scanning, combat, police/pirate/alien contacts, GalNet news/chat,
-procedural audio, TTS, and local commander saves. Native gameplay is being
-implemented incrementally against the same concepts.
-
-## License and contribution
-
-This repository is an evolving prototype. Keep changes focused, preserve the
-OpenGL 2.1 compatibility target for native client work, and run the relevant
-browser type checks or native CMake build before submitting changes.
+For native contributions, consult the active development branch and its current
+instructions, preserve server authority, TLS, compatibility and persistent state,
+and validate changes against the relevant branch. This README refresh changes
+public documentation only; it does not merge implementation or advance a milestone.

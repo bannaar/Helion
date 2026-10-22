@@ -157,3 +157,12 @@ independent TLS files and a server invitation/role policy; player UI choices nev
 select the environment. Follow [private TEST administration](private-test-admin.md)
 from the server or combined package for provisioning and safe offline recovery.
 Client-only packages do not provide server administration tools.
+
+## Production service operations (M7)
+
+Server/combined packages also ship `helion-service-status` (Python 3), portable
+systemd service/optional maintenance timer examples, and the
+[Production operations guide](production-operations.md). The service example
+explicitly selects Production and requires protected state/TLS provisioning.
+Packages do not enable it. TEST snapshots remain separate; Production backup
+verification/restore planning never replaces live state.

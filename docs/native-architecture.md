@@ -176,3 +176,13 @@ capital hulls; regular shipyards must not construct those highest classes.
 Territory should require active infrastructure and upkeep, not free permanent
 claims. None of these guild, station, industry, research, capital or territory
 systems are implemented by Batch 4.
+
+## M7 operational boundary
+
+`server/operations.*` adds a typed main-thread service lifecycle and atomic
+process metrics without gameplay state. Existing TLS/request dispatch,
+`EnvironmentPolicy`, strict persistence loader, transaction rollback and stable
+`DataLock` remain the authority. Protected local status, POSIX signals and offline
+Production backup verification/planning are service-account operations; neither
+TEST roles nor companion tokens grant access. The M5 controller and client code
+are unchanged. See [Production operations](production-operations.md).

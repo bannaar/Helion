@@ -112,7 +112,7 @@ claimed directory's identity. TEST requires protected colocated TLS/access files
 and a server-owned invitation roster. See [private TEST administration](private-test-admin.md)
 for provisioning, roles, canonical GSC terminology, commands, audit, offline
 snapshot/restore and reset safety. Current local-play and hardware guides retain
-`development` explicitly. Production orchestration remains future work.
+`development` explicitly. M7 service lifecycle, maintenance, health, verified backups and conservative restore planning are documented in [Production operations](production-operations.md).
 
 `--bind` accepts a numeric IPv4 address. The default remains loopback-only;
 remote servers must opt into a non-loopback bind. All connections require
@@ -305,7 +305,7 @@ Before public deployment, add:
 
 ## 9. Logs and shutdown
 
-The reference server logs persistence failures to stderr. Under systemd:
+The server emits structured operational events plus legacy diagnostic errors to stderr. Production shutdown now drains, checkpoints and creates a verified backup, with nonzero exit on failure. See [Production operations](production-operations.md) for health, metrics, maintenance signals and offline backup/restore verification. Under systemd:
 
 ```sh
 journalctl -u helion-server -f

@@ -47,6 +47,7 @@ void cleanup() {
   }
   if (!testFile.empty()) unlink(testFile.c_str());
   if (!testFile.empty()) unlink((testFile + ".lock").c_str());
+  if (!testFile.empty()) unlink((testFile + ".status.json").c_str());
   if (!testDirectory.empty()) rmdir(testDirectory.c_str());
 }
 

@@ -1,0 +1,6 @@
+[Unit]
+Description=Request HELION maintenance and verified shutdown backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl kill --kill-whom=main --signal=SIGUSR1 helion-server.service

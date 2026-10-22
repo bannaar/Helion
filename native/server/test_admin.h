@@ -24,8 +24,10 @@ struct EnvironmentPolicy {
   void loadAccessFile(const std::string& path);
   // Called before migration/save. TEST requires a dedicated owner-only directory,
   // colocated private credentials and roster. All environments honor its marker.
+  // claim=false checks paths without creating identity or requiring a missing
+  // TEST roster, so persistence mismatch diagnostics precede admission setup.
   void protectStorage(const std::string& data, const std::string& access,
-                      const std::string& certificate, const std::string& key) const;
+                      const std::string& certificate, const std::string& key, bool claim = true) const;
 };
 enum class AdminVerb { get, set, add, remove, grant, revoke, reset, teleport };
 struct AdminOperation {

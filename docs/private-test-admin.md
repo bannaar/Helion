@@ -224,3 +224,8 @@ credential rotation/recovery and invitation reload, ledger lifecycle, remote aud
 collection, durable operational monitoring, production operations with separately
 designed privileges, snapshot lifecycle/migration tooling and release distribution.
 No M7 or Batch 15 implementation is included here.
+
+M7 follow-up: [Production operations](production-operations.md) now supplies the
+separate OS-service-account lifecycle/health/backup/verification foundation. It
+adds no TEST cheat capability or Production player-state mutation. TEST recovery
+continues to use the rostered DEV_ADMIN path described above.

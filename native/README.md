@@ -339,3 +339,10 @@ The journey is available through keyboard or layout-derived mouse controls;
 normal play never requires raw commands. The append-only career record remains
 compatible with older profiles, and failed saves roll back the whole stage
 transaction.
+
+### Production service lifecycle (Batch 14 M7)
+
+See [Production operations](../docs/production-operations.md) for local health and
+metrics, maintenance/drain signals, durable final checkpoints, verified immutable
+Production backups and offline restore verification/planning. TEST recovery,
+gameplay authority and existing binary/legacy transports retain their own bounds.

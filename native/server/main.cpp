@@ -41,6 +41,7 @@
 #include "server/data_lock.h"
 #include "server/environment.h"
 #include "server/test_admin.h"
+#include "server/operations.h"
 #include "shared/flight.h"
 #include "shared/combat.h"
 #include "shared/binary_protocol.h"
@@ -74,8 +75,12 @@ struct AdminReceipt { std::string fingerprint, result; };
 std::map<std::string, AdminReceipt> adminReceipts;
 std::string dummyPasswordHash;
 volatile std::sig_atomic_t stopping = 0;
+volatile std::sig_atomic_t maintenanceRequested = 0;
+helion::server::ServiceMetrics serviceMetrics;
+std::atomic<bool> draining{false};
 
 void stopSignal(int) { stopping = 1; }
+void maintenanceSignal(int) { maintenanceRequested = 1; }
 
 struct Profile {
   std::string passwordHash;
@@ -397,6 +402,22 @@ std::string decode(const std::string& value) {
 }
 
 void saveStateLocked() {
+  const auto saveStart = std::chrono::steady_clock::now();
+  bool committed = false;
+  struct SaveObservation {
+    std::chrono::steady_clock::time_point start;
+    bool& committed;
+    ~SaveObservation() {
+      serviceMetrics.saveMicros += std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - start).count();
+      serviceMetrics.persistenceHealthy = committed && !serviceMetrics.storageFatal;
+      if (committed) { ++serviceMetrics.saves; serviceMetrics.lastSave = std::time(nullptr); }
+      else ++serviceMetrics.saveFailures;
+      // Count every save; sample successful logs to avoid a hot-path log flood.
+      if (!committed || serviceMetrics.saves == 1 || serviceMetrics.saves % 60 == 0)
+        helion::server::operationLog(environmentPolicy, "persistence-save", committed ? "committed" : "failed");
+    }
+  } observation{saveStart, committed};
   std::ostringstream snapshot;
   snapshot << std::setprecision(17);
   snapshot << "E\t" << helion::server::runtimeEnvironmentName(runtimeEnvironment) << '\n';
@@ -490,6 +511,15 @@ void saveStateLocked() {
     if (close(fd) != 0) throw std::runtime_error("cannot close persistence file");
     complete = true;
     if (std::rename(temp.c_str(), dataPath.c_str()) != 0) throw std::runtime_error("cannot replace persistence file");
+    committed = true;
+    // After rename, never roll back only memory on an uncertain directory sync.
+    // Fail readiness and terminate service instead of claiming durable success.
+    try { helion::server::syncDirectory(dataPath); }
+    catch (...) {
+      serviceMetrics.storageFatal = true;
+      ++serviceMetrics.saveFailures;
+      helion::server::operationLog(environmentPolicy, "persistence-durability", "fatal");
+    }
   } catch (...) {
     if (!complete) close(fd);
     unlink(temp.c_str());
@@ -513,6 +543,9 @@ void loadState() {
       fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
     close(fd);
     throw std::runtime_error("cannot protect persistence file");
+  }
+  if (runtimeEnvironment == helion::server::RuntimeEnvironment::production && info.st_size == 0) {
+    close(fd); throw std::runtime_error("empty existing Production persistence rejected");
   }
   FILE* file = fdopen(fd, "r");
   if (!file) { close(fd); throw std::runtime_error("cannot read persistence file"); }
@@ -1023,7 +1056,19 @@ class ResponseRequestScope {
 };
 
 bool sendLine(int fd, const std::string& line) {
+  // An uncertain committed rename must not produce a success acknowledgement.
+  // The lifecycle will interrupt this connection and exit unsuccessfully.
+  if (serviceMetrics.storageFatal) return false;
   if (!helion::protocol::validWireLine(line)) return false;
+  // Static classifications only; raw responses and credentials never enter logs.
+  if (line == "ERR invalid-login" || line == "ERR invalid-companion-token" || line == "ERR companion-token-expired") {
+    ++serviceMetrics.authFailures;
+    helion::server::operationLog(environmentPolicy, "authentication", "denied");
+  }
+  if (line.rfind("OK LOGIN", 0) == 0 || line.rfind("OK CREATED", 0) == 0 || line.rfind("OK COMPANION AUTH", 0) == 0)
+    helion::server::operationLog(environmentPolicy, "authentication", "success");
+  if (line == "ERR scope-denied" || line == "ERR test-environment-required")
+    helion::server::operationLog(environmentPolicy, "authorization", "denied");
   std::shared_ptr<Transport> transport;
   {
     std::lock_guard<std::mutex> lock(transportMutex);
@@ -1075,6 +1120,7 @@ struct OutboundResponse {
 };
 
 bool sendResponse(int fd, const OutboundResponse& response) {
+  if (serviceMetrics.storageFatal) return false;
   std::shared_ptr<Transport> transport;
   {
     std::lock_guard<std::mutex> lock(transportMutex);
@@ -1519,6 +1565,71 @@ int performTestRecovery(const std::string& action, const std::string& id, const 
   }
 }
 
+// Strict persistence validation in a disposable offline process. Never migrate
+// or replace the authoritative file as part of backup verification/planning.
+void validateBackupPayload(std::string_view payload) {
+  const auto original = dataPath;
+  std::string candidate = dataPath + ".verify.XXXXXX";
+  const int fd = mkstemp(candidate.data());
+  if (fd < 0) throw std::runtime_error("cannot stage backup verification");
+  close(fd);
+  try {
+    helion::server::writePrivateFile(candidate, payload, false);
+    profiles.clear(); companionTokens.clear(); messages.clear(); galnetEvents.clear(); adminReceipts.clear();
+    regionalMarkets = helion::economy::seedMarkets(pricingPolicy());
+    galaxyState = helion::galaxy::seedState(); economicTelemetry = {};
+    dataPath = candidate;
+    loadState();
+    if (payload.empty() || payload.substr(0, 13) != "E\tproduction\n")
+      throw std::runtime_error("Production backup requires tagged persistence");
+    dataPath = original;
+    unlink(candidate.c_str());
+  } catch (...) { dataPath = original; unlink(candidate.c_str()); throw; }
+}
+
+int performProductionOperation(const std::string& action, const std::string& id, const std::string& reason) {
+  using namespace helion::server;
+  // OS ownership/exclusive lock is the operator boundary. No player/admin role
+  // grants this access. The independent append-only journal never rolls back.
+  auto audit = [&](const char* result) {
+    const std::string record = "{\"timestamp\":" + std::to_string(std::time(nullptr)) +
+      ",\"environment\":\"production\",\"uid\":" + std::to_string(geteuid()) +
+      ",\"action\":\"" + action + "\",\"backup\":\"" + id + "\",\"reason\":\"" + reason +
+      "\",\"result\":\"" + result + "\"}\n";
+    writePrivateFile(dataPath + ".operations.jsonl", record, false);
+    syncDirectory(dataPath + ".operations.jsonl");
+  };
+  try {
+    audit("intent");
+    if (action == "BACKUP") {
+      // loadState already validated live state. Preserve its exact original
+      // format, including migration candidates, rather than migrating first.
+      const auto payload = readPrivateFile(dataPath, 64 * 1024 * 1024);
+      validateBackupPayload(payload);
+      createBackup(dataPath, environmentPolicy, id);
+      ++serviceMetrics.backups; serviceMetrics.lastBackup = std::time(nullptr);
+    } else {
+      const auto payload = readBackup(dataPath, environmentPolicy, id);
+      validateBackupPayload(payload);
+      // A plan is deliberately non-destructive, even if live state is corrupt.
+      // Restoration must be separately reviewed with a preserved current copy.
+      std::cout << "{\"backup_id\":\"" << id << "\",\"sha256\":\"" << digest(payload)
+        << "\",\"compatible\":true,\"replaces_live_state\":false}\n";
+    }
+    audit("success");
+    publishStatus(dataPath, environmentPolicy, ServicePhase::offline, serviceMetrics, 0, 0, 0, action == "BACKUP");
+    operationLog(environmentPolicy, "offline-operation", "verified");
+    return 0;
+  } catch (...) {
+    if (action == "BACKUP") ++serviceMetrics.backupFailures;
+    try { publishStatus(dataPath, environmentPolicy, ServicePhase::fatal, serviceMetrics, 0, 0, 0, false); } catch (...) {}
+    try { audit("failed"); } catch (...) {}
+    operationLog(environmentPolicy, "offline-operation", "failed");
+    std::cerr << "Production operation failed; live state was not replaced\n";
+    return 1;
+  }
+}
+
 void clientLoop(int fd, helion::tls::Connection& connection) {
   {
     std::lock_guard<std::mutex> lock(stateMutex);
@@ -1606,8 +1717,14 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         incoming.push_back({std::move(frame), 0, std::nullopt, {}});
     }
     for (const auto& incomingFrame : incoming) {
+      ++serviceMetrics.requests;
       const auto& frame = incomingFrame.frame;
       ResponseRequestScope responseScope(incomingFrame.requestId);
+      if (draining.load() || serviceMetrics.storageFatal) { sendLine(fd, "ERR service-draining"); running = false; break; }
+      if (incomingFrame.frame.kind != helion::protocol::FrameKind::line) {
+        ++serviceMetrics.malformed;
+        helion::server::operationLog(environmentPolicy, "protocol", "rejected");
+      }
       // Commit valid prefixes and emit their replies before a terminal error,
       // independent of TLS read segmentation. Never dispatch trailing frames.
       if (!incomingFrame.terminalError.empty()) {
@@ -1648,6 +1765,8 @@ void clientLoop(int fd, helion::tls::Connection& connection) {
         break;
       }
       if (request.command == helion::protocol::Command::invalid) {
+        ++serviceMetrics.malformed;
+        helion::server::operationLog(environmentPolicy, "request", "malformed");
         sendLine(fd, "ERR " + request.error);
         continue;
       }
@@ -2666,6 +2785,7 @@ int main(int argc, char** argv) {
   std::signal(SIGPIPE, SIG_IGN);
   std::signal(SIGINT, stopSignal);
   std::signal(SIGTERM, stopSignal);
+  std::signal(SIGUSR1, maintenanceSignal);
   int port = kDefaultPort;
   std::size_t maxClients = kDefaultMaxClients;
   std::string bindAddress = "127.0.0.1";
@@ -2673,6 +2793,9 @@ int main(int argc, char** argv) {
   int positional = 0;
   bool economySelected = false;
   std::string recoveryAction, recoveryId, recoveryOperator;
+  std::string operationAction, operationId, operationReason;
+  unsigned drainSeconds = 1, warningSeconds = 60;
+  bool drainSelected = false, warningSelected = false;
   if (!helion::ships::validateRegistry() || !helion::loadout::validateRegistry() ||
       !helion::galaxy::validateGalaxy(helion::galaxy::seedState())) {
     std::cerr << "invalid canonical ship, module, or galaxy registry\n";
@@ -2685,12 +2808,31 @@ int main(int argc, char** argv) {
     return parsed;
   };
   try {
+    std::set<std::string> selectedOptions;
     for (int i = 1; i < argc; ++i) {
       const std::string arg = argv[i];
+      if (arg.rfind("--", 0) == 0 && !selectedOptions.insert(arg).second)
+        throw std::invalid_argument("repeated startup option");
       if (arg == "--bind" && i + 1 < argc) bindAddress = argv[++i];
       else if (arg == "--cert" && i + 1 < argc) certificate = argv[++i];
       else if (arg == "--key" && i + 1 < argc) privateKey = argv[++i];
       else if (arg == "--max-clients" && i + 1 < argc) maxClients = number(argv[++i], 1024);
+      else if (arg == "--drain-seconds" && i + 1 < argc && !drainSelected) {
+        drainSeconds = static_cast<unsigned>(number(argv[++i], 5)); drainSelected = true;
+      }
+      else if (arg == "--maintenance-warning-seconds" && i + 1 < argc && !warningSelected) {
+        warningSeconds = static_cast<unsigned>(number(argv[++i], 86400)); warningSelected = true;
+      }
+      else if (arg == "--operations" && i + 3 < argc && operationAction.empty()) {
+        if (std::string(argv[++i]) != "PRODUCTION") throw std::invalid_argument("explicit PRODUCTION target required");
+        operationAction = argv[++i]; operationId = argv[++i];
+        if ((operationAction != "BACKUP" && operationAction != "VERIFY_BACKUP" && operationAction != "PLAN_RESTORE") ||
+            !helion::server::safeIdentifier(operationId, 80)) throw std::invalid_argument("invalid operation");
+      }
+      else if (arg == "--reason" && i + 1 < argc && operationReason.empty()) {
+        operationReason = argv[++i];
+        if (!helion::server::safeIdentifier(operationReason, 96)) throw std::invalid_argument("invalid operational reason");
+      }
       else if (arg == "--environment" && i + 1 < argc) {
         const auto parsed = helion::server::parseRuntimeEnvironment(argv[++i]);
         if (!parsed || environmentPolicy.explicitEnvironment) throw std::invalid_argument("unknown or repeated environment");
@@ -2717,6 +2859,7 @@ int main(int argc, char** argv) {
       else throw std::invalid_argument("too many arguments");
     }
   } catch (const std::exception&) {
+    helion::server::operationLog(environmentPolicy, "configuration", "invalid");
     std::cerr << "usage: helion_server [port] [data-file] [--environment development|test|production] [--bind IPv4-address] [--max-clients 1..1024] --cert certificate.pem --key private-key.pem\n";
     return 2;
   }
@@ -2724,8 +2867,20 @@ int main(int argc, char** argv) {
       ((economySelected || !recoveryAction.empty()) && runtimeEnvironment != helion::server::RuntimeEnvironment::private_test)) {
     std::cerr << "TEST-only startup option rejected\n"; return 2;
   }
+
+  if ((!operationAction.empty() && (runtimeEnvironment != helion::server::RuntimeEnvironment::production ||
+        !environmentPolicy.explicitEnvironment || !recoveryAction.empty() || operationReason.empty())) ||
+      (!operationReason.empty() && operationAction.empty())) {
+    std::cerr << "explicit Production operation/environment/reason required\n"; return 2;
+  }
+  helion::server::operationLog(environmentPolicy, "startup", "validating");
+  if (runtimeEnvironment == helion::server::RuntimeEnvironment::production &&
+      (!std::filesystem::path(dataPath).is_absolute() || positional != 2)) {
+    helion::server::operationLog(environmentPolicy, "configuration", "fatal");
+    std::cerr << "Production requires an explicit absolute persistence path\n"; return 2;
+  }
   try { if (!accessFile.empty()) environmentPolicy.loadAccessFile(accessFile); }
-  catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+  catch (const std::exception& error) { helion::server::operationLog(environmentPolicy, "startup", "fatal"); std::cerr << error.what() << '\n'; return 1; }
   regionalMarkets = helion::economy::seedMarkets(pricingPolicy());
   galaxyState = helion::galaxy::seedState();
   sockaddr_in address{};
@@ -2736,27 +2891,58 @@ int main(int argc, char** argv) {
     return 2;
   }
   helion::tls::Context tlsContext(nullptr, SSL_CTX_free);
-  try { tlsContext = helion::tls::serverContext(certificate, privateKey); }
-  catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+  try {
+    // Validate storage/credential isolation before TLS reads or persistence load.
+    environmentPolicy.protectStorage(dataPath, accessFile, certificate, privateKey, false);
+    if (runtimeEnvironment == helion::server::RuntimeEnvironment::production) {
+      (void)helion::server::readPrivateFile(privateKey, 65536);
+    }
+    tlsContext = helion::tls::serverContext(certificate, privateKey);
+    if (runtimeEnvironment == helion::server::RuntimeEnvironment::production) {
+      const auto* cert = SSL_CTX_get0_certificate(tlsContext.get());
+      if (!cert || X509_cmp_current_time(X509_get0_notBefore(cert)) >= 0 ||
+          X509_cmp_current_time(X509_get0_notAfter(cert)) <= 0)
+        throw std::runtime_error("Production certificate validity check failed");
+    }
+    helion::server::operationLog(environmentPolicy, "tls", "initialized");
+  }
+  catch (const std::exception& error) { helion::server::operationLog(environmentPolicy, "startup", "fatal"); std::cerr << error.what() << '\n'; return 1; }
+  const auto loadStart = std::chrono::steady_clock::now();
   std::unique_ptr<helion::server::DataLock> dataLock;
   try {
     dataLock = std::make_unique<helion::server::DataLock>(dataPath);
     std::lock_guard<std::mutex> lock(stateMutex);
+    helion::server::publishStatus(dataPath, environmentPolicy, helion::server::ServicePhase::loading,
+      serviceMetrics, 0, 0, 0, false);
     dummyPasswordHash = helion::security::hashPassword(std::string(12, 'x'));
-    loadState();
-    environmentPolicy.protectStorage(dataPath, accessFile, certificate, privateKey);
+    helion::server::operationLog(environmentPolicy, "persistence-load", "loading");
+    // Verification can diagnose backups even when the live file is damaged.
+    if (operationAction.empty() || operationAction == "BACKUP") loadState();
+    if (operationAction.empty() || operationAction == "BACKUP")
+      environmentPolicy.protectStorage(dataPath, accessFile, certificate, privateKey);
+    if (!operationAction.empty()) return performProductionOperation(operationAction, operationId, operationReason);
     migrateLegacyProfiles();
+    if (serviceMetrics.storageFatal) throw std::runtime_error("startup persistence durability failed");
+    serviceMetrics.loadMicros = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - loadStart).count();
+    helion::server::operationLog(environmentPolicy, "persistence-load", "ready");
     if (!recoveryAction.empty()) return performTestRecovery(recoveryAction, recoveryId, recoveryOperator);
   } catch (const std::exception& error) {
+    helion::server::operationLog(environmentPolicy, "startup", "fatal");
+    if (dataLock) {
+      try { helion::server::publishStatus(dataPath, environmentPolicy, helion::server::ServicePhase::fatal,
+        serviceMetrics, 0, 0, 0, false); } catch (...) {}
+    }
     std::cerr << "unable to load or securely migrate persistence: " << error.what() << '\n';
     return 1;
   }
   const int server = socket(AF_INET, SOCK_STREAM, 0);
-  if (server < 0) { std::perror("socket"); return 1; }
+  if (server < 0) { helion::server::operationLog(environmentPolicy, "listener", "fatal"); std::perror("socket"); return 1; }
   int yes = 1;
   setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
   if (bind(server, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0 ||
       listen(server, static_cast<int>(maxClients)) < 0) {
+    helion::server::operationLog(environmentPolicy, "listener", "fatal");
     std::perror("bind/listen");
     close(server);
     return 1;
@@ -2781,8 +2967,49 @@ int main(int argc, char** argv) {
   auto nextCheckpoint = lastTick + std::chrono::duration<double>(kFlightCheckpointSeconds);
   auto nextMarketRestock = lastTick + std::chrono::duration<double>(kMarketRestockSeconds);
   double accumulator = 0;
-  while (!stopping) {
+  helion::server::ServiceLifecycle lifecycle;
+  const auto serviceStart = lastTick;
+  lifecycle.online();
+  bool operationalFailure = false;
+  bool healthPublicationHealthy = true;
+  auto reportStatus = [&](helion::server::ServicePhase phase) {
+    try {
+      std::size_t players = 0;
+      { std::lock_guard<std::mutex> lock(stateMutex); players = authenticatedClients.size(); }
+      const bool durable = serviceMetrics.persistenceHealthy && !serviceMetrics.storageFatal;
+      if (!durable && phase == helion::server::ServicePhase::online) phase = helion::server::ServicePhase::degraded;
+      helion::server::publishStatus(dataPath, environmentPolicy, phase, serviceMetrics,
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - serviceStart).count(),
+        limit.active(), players, durable);
+      healthPublicationHealthy = true;
+      return true;
+    } catch (...) {
+      if (healthPublicationHealthy)
+        helion::server::operationLog(environmentPolicy, "health-publication", "failed");
+      healthPublicationHealthy = false;
+      return false;
+    }
+  };
+  helion::server::operationLog(environmentPolicy, "service", "ready");
+  reportStatus(lifecycle.phase);
+  auto nextStatus = serviceStart + std::chrono::milliseconds(500);
+  while (true) {
     const auto now = std::chrono::steady_clock::now();
+    const double seconds = std::chrono::duration<double>(now - serviceStart).count();
+    const auto previousPhase = lifecycle.phase;
+    if (maintenanceRequested) { lifecycle.maintenance(seconds, warningSeconds); maintenanceRequested = 0; }
+    if (stopping || serviceMetrics.storageFatal) lifecycle.drain(seconds, drainSeconds);
+    const bool drained = lifecycle.advance(seconds, drainSeconds);
+    draining = lifecycle.phase == helion::server::ServicePhase::draining;
+    if (lifecycle.phase != previousPhase) {
+      helion::server::operationLog(environmentPolicy, "lifecycle", helion::server::phaseName(lifecycle.phase));
+      reportStatus(lifecycle.phase);
+    }
+    if (drained || (draining.load() && limit.active() == 0)) break;
+    if (now >= nextStatus) {
+      reportStatus(lifecycle.phase);
+      nextStatus = now + std::chrono::milliseconds(500);
+    }
     accumulator += std::min(0.1, std::chrono::duration<double>(now - lastTick).count());
     lastTick = now;
     {
@@ -2845,15 +3072,21 @@ int main(int argc, char** argv) {
     pollfd ready{server, POLLIN, 0};
     const int polled = poll(&ready, 1, 16);
     if (polled < 0 && errno == EINTR) continue;
-    if (polled < 0) { std::perror("poll"); break; }
+    if (polled < 0) { operationalFailure = true; std::perror("poll"); break; }
     if (polled == 0 || !(ready.revents & POLLIN)) continue;
     sockaddr_in peer{};
     socklen_t length = sizeof(peer);
     const int client = accept(server, reinterpret_cast<sockaddr*>(&peer), &length);
     if (client < 0) {
       if (errno == EINTR) continue;
+      operationalFailure = true;
       std::perror("accept");
       break;
+    }
+    if (draining.load() || !healthPublicationHealthy || !serviceMetrics.persistenceHealthy || serviceMetrics.storageFatal) {
+      ++serviceMetrics.rejected;
+      close(client);
+      continue;
     }
     timeval readTimeout{kReadTimeoutSeconds, 0};
     timeval writeTimeout{kWriteTimeoutSeconds, 0};
@@ -2863,10 +3096,13 @@ int main(int argc, char** argv) {
       continue;
     }
     if (!limit.tryAcquire()) {
+      ++serviceMetrics.rejected;
       // Refuse overload before a handshake; never emit plaintext on the TLS port.
       close(client);
       continue;
     }
+    ++serviceMetrics.connections;
+    helion::server::operationLog(environmentPolicy, "connection", "accepted");
     try {
       auto connection = std::make_shared<helion::tls::Connection>(tlsContext.get(), client);
       auto transport = std::make_shared<Transport>(connection);
@@ -2894,6 +3130,7 @@ int main(int argc, char** argv) {
           }
         }
         removeClient(client);
+        helion::server::operationLog(environmentPolicy, "connection", "closed");
         {
           std::lock_guard<std::mutex> lock(transportMutex);
           transports.erase(client);
@@ -2909,7 +3146,11 @@ int main(int argc, char** argv) {
       limit.release();
     }
   }
+  draining = true;
   close(server);
+  lifecycle.phase = helion::server::ServicePhase::shutting_down;
+  reportStatus(lifecycle.phase);
+  helion::server::operationLog(environmentPolicy, "drain", "closing-connections");
   {
     std::lock_guard<std::mutex> lock(transportMutex);
     for (const auto& entry : transports) shutdown(entry.first, SHUT_RDWR);
@@ -2917,10 +3158,24 @@ int main(int argc, char** argv) {
   for (auto& worker : workers) worker.thread.join();
   {
     std::lock_guard<std::mutex> lock(stateMutex);
-    if (flightStateDirty) {
-      try { persistStateLocked(); }
-      catch (const std::exception& error) { std::cerr << "shutdown flight checkpoint failed: " << error.what() << '\n'; }
+    try {
+      // Always take a final authoritative checkpoint, including zero-player service.
+      persistStateLocked();
+      if (serviceMetrics.storageFatal) throw std::runtime_error("uncertain persistence durability");
+      if (runtimeEnvironment == helion::server::RuntimeEnvironment::production) {
+        try {
+          helion::server::createBackup(dataPath, environmentPolicy, helion::server::uniqueBackupId("shutdown"));
+          ++serviceMetrics.backups; serviceMetrics.lastBackup = std::time(nullptr);
+        } catch (...) { ++serviceMetrics.backupFailures; throw; }
+      }
+    } catch (const std::exception& error) {
+      operationalFailure = true;
+      std::cerr << "shutdown checkpoint/backup failed: " << error.what() << '\n';
     }
   }
-  return 0;
+  lifecycle.phase = operationalFailure || serviceMetrics.storageFatal ?
+    helion::server::ServicePhase::fatal : helion::server::ServicePhase::offline;
+  if (!reportStatus(lifecycle.phase)) operationalFailure = true;
+  helion::server::operationLog(environmentPolicy, "shutdown", operationalFailure ? "failed" : "complete");
+  return operationalFailure ? 1 : 0;
 }

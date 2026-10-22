@@ -190,12 +190,19 @@ def main():
             target_x, target_y = float(target[3]), float(target[4])
             destroyed_target = False
             for _ in range(12):
-                state = flight(peer.request("FLIGHT", "FLIGHT "))
+                # A durable FIRE reply can arrive after its bounded read window
+                # and precede this FLIGHT response on the same TLS stream. Do
+                # not discard its authoritative hit/destruction receipts here.
+                result = peer.request("FLIGHT", "FLIGHT ")
+                state = flight(result)
+                destroyed_target = any(line.startswith("COMBAT DESTROYED target=RAIDER-1") for line in result)
+                if destroyed_target:
+                    break
                 if ((target_x - state["x"]) ** 2 + (target_y - state["y"]) ** 2) ** 0.5 > 210:
                     peer.request("INPUT 1 0 0", "FLIGHT ")
                     time.sleep(.5)
                 result = peer.request("FIRE RAIDER-1", timeout=1.0)
-                destroyed_target = any(line.startswith("COMBAT DESTROYED") for line in result)
+                destroyed_target = any(line.startswith("COMBAT DESTROYED target=RAIDER-1") for line in result)
                 if destroyed_target:
                     break
                 time.sleep(1.05)

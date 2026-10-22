@@ -1,5 +1,269 @@
 # Batch 14 v0.20 execution record
 
+## M7 Production operations and service lifecycle — 2026-10-21
+
+### Authorization, preflight and stop boundary
+
+The latest user instruction authorizes **M7 only**, one green local checkpoint
+and a stop: no push, merge, M8, M9, Batch 15 or Ship AI Core work. This supersedes
+older M7/M8 scope labels in the historical records below. M0–M6 remain complete.
+Current M7 is Production Operations and Service Lifecycle; M8 is Deployment,
+Packaging, Migration, Release and Recovery; M9 is final Batch 14 acceptance.
+Broader Companion/Public API expansion is not silently added to M7.
+
+Read-only preflight verified `/home/bannaar/Helion`, branch
+`batch14/implementation-v0.11`, HEAD and freshly fetched/pruned origin Batch 14
+ref at `b4fef081cc1042185399b6a1ea26944f3b206c1f`, origin/main at
+`23cf90b0b7bdd0996c513f610fab21dc9a4af2e0` and its ancestry (exit 0), clean
+tracked tree/index, and no merge/rebase/cherry-pick/revert. Known `.agents/` and
+`plugins/` are preserved and excluded. The expanded preflight also accounted for
+the two M7 operations files just created in this same active turn before the
+user narrowed the original M7–M9 request. No unexpected work was overwritten.
+The recovery branch remains at M6. `git bundle verify` independently confirmed
+`/home/bannaar/Desktop/HELION_POST_M6_2026-10-21_205240.bundle` is valid and records
+complete history. Optional current handoff/GEMINI files were absent.
+
+### Implemented architecture
+
+The implementation extends the existing native server, `EnvironmentPolicy`,
+exclusive `DataLock`, strict loader, transaction/rollback boundaries and TLS
+request dispatcher. `server/operations.*` supplies a typed operational lifecycle,
+process-local atomic counters, protected atomic health snapshots and immutable
+backup envelopes. No gameplay, client/controller, galaxy, economy, transport
+schema or authoritative persistence format is replaced. All client sources and
+shared gameplay sources are unchanged.
+
+- Startup distinguishes validation/loading from listener readiness; Production
+  requires an explicit absolute persistence path, protected key, valid matching
+  TLS identity, compatible tagged state and isolated environment paths. An existing
+  empty Production file is corruption, not a new universe. Repeated options fail.
+  Storage preflight validates without prematurely claiming a directory; final
+  claiming follows successful strict load and precedes migration/listening.
+- Health is `<save>.status.json`, owner-only, atomic and refreshed every half
+  second. The local Python-standard-library `helion-service-status` checks
+  liveness, freshness, phase, durability and readiness. There is no health socket
+  or network operator API. Ephemeral health publication does not fsync or hold
+  the gameplay lock during file I/O. Temporary publication failure refuses new
+  sockets and retries; existing rollback/retry work continues.
+- Static structured stderr JSON events identify environment/instance/PID and
+  startup/load/TLS/connection/auth/protocol/maintenance/save/backup/shutdown
+  outcomes without payloads or credentials. Save successes are sampled; metrics
+  count every save. Offline privileged intent/result records are separately
+  fsynced in `<save>.operations.jsonl`, identified by OS UID, typed action, backup
+  ID and bounded reason code. Legacy human diagnostics remain.
+- Metrics report uptime, connections/player sessions, request/malformed/auth
+  rejection counts, save counts/failures/duration/last success, backup counts/
+  failures/last success and persistence-load time. They reset per process and
+  never expose hidden per-player state. They are not a historical monitor.
+- SIGUSR1 requests configurable MAINTENANCE_SOON, then DRAINING. SIGTERM/SIGINT
+  skip warnings. Repeated signals cannot extend deadlines. Drain refuses new
+  sockets before TLS, rejects new work on established sessions with correlated
+  `ERR service-draining`, permits already executing locked transactions to finish,
+  and interrupts remaining sessions/partial handshakes after 1–5 seconds.
+- Shutdown joins workers, always checkpoints authoritative state and creates a
+  verified Production shutdown backup. File contents and the rename directory
+  are fsynced. A post-rename directory-sync failure is an uncertain committed
+  outcome: never roll back only memory; fail readiness and exit unsuccessfully.
+  Final checkpoint, backup or final health failure cannot log clean success.
+  A final review also closed success replies after uncertain committed renames;
+  the deterministic filesystem fault case verifies that boundary.
+- Explicit offline `--operations PRODUCTION BACKUP|VERIFY_BACKUP|PLAN_RESTORE id
+  --reason code` requires Production configuration and the exclusive live lock.
+  Backup wrappers bind environment/instance/economy/ID/time/format/server version
+  and SHA-256 to exact state bytes. Owner-only files publish without overwrite,
+  sync directories and reread/verify before success. Automatic shutdown backups
+  use retention-ready epoch/PID IDs. TEST snapshots remain separate.
+- Verification/planning stages the backup through the existing strict loader,
+  rejects corrupt/truncated/wrong-environment/incompatible/invalid-but-rehashed
+  state and does not migrate or replace live state, even when live state is
+  damaged. **No destructive restore command exists in M7.** Recovery rehearsal
+  runs a verified payload in an isolated disposable Production-identity directory.
+  Existing live files, backup inventory, operator policy and audit never roll back.
+- Portable systemd server/optional daily maintenance examples ship in server and
+  combined packages, with explicit Production, service user, private umask,
+  state-only write access, journal output, bounded stop and no automatic enable.
+  All three unit examples passed `systemd-analyze verify` with only the unavailable
+  installed executable path substituted by the actual built server path.
+
+The [Production operations guide](../production-operations.md) records commands,
+permissions, lifecycle/health semantics, metrics, failure handling, backup/restore
+verification, supported recovery rehearsal and limits. Native server/install/
+architecture/protocol guidance and package contents are reconciled.
+
+### Production boundary review and corrections
+
+Direct source review covered startup/environment/configuration, TLS, password and
+companion credential handling, request dispatch/replay/bounds, strict persistence,
+M6 role/audit/storage checks, lifecycle workers, backups and package/service files.
+This is a scoped M7 source review with regression evidence, not an independent
+exhaustive M9 security scan. A real inherited path-isolation gap was repaired:
+credential paths now check ancestor environment markers, preventing Production
+selection of a key nested underneath TEST storage. A real existing shutdown defect
+was repaired: final save failure previously still returned zero. Malformed
+persisted password verifiers now fail startup on complete encoding validation,
+rather than accepting any dollar-prefixed string as a stored hash. Production key
+protection/validity and rejection of existing empty authoritative state are now
+explicit. No unrestricted Production gameplay mutation or role-elevation path
+was added. TEST DEV_ADMIN/INVITED_TESTER and companion tokens gain no operations
+authority. The existing player/companion authorization and token expiry/revocation
+paths remain intact and require their complete regression gates.
+
+Exploratory validation exposed and corrected premature directory claiming,
+persistence-mismatch diagnostic precedence, health-publication interference with
+existing rollback/retry and binary drain response correlation. Concurrent legacy stderr output also exposed fragmented JSON log
+records; structured records now publish in one small write. Existing assertions
+and timeouts are preserved. Early new test fixtures used incorrect text-response
+markers/indexes; these were corrected to the real protocol. A strengthened drain
+correlation assertion also correctly rejected the earlier, not-yet-rebuilt binary.
+A compilation-overlapped M6 integration timed out; the isolated rerun passed
+1/1 in 51.14 s. The existing core-gameplay harness also discarded delayed FIRE receipts while
+reading the next FLIGHT snapshot; it now observes those authoritative receipts
+before issuing another shot, retaining its hit/destruction assertions, 12-shot
+bound and original timeouts, and requiring the exact hostile target. M7 negative
+subprocess tests explicitly reject sanitizer diagnostics rather than accepting
+any nonzero exit as a valid rejection. Final configuration runs are performed
+without concurrent builds.
+
+### Final validation evidence
+
+All four final configurations built with `HELION_WARNINGS_AS_ERRORS=ON`.
+The complete suites ran without concurrent project compilation. Final results:
+
+| Gate | Exact result |
+| --- | --- |
+| Combined Debug, `/tmp/helion-m7-debug` | **38/38 PASS**, **255.94 s** |
+| Server Debug ASan/UBSan, `/tmp/helion-m7-sanitize` | **25/25 PASS**, **123.31 s** |
+| Release server-only, `/tmp/helion-m7-server` | **25/25 PASS**, **109.51 s** |
+| Release client-only, `/tmp/helion-m7-client` | **22/22 PASS**, **26.19 s** |
+| New M7 operations unit / health probe / real Production lifecycle | **PASS** in all server configurations; Debug **0.45 / 0.79 / 18.16 s** |
+| M6 administration unit + real TLS/binary roles/audit/reset/restore | **PASS**; live Debug **19.87 s**, sanitizer **23.46 s**, Release **23.11 s** |
+| TLS / authoritative gameplay / legacy credential, ship and economy persistence | **PASS**; Debug **42.30 s**, sanitizer **43.31 s**, Release **40.24 s** |
+| Binary TLS | **PASS**; Debug **5.13 s**, sanitizer **5.69 s**, Release **5.90 s** |
+| Companion TLS (both transports, expiry/revocation/scopes) | **PASS**; Debug **14.24 s**, sanitizer **16.07 s**, Release **14.32 s** |
+| Binary graphical career/restart/free play | **PASS**, **48.03 s** |
+| Explicit legacy graphical career/restart/free play | **PASS**, **46.53 s** |
+| Core gameplay / renderer / M5 controller and live retry | **PASS** in applicable suites; core gameplay **53.18 s** |
+| Galaxy 28/90-to-200 migration, idempotence, corruption and viewer isolation | **PASS**; Debug **8.48 s**, sanitizer **11.96 s**, Release **8.59 s** |
+| Galaxy count/security, economy, flight, ships/loadout and protocol unit suites | **PASS**; Known Space **200**, faction systems **120**, Zero Space **80** remain unchanged |
+| Combined install smoke | **PASS**, **3.34 s** |
+| Combined Debug / Release server / Release client CPack | All **six TGZ/DEB artifacts generated** |
+| Combined TGZ + DEB extraction/runtime smoke | **PASS**: first-run TLS, account creation, saved login, protected data/TLS, M7 docs/service assets |
+| Split TGZ + DEB extraction/runtime smoke | **PASS**: real packaged Release server/client, Production startup, scoped companion issue/profile/denied launch/revocation, verified shutdown backup and restart |
+| Repository split package/install smoke | **PASS**: headless dependency boundary, client-only desktop, TLS CA/name rejection, saved restart, isolated dpkg install/remove, reinstall/upgrade preservation and external-data-safe removal |
+| systemd template syntax | **PASS**, all three units; actual built executable substituted for not-installed `/usr/bin/helion_server` |
+| Whitespace and main ancestry | `git diff --check` **PASS**; `git merge-base --is-ancestor origin/main HEAD` **0** |
+
+Three new CTest registrations account for **38/25/22** totals, rather than M6's
+35/22/22. `operations_tests` exercises deterministic deadlines, no deadline
+extension, private metrics and immutable/integrity-bound backup envelopes.
+`health_probe_tests` covers liveness/dead PID, freshness/future time, readiness,
+phases, schema, unsafe modes, symlinks and hardlinks. `operations_integration`
+uses actual Production processes and both transports to validate invalid startup,
+zero-player health, metrics, transactional save failure/DEGRADED/recovery,
+maintenance/admission/drain, interrupted partial handshakes, restart continuity,
+admin/companion denials, immutable backups, corrupt/truncated/wrong-environment/
+incompatible/rehash-invalid payload rejection, non-destructive plans, recovery
+rehearsal, final-save/backup failure exit codes and secret-free valid JSON logs. A tiny
+`fsync_fault.cpp` test-only preload library forces directory sync failure after
+an authoritative rename; Debug, ASan/UBSan and Release each prove that no success
+reply is sent, exit is nonzero and committed state is never rolled back only in
+memory. The fixture compiles with warnings-as-errors, preserves ASan runtime
+load order and is never linked into or installed with HELION.
+Existing security checks now reject malformed stored verifiers. The core gameplay
+harness retains delayed authoritative combat receipts without relaxing its
+assertions/timeouts. Server-test cleanup removes its new ephemeral health file.
+Package smoke now requires Production/drain/maintenance settings and the shipped
+M7 guide/probe/timer, replacing its obsolete DEVELOPMENT-template expectation.
+No existing acceptance assertion or timeout was weakened.
+
+Sanitizers used `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1` and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`, inherited by subprocesses.
+Validated logs contain no ASan/LSan/UBSan/runtime-error diagnostics; no sanitizer
+suppressions or disabled leak detection were used. M7 expected-failure child
+processes explicitly assert absence of sanitizer diagnostics.
+
+Commands: `cmake -S . -B /tmp/helion-m7-<configuration>` with the named Debug/
+Release, client/server/flavor/sanitizer flags; `cmake --build <build> -j2`;
+complete `ctest --test-dir <build> --output-on-failure -j2`; and
+`cpack --config <build>/CPackConfig.cmake -B <build>/packages`. CMake caches
+confirm all four flags/configurations. Full logs are
+`/tmp/helion-m7-{debug,sanitize,server,client}-validated.log` and each build's
+`Testing/Temporary/LastTest.log`. CPack logs are
+`/tmp/helion-m7-{debug,server,client}-packages.log`. Six artifacts remain in those
+builds' `packages/` directories; checksums are in
+`/tmp/helion-m7-package-sha256.txt`. Supplemental
+`/tmp/helion_m7_packages.py` ran the extracted runtime cases plus the tracked
+`native/tests/split_package_smoke.py` with all split archives. Its complete green
+log is `/tmp/helion-m7-package-smoke.log`. Build/package/QA material stays outside
+the source checkpoint. The package audit initially found the obsolete service
+expectation; the strengthened final package rerun passed. Earlier diagnostic
+failures are documented above; no final M7 gate failure remains.
+
+M7 is complete at the local checkpoint `feat(server): add production operations
+foundation`, directly after verified M6. The final user report supplies its exact
+Git ID. The checkpoint contains only the 30 intended files below. `.agents/` and
+`plugins/` remain untracked and excluded. No push, merge, history rewrite, M8,
+M9 or Batch 15 implementation is part of this checkpoint.
+
+### M7 checkpoint file inventory
+
+```text
+CMakeLists.txt
+docs/PROJECT_STATE.md
+docs/development/BATCH14_EXECUTION.md
+docs/development/BATCH14_PROTOCOL.md
+docs/native-architecture.md
+docs/native-install.md
+docs/native-server.md
+docs/private-test-admin.md
+docs/production-operations.md
+native/CMakeLists.txt
+native/README.md
+native/assets/helion-maintenance.service
+native/assets/helion-maintenance.timer
+native/assets/helion-server.service
+native/packaging.cmake
+native/scripts/helion-service-status
+native/server/main.cpp
+native/server/operations.cpp
+native/server/operations.h
+native/server/security.cpp
+native/server/test_admin.cpp
+native/server/test_admin.h
+native/tests/core_gameplay_integration.py
+native/tests/fsync_fault.cpp
+native/tests/health_probe_tests.py
+native/tests/operations_integration.py
+native/tests/operations_tests.cpp
+native/tests/security_tests.cpp
+native/tests/server_tests.cpp
+native/tests/split_package_smoke.py
+```
+
+### M7 limits and exact deferred work
+
+Operations trust a dedicated OS service account/cooperating local filesystem;
+there is no public operator login/MFA service, live restore, arbitrary state
+editing, remote backup replication, retention daemon, certificate renewal
+service or new cross-IP throttling. Backup/verification payloads are bounded to
+64 MiB; process counters reset at restart. Persistent I/O failure can outlive
+connection drain, so systemd supplies an outer stop deadline. Host service
+activation and physical Compaq/EliteBook deployment are not automated claims.
+Existing TEST ledger/rotation/admin-domain and client connection/liveness limits
+remain unchanged.
+
+**M8 deferred and unstarted:** STABLE/TEST artifact/build identity, clean release
+installation/upgrade workflow, TEST-first release and migration rehearsal,
+backup-before-upgrade automation, failed migration/deployment recovery, reviewed
+Production replacement/revocation semantics, restart/longer-lived release trials
+and release/recovery documentation. Existing package gates run solely to validate
+M7 packaging; they do not declare M8 implemented. **M9 deferred and unstarted:**
+final batch-wide hardening/security/canon/documentation reconciliation and complete
+Batch 14 final acceptance. **Batch 15/Ship AI Core/LLM work is prohibited.**
+
+Stop at the fully green local M7 checkpoint and report; wait for user review.
+
+
 ## M6 private TEST administration continuation — 2026-10-20
 
 ### Verified M5 start gate

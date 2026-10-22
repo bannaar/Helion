@@ -124,7 +124,7 @@ void EnvironmentPolicy::loadAccessFile(const std::string& path) {
   }
 }
 void EnvironmentPolicy::protectStorage(const std::string& data, const std::string& access,
-    const std::string& certificate, const std::string& key) const {
+    const std::string& certificate, const std::string& key, bool claim) const {
   namespace fs = std::filesystem;
   const auto root = fs::canonical(fs::absolute(data).parent_path());
   for (auto parent = root.parent_path(); !parent.empty(); parent = parent.parent_path()) {
@@ -153,16 +153,22 @@ void EnvironmentPolicy::protectStorage(const std::string& data, const std::strin
   for (const auto& file : {access, certificate, key}) {
     if (file.empty()) continue;
     const auto fileRoot = fs::canonical(file).parent_path();
-    const auto fileMarker = fileRoot / ".helion-environment";
-    if (fileRoot != root && (fs::exists(fileMarker) || fs::is_symlink(fileMarker))) {
-      std::istringstream identityFile(readPrivateFile(fileMarker.string(), 256));
-      std::string version, fileEnvironment;
-      if (!(identityFile >> version >> fileEnvironment) || version != "HELION_STORAGE_V1" ||
-          fileEnvironment != runtimeEnvironmentName(environment))
-        throw std::runtime_error("cross-environment credential path rejected");
+    // A credential in a nested subdirectory still belongs to its ancestor's
+    // environment. Checking only its immediate directory allowed accidental
+    // Production reuse of a key underneath a claimed TEST directory.
+    for (auto parent = fileRoot; !parent.empty(); parent = parent.parent_path()) {
+      const auto fileMarker = parent / ".helion-environment";
+      if (fs::exists(fileMarker) || fs::is_symlink(fileMarker)) {
+        std::istringstream identityFile(readPrivateFile(fileMarker.string(), 256));
+        std::string version, fileEnvironment;
+        if (!(identityFile >> version >> fileEnvironment) || version != "HELION_STORAGE_V1" ||
+            fileEnvironment != runtimeEnvironmentName(environment))
+          throw std::runtime_error("cross-environment credential path rejected");
+      }
+      if (parent == parent.root_path()) break;
     }
   }
-  if (environment == RuntimeEnvironment::private_test) {
+  if (environment == RuntimeEnvironment::private_test && (claim || !access.empty())) {
     if (access.empty()) throw std::runtime_error("TEST requires a trusted access file");
     for (const auto& file : {access, certificate, key}) {
       if (fs::canonical(file).parent_path() != root || fs::is_symlink(file))
@@ -170,7 +176,7 @@ void EnvironmentPolicy::protectStorage(const std::string& data, const std::strin
       (void)readPrivateFile(file, 65536);
     }
   }
-  if (!fs::exists(marker)) writePrivateFile(marker.string(), identity);
+  if (claim && !fs::exists(marker)) writePrivateFile(marker.string(), identity);
 }
 std::string AdminOperation::canonical() const {
   return verbText + " " + target + " " + field + " " + value;

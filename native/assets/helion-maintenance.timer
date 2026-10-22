@@ -1,0 +1,11 @@
+[Unit]
+Description=Optional daily HELION maintenance window (operator configured)
+
+[Timer]
+# Example UTC window. Edit and explicitly enable; packages never enable units.
+OnCalendar=*-*-* 04:00:00 UTC
+Unit=helion-maintenance.service
+Persistent=false
+
+[Install]
+WantedBy=timers.target

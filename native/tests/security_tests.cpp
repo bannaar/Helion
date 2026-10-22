@@ -24,6 +24,9 @@ int main() {
   check(!helion::security::verifyPassword("wrong-password", first), "invalid credentials rejected");
   check(!helion::security::verifyPassword(password, "$scrypt$malformed"), "malformed stored hash rejected");
   check(helion::security::isEncodedHash(first), "encoded credential recognized");
+  check(!helion::security::isEncodedHash("$scrypt$invalid") &&
+        !helion::security::isEncodedHash("$unknown$invalid") &&
+        !helion::security::isEncodedHash(first + "0"), "malformed persisted verifiers rejected before service startup");
   for (const std::string& candidate : {std::string(11, 'a'), std::string(129, 'a')}) {
     bool rejected = false;
     try { (void)helion::security::hashPassword(candidate); } catch (const std::invalid_argument&) { rejected = true; }

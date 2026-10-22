@@ -7,8 +7,8 @@ else()
   set(HELION_DOC_PACKAGE_NAME helion)
 endif()
 if(HELION_BUILD_SERVER)
-  install(PROGRAMS scripts/helion-dev-cert DESTINATION ${CMAKE_INSTALL_BINDIR})
-  install(FILES assets/helion-server.service
+  install(PROGRAMS scripts/helion-dev-cert scripts/helion-service-status DESTINATION ${CMAKE_INSTALL_BINDIR})
+  install(FILES assets/helion-server.service assets/helion-maintenance.service assets/helion-maintenance.timer
     DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/helion-server/examples)
 endif()
 if(HELION_BUILD_CLIENT AND HELION_BUILD_SERVER)
@@ -27,7 +27,8 @@ set(HELION_PACKAGE_DOCS README.md ${PROJECT_SOURCE_DIR}/docs/native-install.md
   ${PROJECT_SOURCE_DIR}/docs/PROJECT_STATE.md
   ${PROJECT_SOURCE_DIR}/docs/compaq610-server-elitebook-client.md)
 if(HELION_BUILD_SERVER)
-  list(APPEND HELION_PACKAGE_DOCS ${PROJECT_SOURCE_DIR}/docs/native-server.md)
+  list(APPEND HELION_PACKAGE_DOCS ${PROJECT_SOURCE_DIR}/docs/native-server.md
+    ${PROJECT_SOURCE_DIR}/docs/production-operations.md)
 endif()
 if(HELION_BUILD_CLIENT)
   list(APPEND HELION_PACKAGE_DOCS ${PROJECT_SOURCE_DIR}/docs/native-client.md)

@@ -90,7 +90,16 @@ std::string hashPassword(std::string_view password) {
   return hashAnyPassword(password);
 }
 
-bool isEncodedHash(std::string_view value) { return value.substr(0, 1) == "$"; }
+bool isEncodedHash(std::string_view value) {
+  if (value.substr(0, kPrefix.size()) != kPrefix) return false;
+  const auto rest = value.substr(kPrefix.size());
+  const auto separator = rest.find('$');
+  if (separator == std::string_view::npos) return false;
+  std::array<unsigned char, kSaltBytes> salt{};
+  std::array<unsigned char, kHashBytes> hash{};
+  return fromHex(rest.substr(0, separator), salt.data(), salt.size()) &&
+    fromHex(rest.substr(separator + 1), hash.data(), hash.size());
+}
 
 bool verifyPassword(std::string_view password, std::string_view encoded) {
   if (password.empty() || password.size() > kMaxPassword || encoded.substr(0, kPrefix.size()) != kPrefix) return false;

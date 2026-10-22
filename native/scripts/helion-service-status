@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Local readiness probe. Exit 0 ready, 1 unready/stale/dead, 2 invalid usage/data."""
+import json
+import os
+import stat
+import sys
+import time
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("usage: helion-service-status /absolute/path/universe.db", file=sys.stderr)
+        return 2
+    fd = -1
+    try:
+        fd = os.open(sys.argv[1] + '.status.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1 or info.st_mode & 0o077:
+            raise ValueError('unsafe health file')
+        raw = os.read(fd, 8193)
+        if len(raw) > 8192:
+            raise ValueError('oversized health file')
+        status = json.loads(raw)
+        if status['schema'] != 1 or type(status['pid']) is not int or status['pid'] <= 0:
+            raise ValueError('invalid health identity')
+        age = time.time() - status['timestamp']
+        alive = False
+        try:
+            os.kill(status['pid'], 0)
+            alive = True
+        except ProcessLookupError:
+            pass
+        status['process_alive'] = alive
+        status['fresh'] = 0 <= age <= 5
+        status['healthy'] = alive and status['fresh'] and status['durable'] is True and status['phase'] in {
+            'ONLINE', 'MAINTENANCE_SOON', 'DRAINING'}
+        status['ready'] = status['healthy'] and status['ready'] is True
+        print(json.dumps(status, sort_keys=True))
+        return 0 if status['ready'] else 1
+    except (OSError, ValueError, KeyError, TypeError):
+        print('{"healthy":false,"ready":false,"error":"health-unavailable"}')
+        return 2
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

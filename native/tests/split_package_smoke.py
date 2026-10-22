@@ -137,8 +137,14 @@ def main():
         service_text = service.read_text()
         for directive in ("NoNewPrivileges=true", "UMask=0077", "ProtectSystem=strict",
                           "ReadWritePaths=/var/lib/helion", "Restart=on-failure",
-                          "--environment development"):
+                          "--environment production", "--drain-seconds 5",
+                          "--maintenance-warning-seconds 60", "KillSignal=SIGTERM",
+                          "TimeoutStopSec=60"):
             assert directive in service_text
+        assert (server.parent / "helion-service-status").is_file()
+        assert next(server_prefix.rglob("production-operations.md")).is_file()
+        assert next(server_prefix.rglob("helion-maintenance.service")).is_file()
+        assert next(server_prefix.rglob("helion-maintenance.timer")).is_file()
 
         cert, key = certificate(root, "tls")
         wrong_cert, _ = certificate(root, "wrong-tls")

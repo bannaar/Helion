@@ -106,3 +106,16 @@ Administrative mutation IDs persist beyond connection-local binary request IDs;
 retry uses the same admin ID. See [private TEST administration](../private-test-admin.md).
 Existing typed input, replay/order checks, framing bounds and negotiation remain
 unchanged. M5 neutral INPUT/liveness behavior is unchanged.
+
+## M7 service drain
+
+Service lifecycle is server-owned operational state. No operations/admin network
+protocol is added. Once draining, an existing connection's next complete request
+receives `ERR service-draining` through its existing bounded transport, correlated
+to that request in binary mode, then closes. New sockets are refused before TLS
+without plaintext output. A transaction already executing may finish under the
+existing authoritative lock. The bounded drain deadline then interrupts remaining
+connections, including partial handshakes. Local readiness/maintenance hooks and
+Production backup verification are documented in
+[Production operations](../production-operations.md). M4 framing, typed input,
+normal replay/order rules and explicit legacy compatibility remain unchanged.

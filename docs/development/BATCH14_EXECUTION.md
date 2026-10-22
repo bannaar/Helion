@@ -1,5 +1,59 @@
 # Batch 14 v0.20 execution record
 
+## Post-M7 canon/document reconciliation v0.21 — 2026-10-22
+
+This is a documentation/canon checkpoint, not M8 implementation or M9 final
+acceptance. **M0–M7 complete; M8 not started; M9 not started; Batch 14 not complete;
+Batch 15 not started.** All dated records below retain their original milestone
+context; their older scope labels and next-step instructions are historical.
+
+Read-only preflight verified HEAD and freshly fetched origin Batch 14 at
+`f02d9e38c32f22678664e55946bef3b700ac5d3c`, clean tracked tree/index, only known
+`.agents/` and `plugins/`, no unfinished Git operation and origin/main ancestry
+(exit 0). The post-M7 recovery branch matched HEAD and the supplied bundle
+verified as complete. No unexpected work was overwritten.
+
+Current canon is now DraftComp8, with canon sync and reconciliation v0.21.
+DraftComp8 preserves substantive DraftComp7, including the full living-universe
+expansion, and adds an October authority/architecture/environment/operations/
+optional-companion/future-AI/batch-boundary layer. Six bounded edits correct its
+compilation title, historical September heading, mistaken DraftComp6 reference,
+two obsolete frontier labels and the old survey-galaxy scale heading.
+DraftComp7/v0.20 sources are imported into the lore history directory; original
+source hashes match M3. Only one final empty line is normalized in the DraftComp7
+copy and DraftComp8 to pass Git whitespace checks; Desktop originals are unchanged. Older repository Bibles and historical
+prompt bodies remain unchanged, with provenance routing in current documentation.
+
+README, project state, lore index, AGENTS and maintained native guides now route
+canon correctly and use current prose. Stable wire/save/hull/system IDs and actual
+protocol examples are preserved. Existing source display terminology debt is
+identified for later separately authorized cleanup; no source strings changed.
+Installation instructions are aligned with existing M7 Production permissions,
+environment markers, verified backups and restore-planning limitations.
+
+The new roadmap, Ship AI Core design and alpha-readiness/launcher bridge are
+future direction only. The existing local-play helper is not the full launcher.
+No AI/provider/companion gameplay, launcher, schema or protocol implementation is
+introduced. See
+[reconciliation v0.21](HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md)
+for the full document audit, checksum, historical hashes, retained identifiers,
+source-of-truth hierarchy, unresolved questions and stop boundary.
+
+Documentation validation passed **49 checks across 27 files** (9 added, 18
+modified), including **113 local Markdown link targets / 3 anchors**, the complete
+canon checksum/allocation, documented archival normalization and historical-body preservation,
+and documentation-only scope. The broad final terminology search found **689
+matching lines in 74 files**; all are classified history, literal compatibility/
+fixtures, display-debt context or explicit replacement/audit rules. No unqualified
+obsolete current claim remains in maintained guides. `git diff --check` passed;
+`git merge-base --is-ancestor origin/main HEAD` returned **0**.
+
+No native/browser source, tests, scripts, service assets, migrations or build
+configuration changed. Runtime suites were not rerun for this docs-only checkpoint;
+M7 validation below remains the actual M7 evidence. No push, merge, main change,
+M8, M9 or Batch 15 work is authorized by this checkpoint. Stop for user review.
+
+
 ## M7 Production operations and service lifecycle — 2026-10-21
 
 ### Authorization, preflight and stop boundary

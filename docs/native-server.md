@@ -1,5 +1,10 @@
 # Helion standalone server
 
+Current lore uses UniNet, GSC, Ironstar Forge and a generically named starter
+shuttle. Literal protocol/save identifiers (`GALNET`, `credits`, `SIDEWINDER` /
+`sidewinder`, `TITAN_FORGE`) and existing executable display labels remain
+compatible. See the [canon reconciliation](development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md).
+
 This guide installs and configures the standalone Linux server. The server is a
 small C++17 POSIX TCP process with no database service dependency.
 
@@ -240,15 +245,15 @@ Then enter:
 /quit
 ```
 
-Expected profile output includes the initial `sidewinder`, faction, credits,
+Expected profile output includes the legacy `sidewinder`, faction, `credits` (GSC),
 and experience fields.
 
 Docked clients may use `SHIPYARD LIST`, `SHIPYARD OWNED`, `SHIPYARD BUY
 <hull-id>`, and `SHIPYARD SWITCH <instance-id>`. The server validates local
-inventory, pad support, ownership, credits, and physical ship location before
+inventory, pad support, ownership, GSC, and physical ship location before
 atomically persisting a transaction. New `S` records store owned ship
 instances; legacy profiles without them migrate deterministically to one
-Sidewinder and retain the existing `H` record as an active-ship projection.
+starter shuttle (`SIDEWINDER`) and retain the existing `H` record as an active-ship projection.
 
 ## 7. Companion credentials
 
@@ -283,7 +288,7 @@ password on the companion device. See `docs/companion-auth.md`.
 The line-oriented data file begins with an `E` environment record, a versioned
 bounded administrative receipt ledger (`L`/`A`), and then
 contains galaxy/knowledge, economy, profile, owned-ship, companion-token,
-GalNet, and chat records. Economic telemetry and companion tokens retain their
+UniNet, and chat records. Economic telemetry and companion tokens retain their
 legacy `T` tags with distinct, strictly validated two- and six-column shapes. New passwords must be
 12–128 bytes; migrated legacy passwords may be shorter and continue to work.
 Passwords use OpenSSL scrypt with unique random salts and constant-time
@@ -319,18 +324,18 @@ sudo systemctl stop helion-server
 
 ## 10. Mining gameplay
 
-The native client now flies a Sidewinder in Kepler Reach. Authenticated
+The native client now flies the starter shuttle in Kepler Reach. Authenticated
 `LAUNCH`, `INPUT`, `FLIGHT`, `MINE`, `DOCK`, and `REPAIR` commands implement the
 mining and hull-care loop. The server advances positions at 60 Hz, resolves
 asteroid collisions into authoritative hull damage, bounds the sector to 1200
 m, expires controls after 0.5 seconds, and validates proximity, speed,
 extractor cooldown, and cargo capacity.
 
-Docking sells ore at 60 credits and 5 XP per unit. Rewards are acknowledged
+Docking sells ore at 60 GSC and 5 XP per unit. Rewards are acknowledged
 only after the profile snapshot is saved; a failed write restores cargo,
-flight state, credits, and XP so the player can retry. Hull upgrades increase
+flight state, GSC, and XP so the player can retry. Hull upgrades increase
 maximum integrity. A disabled ship is recovered at its station with cargo
-lost; `/repair` restores integrity for a credit cost before launch. Legacy
+lost; `/repair` restores integrity for a GSC cost before launch. Legacy
 profile records remain readable, while new mission, upgrade, flight, and hull
 fields are appended. Flight positions, hull damage, and unsold cargo persist
 across restart. Flight sectors are currently per-commander instances, while

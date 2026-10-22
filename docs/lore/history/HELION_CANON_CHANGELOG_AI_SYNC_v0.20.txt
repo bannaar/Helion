@@ -1,0 +1,1290 @@
+HELION CANON CHANGELOG / AI SYNCHRONIZATION FILE v0.20
+======================================================================
+Date: 2026-09-26
+Project: HELION
+Purpose: Give another AI, coding agent, writing model, or documentation agent
+a single authoritative list of terminology changes, chronology changes,
+world-model changes, and project-direction changes that must be reflected
+when updating older HELION files.
+
+PRIMARY CURRENT REFERENCES
+--------------------------
+1. HELION_World_Bible_draftcomp6.txt
+2. HELION_ACTIVE_GOAL_v0.20.md
+3. HELION_Batch14_Gemini_Handoff_v0.20.md
+4. HELION_CANON_AND_DOC_RECONCILIATION_v0.20.md
+5. HELION_PROJECT_STATE_HANDOFF_2026-09-26_v0.20.md
+6. HELION_GEMINI_v0.20.md
+
+Older World Bible, prompt, goal, README, PROJECT_STATE, and execution files
+remain useful historical/implementation evidence, but they must not override
+the current canon changes listed here.
+
+======================================================================
+SECTION 1 — DIRECT NAME / TERMINOLOGY CHANGES
+======================================================================
+
+1. HELION CONCORDAT -> INTER-GALACTIC GOVERNANCE (IGG)
+
+OLD:
+- Helion Concordat
+- Concordat, when referring to the umbrella institution
+- Concordat gameplay, when referring to the institution as a whole
+- Concordat banner / Concordat administration, where the umbrella body is meant
+
+NEW:
+- Inter-Galactic Governance
+- IGG
+
+IMPORTANT:
+- IGG is NOT a galactic government despite the name.
+- IGG is an independent treaty authority and interstellar service framework.
+- IGG is not a sixth sovereign faction.
+- IGG does not own national territory.
+- IGG is the umbrella framework for three coequal arms:
+  * INSA — Interstellar Navigation & Security Authority
+  * Gatewatch
+  * Galactic Defense Force (GDF)
+- The Crossroads Charter name is RETAINED.
+- The old principle "No flag owns the road between stars." is RETAINED.
+- The operational shorthand "INSA knows. Gatewatch understands. The GDF acts."
+  is RETAINED.
+- Historical references to the old development term may remain only when a
+  document is explicitly describing superseded project history.
+
+2. GALNET -> UNINET
+
+OLD:
+- GalNet
+- GalNet news
+- GalNet reports
+- GalNet economy hooks
+- GalNet stories
+- GalNet chat/news terminology when meant as current canon
+
+NEW:
+- UniNet
+- UniNet news
+- UniNet reports
+- UniNet economy hooks
+- UniNet stories
+
+RULE:
+Current user-facing lore, documentation, UI text, mission text, and maintained
+code comments should use UniNet.
+
+Compatibility-sensitive persisted identifiers, database fields, protocol keys,
+or old migration records must not be blindly renamed. Preserve or migrate them
+explicitly.
+
+3. CREDITS -> GALACTIC STANDARD CREDIT (GSC)
+
+OLD USER-FACING TERM:
+- credits
+- Credits
+- generic "credit" currency wording
+
+NEW CANONICAL TERM:
+- Galactic Standard Credit
+- GSC
+- GSC balance
+- GSC reward
+- GSC price
+
+RULE:
+Use GSC in current lore, UI text, documentation, mission text, economy text,
+and generated narrative.
+
+Internal legacy identifiers such as:
+- credits
+- credit_balance
+- persisted credits fields
+may remain temporarily for compatibility. Rename technical identifiers only
+through an explicit versioned migration.
+
+The economic categories remain:
+- Faucet: GSC created by the simulation.
+- Sink: GSC removed from circulation.
+- Transfer: existing GSC moved between participants.
+
+4. CONCORDIA -> CROWNSPIRE
+
+OLD:
+- Concordia, as the Helion Commonwealth capital
+
+NEW:
+- Crownspire
+
+RULE:
+Crownspire is the current canonical capital of the Helion Commonwealth.
+
+Do not change unrelated uses of the word "concord" or "Concordia" if they are
+clearly historical/non-HELION data, but current HELION capital references must
+say Crownspire.
+
+5. TITAN FORGE -> IRONSTAR FORGE
+
+OLD:
+- Titan Forge
+- Titan visual family, where it refers to that corporation/manufacturer identity
+
+NEW:
+- Ironstar Forge
+- Ironstar visual/manufacturer identity
+
+RULE:
+Preserve the previously approved heavy military-industrial design language:
+- heavy
+- armored
+- powerful
+- dense hulls
+- visible structural ribs
+- externally serviceable systems
+- rugged military/industrial engineering
+
+The visual identity survives; only the canonical corporate/manufacturer name
+changes.
+
+6. NEW EDEN -> VERDANCE
+
+OLD:
+- New Eden, as the named lost agricultural colony
+
+NEW:
+- Verdance
+
+CURRENT LORE:
+Verdance is a presumed-lost agricultural world with no obvious signs of
+catastrophe and no active civilization detected.
+
+7. NULLSEC / NULL SECURITY AS A REGION NAME -> ZERO SPACE
+
+OLD OR DEPRECATED REGION WORDING:
+- nullsec
+- null space
+- Null Space
+- Null Security when used as the proper name of the frontier zone
+
+NEW CANONICAL REGION:
+- Zero Space
+- 0.0
+- Zero-security Known Space frontier
+
+IMPORTANT:
+- Zero Space is ordinary Known Space with a 0.0 security rating.
+- The Null is a completely separate cosmic/existential mystery.
+- Never use "The Null" as a synonym for Zero Space.
+- If a technical security enum needs a category, use Zero/0.0 semantics rather
+  than making "Null" the lore name of the region.
+
+NOTE:
+Some draftcomp6 text still contains descriptive "Null Security" wording.
+Treat that as stale cleanup debt. The active goal defines the canonical
+classification as High / Low / Zero and the canonical region as Zero Space.
+
+8. UNKNOWN SPACE -> RIFTSPACE, BUT ONLY IN A SPECIFIC SCOPE
+
+THIS IS NOT A GLOBAL RENAME.
+
+OLD BROAD USAGE:
+- Unknown Space was sometimes used as a catch-all name for persistent systems
+  reached through unstable Rifts.
+
+NEW OPERATIONAL TERM:
+- Riftspace = persistent systems/regions reached through unstable Rifts.
+
+RETAIN:
+- Unknown Space may still be used as the broader scientific/mystery domain.
+- Deep Unknown Space remains a broader/deeper category.
+- Riftspace is outside the 200-system Known Space count.
+
+DO NOT blindly replace every occurrence of "Unknown Space" with "Riftspace."
+
+9. ADAPTIVE TECHNOLOGY -> ADAPTIVE SYSTEMS ARCHITECTURE (ASA)
+
+OLD / INFORMAL:
+- Adaptive Technology
+- generic hybrid alien-tech tier wording
+
+NEW FORMAL NAME:
+- Adaptive Systems Architecture (ASA)
+
+COMMON NAME STILL ALLOWED:
+- Adaptive Technology
+
+DESIGN RULE:
+ASA is not a simple numbered "better tech tier." It emphasizes configurable
+capabilities, unusual operating modes, hybrid engineering, scarce inputs,
+research burden, maintenance complexity, and specialized use.
+
+10. LEGACY STARTER HULL NAME -> RETIRED, FINAL REPLACEMENT NOT YET LOCKED
+
+OLD:
+- Sidewinder
+
+CURRENT STATUS:
+- The external-setting starter hull name is NOT current HELION canon.
+- Current draft tables use "Starter Shuttle" as a neutral placeholder/reference.
+- No final one-to-one canonical replacement name has been formally locked in
+  this synchronization package.
+
+RULE FOR OTHER AIs:
+- Remove Sidewinder from current lore-facing text.
+- Do NOT invent a final replacement hull name.
+- Preserve compatibility-sensitive old IDs in code/save migrations until a
+  deliberate migration is approved.
+- Use "starter shuttle" generically where necessary until a final name is
+  explicitly selected.
+
+11. EXTERNAL-SETTING HEAVY/CAPITAL CLASS NAMES -> HELION-NATIVE ROLE FAMILIES
+
+Do not preserve external-setting class vocabulary as HELION canon.
+
+APPROVED FUTURE COMBAT / STRATEGIC ROLE FAMILIES:
+- Breaker
+- Aerie
+- Grand Aerie
+- Dominion
+
+APPROVED FUTURE INDUSTRIAL / LOGISTICS ROLE FAMILIES:
+- Fleet Tender
+- Foundry Tender
+- Bulk Liner
+- Farline Liner
+
+IMPORTANT:
+These are approved future role-family names, not proof that those ships are
+already implemented or playable.
+
+No reliable one-to-one mapping from every old external class name is preserved
+in the current canon. Do not invent one.
+
+======================================================================
+SECTION 2 — CHRONOLOGY CHANGE
+======================================================================
+
+MAJOR CHANGE:
+
+OLD:
+- Present era approximately one century after the Severance.
+- Game start previously placed around 287 AS.
+
+NEW:
+- Severance: 187 AS
+- Current/game-start year: 1087 AS
+- Time since Severance: exactly 900 years
+
+THIS CHANGE IS CANONICAL.
+
+Do not describe the Severance as:
+- about a century ago
+- roughly 100 years ago
+- within living ordinary human memory
+
+No ordinary current-era human is an eyewitness to the Severance unless a
+separately approved extraordinary explanation is introduced.
+
+The Severance is approximately thirty generations removed from the current era.
+
+======================================================================
+SECTION 3 — NEW NINE-CENTURY HISTORICAL STRUCTURE
+======================================================================
+
+The post-Severance timeline now spans multiple mature historical eras.
+
+ERA I — EXPANSION AGE
+0-187 AS
+Human expansion through the Gate network before the Severance.
+
+THE SEVERANCE
+187 AS
+Gate-network cascade and civilizational fracture.
+
+ERA II — SURVIVAL, SUCCESSOR STATES & FIRST RECONNECTION
+187-279 AS
+Key developments include:
+- emergency survival governments
+- first independent Gate-watch networks
+- Lantern Protocol
+- emergence of successor-state identities
+- INSA formation
+- Crossroads Massacre
+- GDF formation
+- Crossroads Charter / IGG creation
+- early Blackstar precedent
+- first major interstellar security doctrines
+- Verge Signal
+
+ERA III — RECONSTRUCTION CENTURY
+280-399 AS
+Key developments include:
+- restoration of dependable corridors
+- rise of Kepler as a frontier logistics hub
+- permanent civil institutions replacing emergency rule
+- confirmation of Crownspire as Commonwealth capital
+- formal consolidation of the Free Systems Compact
+- modern Aurelian Synod constitutional structure
+- standard ship/service interfaces begin spreading
+- professional navigation, rescue, pilot, freight, and engineering guild
+  traditions become durable institutions
+
+ERA IV — REINDUSTRIALIZATION & SHIPWRIGHT AGE
+400-549 AS
+Key developments include:
+- mature interstellar shipbuilding ecosystems
+- Aster Dynamics propulsion/control identity
+- Orion Extraction Group consolidation
+- Ironstar Forge heavy industrial/military identity
+- Helix, Horizon, NovaGen, Mnemosyne and related corporate specialization
+- modular maintenance and docking standards
+- standard transponders and interoperability
+- expanded professional spacer culture
+- interstellar insurance, salvage, freight, and ship-registration law
+
+ERA V — COMMERCIAL INTEGRATION AGE
+550-699 AS
+Key developments include:
+- high-volume Meridian exchanges
+- GSC adoption and clearing standards
+- mature regional markets
+- trade houses, freight syndicates, insurers, brokers, mining combines
+- modern supply-chain law
+- early UniNet federation from relay/news/market systems
+- increasing distinction between information movement and physical-goods
+  movement
+- professional guild influence across borders
+
+ERA VI — FIVE-POWER SETTLEMENT & LONG STABILITY
+700-829 AS
+Key developments include:
+- modern five-power political settlement
+- mature treaty law
+- IGG constitutional/mandate revisions
+- Zero Space receives a distinct 0.0 legal/security meaning
+- Great Cartographic Revision
+- stable shared system IDs and charts
+- deep professional institutions and academies
+- long-term archive recovery
+- GSC reserve/settlement reforms
+- UniNet common relay and identity standards
+
+ERA VII — FRONTIER CENTURY
+830-949 AS
+Key developments include:
+- authoritative 200-system Known Space model stabilizes
+- 120 faction-controlled systems
+- 80 Zero Space systems
+- recurring Zero Space settlement, abandonment, salvage, piracy, and industry
+- sovereignty/jurisdiction disputes
+- Guild Congress at Crossroads
+- exploration-claim and rescue standards
+- persistent Rift destinations scientifically confirmed
+- "Riftspace" becomes the specialist operational term
+- Adaptive Systems Architecture begins emerging as a research concept
+
+ERA VIII — LATE MODERN AGE
+950-1049 AS
+Key developments include:
+- advanced regional economic telemetry
+- modern UniNet federation reforms
+- expansion of survey/exploration institutions
+- mature ship and module markets
+- strengthened GDF frontier doctrine
+- renewed debate over player/guild/alliance sovereignty in eligible Zero Space
+- resilient GSC settlement infrastructure
+- deeper Gate/Rift research without solving the oldest mysteries
+
+ERA IX — CURRENT TENSION
+1050-1087 AS
+Key developments include:
+- increasing frontier anomaly activity
+- Vanta criminal-network resurgence
+- IGG independence reaffirmed
+- new Kepler surveys and development
+- unusual route incidents
+- Verge Echo / related classified concern
+- growing sense that the long post-Severance equilibrium is changing
+
+1087 AS:
+HELION begins at Kepler.
+
+======================================================================
+SECTION 4 — GOVERNMENT / SOCIETY IMPLICATIONS OF THE 900-YEAR CHANGE
+======================================================================
+
+The five major powers are now mature civilizations, not temporary emergency
+administrations.
+
+CURRENT MAJOR POWERS:
+- Helion Commonwealth
+- Solar Directorate
+- Free Systems Compact
+- Meridian League
+- Aurelian Synod
+
+Implications:
+- each has centuries of law, politics, bureaucracy, military doctrine, culture,
+  fashion, education, myths, and internal factions;
+- citizens know the Severance historically rather than personally;
+- different societies interpret the Severance through distinct national myths;
+- political systems have had time for reform, crisis, schism, restoration,
+  constitutional change, and institutional tradition;
+- minor polities, independent stations, enclaves, frontier communities, and
+  professional guilds have equally deep local histories.
+
+Do not write current governments as if they formed only a few decades ago
+unless describing a specific modern administration or reform.
+
+======================================================================
+SECTION 5 — IGG CHANGES AND CLARIFICATIONS
+======================================================================
+
+CURRENT:
+Inter-Galactic Governance (IGG)
+
+TYPE:
+Independent treaty authority / interstellar service framework.
+
+NOT:
+- a single galactic government
+- a sixth major sovereign faction
+- owner of faction systems
+- owner of Zero Space
+- ordinary domestic police
+
+COEQUAL ARMS:
+- INSA
+- Gatewatch
+- GDF
+
+AUTHORITY:
+Mandate- and treaty-based.
+
+FACTION SPACE:
+IGG may operate through:
+- Crossroads Charter rights
+- accession treaties
+- Gate stewardship
+- transnational warrants
+- emergency powers
+- joint-security mandates
+
+ZERO SPACE:
+IGG has no standing civil sovereignty merely because an IGG ship/fleet or
+mission is present.
+
+Nine-century implication:
+IGG has centuries of precedent, reforms, audits, scandals, rescue operations,
+classified history, institutional culture, and political controversy.
+
+======================================================================
+SECTION 6 — GALAXY / WORLD-MODEL CHANGES
+======================================================================
+
+AUTHORITATIVE KNOWN SPACE:
+Exactly 200 persistent systems.
+
+FACTION ALLOCATION:
+- Helion Commonwealth: 27
+- Solar Directorate: 25
+- Free Systems Compact: 25
+- Meridian League: 23
+- Aurelian Synod: 20
+
+Faction-controlled total: 120
+
+ZERO SPACE:
+80 systems
+
+KNOWN SPACE TOTAL:
+200 systems
+
+SUPERSEDED INTERIM IMPLEMENTATION TARGET:
+An older Batch 14 v0.17 execution stage allowed at least 80 / approximately
+90 seeded systems.
+
+CURRENT RULE:
+That ~90-system target is historical implementation staging only.
+It does NOT reduce canon.
+Current Batch 14 completion requires the exact 200-system authoritative model.
+
+RIFTSPACE:
+Outside the 200-system count.
+
+FUTURE RIFTSPACE CONTENT TARGET:
+Approximately 48 initial persistent systems.
+48 is a content target, not an engine maximum and not a current Batch 14
+requirement.
+
+======================================================================
+SECTION 7 — ZERO SPACE / SECURITY / SOVEREIGNTY CHANGES
+======================================================================
+
+Security ratings use exact 0.2 increments.
+
+CURRENT CONCEPTUAL SECURITY CATEGORIES:
+- High
+- Low
+- Zero
+- Unrated where appropriate
+
+MAJOR NPC SOVEREIGN FACTION TERRITORY:
+May contain:
+- High Security
+- Low Security
+
+Must NOT use 0.0 as ordinary permanent national heartland territory.
+
+ZERO SPACE:
+- 0.0
+- persistent Known Space
+- outside dependable normal state protection
+- may support exploration, industry, piracy, logistics, conflict, settlement,
+  and future sovereignty
+- should contain coherent corridors, pockets, basins, chokepoints, remote
+  clusters, faction-border wilderness, dangerous alternatives, backwaters,
+  and dead ends rather than one uniform outer ring
+
+PLAYER SOVEREIGNTY:
+Future eligible player organizations may claim eligible Zero Space.
+The security rating remains 0.0.
+
+NON-NATIONAL NPC CONTROL:
+Future eligible non-national NPC powers may be allowed contestable Zero Space
+holdings if explicitly implemented.
+Such control is not equivalent to permanent major-faction national territory.
+
+======================================================================
+SECTION 8 — SPACE DATA MODEL CHANGES
+======================================================================
+
+These concepts must remain independent rather than being collapsed into one
+"system type":
+
+1. SPACE DOMAIN
+   - Known
+   - Rift
+   - Deep Unknown or equivalent
+
+2. SECURITY CLASSIFICATION
+   - High
+   - Low
+   - Zero
+   - Unrated where appropriate
+
+3. SOVEREIGNTY
+   - major NPC faction
+   - unclaimed
+   - future player organization
+   - eligible non-national NPC where explicitly supported
+   - none
+
+4. STRUCTURE OWNERSHIP
+   - ownership of a station/installation/structure
+   - does NOT automatically imply sovereignty over the star system
+
+5. DISCOVERY / KNOWLEDGE STATE
+   - what a specific viewer actually knows about an object/system
+
+Riftspace has no ordinary system-level sovereignty.
+Owning a structure in Riftspace does not mean owning the system.
+
+======================================================================
+SECTION 9 — SURVEY / EXPLORATION KNOWLEDGE CHANGES
+======================================================================
+
+Approved knowledge progression:
+
+DETECTED
+  ->
+CLASSIFIED
+  ->
+LOCATED
+  ->
+SURVEYED
+
+The physical universe and the player's knowledge of it are separate.
+
+A server may know the full object/system truth while a commander, fleet, Guild,
+Alliance, faction, or public registry knows only some fields.
+
+Permission-filtered read models should omit unknown information rather than
+sending hidden truth to clients and merely hiding it visually.
+
+Survey information may become a persistent strategic/economic asset.
+
+======================================================================
+SECTION 10 — ECONOMY CHANGES / CLARIFICATIONS
+======================================================================
+
+CANONICAL CURRENCY:
+GSC
+
+Economy is:
+- persistent
+- regional
+- physical
+- player-influenced
+- able to operate at low population through NPC bootstrap/seeding
+
+PHYSICAL GOODS HAVE LOCATIONS.
+
+Information may travel farther/faster than physical inventory.
+
+Scarcity should come from:
+- geography
+- extraction
+- production
+- consumption
+- destruction
+- logistics
+- conflict
+- security
+- infrastructure
+- events
+- player behavior
+
+NPC market seeding is bootstrap infrastructure, not infinite canonical supply.
+
+TEST-server convenience prices are not production lore.
+
+Economic telemetry should track relevant implemented flows and may feed UniNet
+and dynamic world events.
+
+======================================================================
+SECTION 11 — SHIP / MANUFACTURER / TECHNOLOGY CHANGES
+======================================================================
+
+Maintain separation among:
+- canonical Ship Definition
+- Owned Ship Instance
+- owned/fitted module state
+- operator variant
+- visual variant
+- livery/wear
+- future modifications
+
+Do not mutate a canonical hull definition to represent one player's ship.
+
+MANUFACTURER IDENTITY AND OPERATOR IDENTITY ARE SEPARATE.
+
+CURRENT MAJOR DESIGN IDENTITIES INCLUDE:
+- Aster Dynamics
+- Ironstar Forge
+- Orion Extraction Group
+- Horizon Systems
+- Compact engineering
+- Meridian commercial design
+- Helix scientific design
+
+CURRENT HEAVY-FAMILY FUTURE NAMES:
+Combat/strategic:
+- Breaker
+- Aerie
+- Grand Aerie
+- Dominion
+
+Industrial/logistics:
+- Fleet Tender
+- Foundry Tender
+- Bulk Liner
+- Farline Liner
+
+ASA:
+Adaptive Systems Architecture is future advanced/hybrid technology direction,
+not a generic numerical power ladder.
+
+======================================================================
+SECTION 12 — TECHNOLOGY / KNOWLEDGE / MORTALITY CHANGES
+======================================================================
+
+Nine centuries of recovery DOES NOT mean all knowledge was recovered.
+
+Humanity has:
+- mature universities
+- professional academies
+- large archives
+- advanced medicine
+- mature industrial science
+- powerful computing and sensors
+- deep Gate research institutions
+- centuries of engineering practice
+
+Humanity still lacks:
+- complete pre-Severance archives
+- reliable access to many lost colonies
+- full understanding of the oldest Helion Gates
+- confirmed identity/purpose of the Architects
+- complete understanding of the Severance
+- complete understanding of the Choir
+- complete understanding of The Null
+- complete Vael knowledge
+- the final reason for Khepri migration
+
+MORTALITY RULE:
+Humans do NOT have routine clone immortality or consequence-free resurrection.
+
+Death remains meaningful.
+
+Do not introduce a clone-respawn civilization as normal HELION canon without
+an explicit future canon change.
+
+======================================================================
+SECTION 13 — CORPORATIONS, GUILDS, AND SOCIAL HISTORY
+======================================================================
+
+The 900-year revision makes corporations and guilds historical institutions,
+not brand-new organizations.
+
+Major corporate histories may span:
+- predecessor firms
+- mergers
+- bankruptcies
+- dynastic ownership
+- nationalization attempts
+- charter changes
+- wars
+- technological shifts
+- scandals
+- research programs
+- old rivalries
+
+Important corporate identities include:
+- Orion Extraction Group
+- Ironstar Forge
+- Helix Interstellar
+- Aster Dynamics
+- Horizon Systems
+- NovaGen
+- Mnemosyne Systems
+- Meridian Shipyards
+- Compact Yards
+
+Professional space guilds now have centuries-deep traditions in areas such as:
+- navigation
+- rescue
+- freight
+- exploration
+- salvage
+- engineering
+- convoy practice
+- hazard reporting
+- claims
+- insurance
+- professional discipline
+
+Guilds are not automatically sovereign governments.
+They are professional/economic/social organizations unless a specific group is
+later established otherwise.
+
+======================================================================
+SECTION 14 — UNINET / INFORMATION SOCIETY CHANGES
+======================================================================
+
+UniNet is a mature interstellar information framework, not merely a news menu.
+
+It may carry or federate:
+- public news
+- local news
+- market summaries
+- navigation advisories
+- emergency alerts
+- security notices
+- guild bulletins
+- authenticated institutional feeds
+- community information
+- exploration reports where disclosure is permitted
+
+UniNet does NOT imply that physical goods teleport or that every remote system
+has equal connectivity.
+
+Frontier latency, censorship, isolation, outages, local control, and incomplete
+coverage may still exist.
+
+======================================================================
+SECTION 15 — CURRENT GAME / ARCHITECTURE DIRECTION
+======================================================================
+
+AUTHORITATIVE GAME PATH:
+- native C++ persistent server
+- native SDL2/OpenGL C++ client
+
+LEGACY:
+- browser prototype under src/ is reference material, not a second authoritative
+  production game path
+
+SERVER AUTHORITY:
+Server owns authoritative:
+- accounts
+- profiles
+- ships
+- ownership
+- cargo
+- inventory
+- GSC/economy
+- mission completion
+- reputation
+- security
+- sovereignty
+- combat outcomes
+- persistence
+- world truth
+
+Clients request actions and render allowed state.
+
+Do not create:
+- a parallel backend
+- a second galaxy
+- a second economy
+- a second inventory
+- companion-device authority over gameplay state
+
+======================================================================
+SECTION 16 — OPERATIONAL ENVIRONMENT CHANGES
+======================================================================
+
+HELION uses:
+
+DEVELOPMENT
+  ->
+PRIVATE TEST
+  ->
+PRODUCTION
+
+PRODUCTION:
+- one canonical persistent public universe
+- continues running with zero players online except deliberate maintenance
+- state is not disposable test state
+
+PRIVATE TEST:
+- isolated from Production
+- developer and invited-tester access
+- may be reset/reseeded/restored/manipulated
+- progress is non-canonical
+
+DEVELOPMENT:
+- local/disposable
+- automated tests
+- debug/diagnostic work
+
+TEST ROLES:
+DEV_ADMIN:
+- may have secured TEST-only state manipulation for implemented systems
+
+INVITED_TESTER:
+- does NOT automatically receive developer/admin mutation privileges
+
+Production administration must remain a separate least-privilege control plane.
+
+======================================================================
+SECTION 17 — COMPANION / API DIRECTION
+======================================================================
+
+Future companion clients may include:
+- HELION Commander
+- HELION Terminal
+- HELION Flight Deck
+
+They must use shared authoritative service/read models.
+
+They must not become separate game backends.
+
+They must not gain independent gameplay authority.
+
+Public/companion interfaces should be read-first/read-mostly and permission-
+filtered.
+
+High-risk unattended gameplay automation remains deferred unless explicitly
+designed and approved.
+
+======================================================================
+SECTION 18 — ORIGINAL-IP / TERMINOLOGY RULE
+======================================================================
+
+HELION may learn from other sandbox/MMO/science-fiction designs, but current
+content must use HELION-native:
+- names
+- factions
+- institutions
+- ship roles
+- technology language
+- economy language
+- information-network language
+- geography
+- lore
+- visual identity
+
+Do not restore a superseded name just because old code, old prompts, an old
+World Bible, or another AI still contains it.
+
+In compatibility-sensitive code, separate:
+CANON DISPLAY NAME
+from
+LEGACY TECHNICAL IDENTIFIER.
+
+======================================================================
+SECTION 19 — BATCH 14 CURRENT DIRECTION
+======================================================================
+
+Older Batch 14 files contain multiple staging targets and version labels.
+
+CURRENT RULE:
+Use repository evidence to determine what is already implemented.
+
+Do not restart completed M0/M1/M2 or validated recovery work.
+
+Current Batch 14 completion direction includes:
+- preserve Batch 13 work
+- finish unfinished recovered protocol/integration work
+- exact 200-system Known Space
+- exact five-faction allocation
+- 80-system Zero Space
+- meaningful Zero Space geography
+- coherent non-sovereign IGG representation
+- separate domain/security/sovereignty/structure ownership
+- preserve compatibility and persistence
+- current GSC and UniNet terminology
+- no architectural block on future Riftspace
+- appropriate regression/security/build/package validation
+- updated documentation
+- Batch 14 completion report
+- STOP before Batch 15
+
+Do not let the older approximately-90-system interim seed become the current
+completion limit.
+
+======================================================================
+SECTION 20 — DO NOT BLINDLY SEARCH/REPLACE THESE CASES
+======================================================================
+
+A. "Unknown Space"
+Do not globally replace.
+Riftspace is a subset/operational category within the broader unknown-space
+concept.
+
+B. "credits"
+Current display/lore should say GSC, but technical fields may need migration.
+
+C. "GalNet"
+Current canon says UniNet, but old persistence/protocol/history fields may need
+compatibility handling.
+
+D. "Helion Concordat"
+Current institution is IGG, but historical source files may be retained as
+superseded project history.
+
+E. "Sidewinder"
+Retired as canon. No final canonical one-to-one replacement is yet locked.
+Do not invent one.
+
+F. "Null"
+Never convert The Null into Zero Space.
+The Null is cosmic/existential lore.
+Zero Space is ordinary 0.0 Known Space.
+
+G. old ~90 system target
+Do not delete historical references when they are clearly describing an old
+implementation milestone, but current completion/canon is 200.
+
+H. old 287 AS date
+May remain in explicitly historical/superseded source records, but all current
+canon must use 1087 AS.
+
+======================================================================
+SECTION 21 — KNOWN CONSISTENCY ITEMS TO REVIEW, NOT AUTO-CANONIZE
+======================================================================
+
+1. VEYRA CONTACT
+Some older and current compiled progression text contains:
+"Veyra Contact"
+
+The main alien canon otherwise centers on:
+- Khepri
+- Vael
+- Choir
+- The Null
+- Architects
+
+No current synchronization source clearly defines Veyra.
+
+ACTION:
+Flag "Veyra" for deliberate canon review.
+Do NOT automatically replace Khepri or Vael with Veyra.
+Do NOT expand Veyra lore until explicitly approved.
+
+2. ASTERTECH LABEL
+Some ship headings use "AsterTech" while the listed canonical manufacturer is
+Aster Dynamics.
+
+ACTION:
+Treat Aster Dynamics as the canonical corporate/manufacturer name.
+Do not globally delete AsterTech until it is decided whether it is:
+- a product marque,
+- an old label,
+- or a term to remove.
+
+3. STARTER SHUTTLE FINAL NAME
+"Starter Shuttle" is currently safe generic wording, not necessarily a final
+named hull.
+
+ACTION:
+Do not invent a final name without approval.
+
+======================================================================
+SECTION 22 — AI UPDATE PROCEDURE
+======================================================================
+
+When using this file to update another HELION document/repository:
+
+STEP 1
+Identify whether the target file is:
+- current maintained canon
+- current maintained engineering documentation
+- compatibility-sensitive code/data
+- historical/superseded archive
+
+STEP 2
+For current maintained canon/docs:
+Apply the canonical terminology and 1087 AS chronology.
+
+STEP 3
+For code/save/protocol/database identifiers:
+Do not rename blindly.
+Determine compatibility impact first.
+
+STEP 4
+For historical files:
+Preserve old wording if needed, but mark it clearly superseded rather than
+allowing it to masquerade as current canon.
+
+STEP 5
+Update cross-references to the current working sources:
+- HELION_World_Bible_draftcomp6.txt
+- HELION_ACTIVE_GOAL_v0.20.md
+- HELION_Batch14_Gemini_Handoff_v0.20.md
+
+STEP 6
+Search for stale current-use terms:
+- Helion Concordat
+- GalNet
+- generic user-facing credits
+- Concordia
+- Titan Forge
+- New Eden
+- Sidewinder
+- nullsec
+- Null Security as a region name
+- present year 287 AS
+- "one century after the Severance"
+- "roughly a century after the Severance"
+- approximately-90 systems presented as final canon
+- World Bible v0.10 presented as current authority
+
+STEP 7
+Review each hit semantically.
+Do not perform destructive global replacements on compatibility-sensitive or
+historical material.
+
+STEP 8
+After updates, verify that the target documents agree on:
+- 187 AS Severance
+- 1087 AS present
+- 900-year interval
+- IGG
+- UniNet
+- GSC
+- Crownspire
+- Ironstar Forge
+- Verdance
+- Zero Space vs The Null
+- 200 Known Space systems
+- exact faction allocation
+- Riftspace outside Known Space
+- ASA terminology
+- native C++ server/client authority
+- Batch 14 current completion target
+
+======================================================================
+SECTION 23 — COMPACT MACHINE-READABLE REPLACEMENT LIST
+======================================================================
+
+STRICT CURRENT-CANON REPLACEMENTS:
+
+"Helion Concordat" -> "Inter-Galactic Governance (IGG)"
+"GalNet" -> "UniNet"
+"Concordia" [Commonwealth capital] -> "Crownspire"
+"Titan Forge" -> "Ironstar Forge"
+"New Eden" [lost colony] -> "Verdance"
+"credits" [user-facing currency] -> "Galactic Standard Credit (GSC)"
+"nullsec" [region name] -> "Zero Space"
+"Null Space" [0.0 region] -> "Zero Space"
+"287 AS" [current/game-start year] -> "1087 AS"
+"~100 years after the Severance" -> "900 years after the Severance"
+"approximately 90 systems" [final Known Space target] -> "200 systems"
+
+SCOPED / NON-GLOBAL REPLACEMENTS:
+
+"Unknown Space" [persistent Rift-reached systems] -> "Riftspace"
+"Adaptive Technology" [formal discipline name] ->
+    "Adaptive Systems Architecture (ASA), commonly Adaptive Technology"
+"Sidewinder" [current lore-facing starter hull] ->
+    "starter shuttle" / TBD final HELION-native hull name
+"Null Security" [proper region label] -> "Zero Space / Zero security"
+
+NO AUTOMATIC REPLACEMENT:
+- Veyra
+- AsterTech
+
+======================================================================
+SECTION 24 — CURRENT CANON CHECKSUM
+======================================================================
+
+If an AI's updated file contradicts any of the following, it is likely stale:
+
+- Severance = 187 AS
+- Game start/current era = 1087 AS
+- Exactly 900 years post-Severance
+- IGG is the current umbrella institution
+- INSA + Gatewatch + GDF are coequal IGG arms
+- IGG is non-sovereign
+- UniNet is the current information/news network
+- GSC is the currency
+- Crownspire is Commonwealth capital
+- Ironstar Forge is the heavy military/industrial manufacturer
+- Verdance is the renamed lost agricultural colony
+- Known Space = 200 systems
+- Major-faction systems = 120
+- Zero Space = 80
+- Commonwealth = 27
+- Directorate = 25
+- Compact = 25
+- Meridian = 23
+- Synod = 20
+- Zero Space = 0.0 Known Space frontier
+- The Null != Zero Space
+- Riftspace is outside the 200 Known Space systems
+- approximately 48 Riftspace systems is future content direction only
+- domain/security/sovereignty/structure ownership/knowledge are separate
+- survey knowledge progression = DETECTED -> CLASSIFIED -> LOCATED -> SURVEYED
+- ASA is the formal advanced/hybrid technology discipline
+- humans do not have routine clone immortality
+- native C++ server/client is the authoritative game architecture
+- browser prototype is legacy reference
+- current Batch 14 completion target is exact 200-system Known Space, not ~90
+- Batch 15 must not begin until Batch 14 is completed and explicitly approved
+
+======================================================================
+END OF HELION CANON CHANGELOG / AI SYNCHRONIZATION FILE v0.20
+======================================================================
+
+======================================================================
+SECTION 25 — DRAFTCOMP7 LIVING-UNIVERSE EXPANSION
+======================================================================
+
+Current primary World Bible:
+HELION_World_Bible_draftcomp7.txt
+
+DraftComp7 adds working-canon social density across the existing setting.
+
+NEW CANON CATEGORIES:
+- current political leaders for all five major powers
+- current IGG leadership
+- military commanders and recurring service characters
+- historical figures spanning the nine-century recovery
+- famous civilian pilots and crews
+- notorious criminals and pirates
+- unresolved/mysterious identities
+- cults, sects, mutual-aid orders, and strange movements
+- professional space guilds
+- famous fleets and military formations
+- corporate executives, boards, and internal factions
+- everyday service companies and consumer brands
+- advertising language and popular culture
+- UniNet outlets and media personalities
+- recurring ordinary workers and station residents
+- shipboard crew culture and spacer traditions
+- broader societal distinctions among the major powers
+- a living-world UniNet story structure using competing partial voices
+
+IMPORTANT:
+These additions are worldbuilding canon, not a claim that every person,
+business, fleet, guild, media outlet, product, or cultural system is already
+implemented in the native game.
+
+PROTECTED MYSTERIES REMAIN PROTECTED.
+
+OTHER AI UPDATE RULE:
+When updating related lore documents, preserve these names and broad identities
+unless a later approved revision replaces them.
+
+When updating engineering documents, mention the new people/institutions only
+where relevant. Do not expand Batch 14 scope merely because DraftComp7 contains
+richer setting material.
+
+======================================================================
+END v0.20 ADDITION
+======================================================================
+
+======================================================================
+SECTION 26 — NEW DRAFTCOMP7 APPROVED NAME SET
+======================================================================
+
+The following names are newly introduced working canon in DraftComp7.
+Preserve broad identity when synchronizing lore files.
+
+PRESENT POLITICAL FIGURES:
+Mara Venn; Jonas Pell; Ilyan Kess; Nadiya Sorn; Tamsin Ree; Kael Arden;
+Selene Ors; Ravi Meren; Dr. Seren Avar; Leora Nem; Mae Orin.
+
+IGG:
+Nia Calder; Maelis Kade; Dr. Aya Qel; High Admiral Rhea Torren; Tomas Vey;
+Blackstar Marshal Sera Kain.
+
+MILITARY/SERVICE:
+Joren Pell; Esi Vale; Yara Senn; Aric Dane; Ella "Patch" Marrek; Bato Renn;
+Sula Krev; Jen Orlo; Oren Daia; Ilse Navar.
+
+HISTORICAL:
+Dr. Talia Merrow; Amos Rhyne; Dr. Neva Calder; Oren Venn; Mira Kess;
+Arlen Thatch; Saela Torr; Dr. Ilya Auren; Armand Kell; Esi Torren;
+Jorel Vale; Mira Sol; Arden Orion; Tomas Iron; Dr. Nera Horizon;
+Lina Meridian; Hadi Renn; Veya Noll; Dr. Oren Qel.
+
+FAMOUS/INFAMOUS/MYSTERIOUS:
+Lio Vara; The Caldera Three; Ren "Kite" Soral; Jo Venn; The Nine Bells Crew;
+Mara "Dust" Kel; Isa Ren; Dax Orin; Mara "Silk" Ves; The Ledgerman;
+Jace Korrin "The Cinder King"; Myla Rook; Mr. Pale; Elen "Three Routes" Marr;
+Vorr Sane; The Glass Navigator; Passenger 44; The Woman at Verdance;
+The Grey Cartographer; The Eleventh Voice; Dr. Sable Ren.
+
+GROUPS:
+Order of Last Light; The Still Path; The Quiet Zero; The Returned Map;
+The Null Witnesses; Broken Ring Fellowship; Interstellar Navigators' Guild;
+Shipwrights' League; Longhaul Association; Salvage & Recovery Guild;
+Independent Prospectors' Union; Void Medical College; Cartographers' Assembly;
+Free Commanders' Mutual.
+
+COMMERCIAL/SERVICE:
+Blue Lantern Mutual; Hearthline Provisions; Brightwater Beverage Co.; PatchBay;
+Gateway Sleep Pods; Longhaul Trust; Merrick, Vale & Orr; VacSafe;
+Orbital Laundry Cooperative; Farlight Funeral & Return; Needlepost Courier;
+Open Hand Remittance; Dock Nine Employment Exchange.
+
+MEDIA:
+UniNet Public Wire; The Crownspire Standard; Solar Continuity Service;
+Compact Relay; Meridian Exchange Wire; Aurelian Review; Freeband; ZeroWire.
+
+FLEETS/FORMATIONS:
+GDF Open Road Group / "The Lantern Fleet";
+GDF Vesper Group;
+Commonwealth Fourth Service Fleet / "Crownwatch";
+Directorate Ninth Strategic Group / "The Quiet Line";
+Compact Auxiliary Flotilla 12 / "The Patchwork";
+Meridian Route Security Group Gold / "Golden Wake";
+Aurelian Observation Escort / "Quiet Array".
+
+DO NOT infer from inclusion that all of these are already implemented gameplay.
+
+======================================================================
+END SECTION 26
+======================================================================

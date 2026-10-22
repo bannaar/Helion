@@ -96,7 +96,7 @@ For a system-wide Debian install:
 
 ```sh
 sudo useradd --system --home /var/lib/helion --shell /usr/sbin/nologin helion
-sudo install -d -o helion -g helion -m 0750 /var/lib/helion
+sudo install -d -o helion -g helion -m 0700 /var/lib/helion
 sudo install -d -o root -g helion -m 0750 /etc/helion
 ```
 
@@ -130,8 +130,8 @@ Then generate the key and certificate:
 sudo openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 365 \
   -config /etc/helion/cert.conf \
   -keyout /etc/helion/server.key -out /etc/helion/server.crt
-sudo chown root:helion /etc/helion/server.key /etc/helion/server.crt
-sudo chmod 0640 /etc/helion/server.key
+sudo chown helion:helion /etc/helion/server.key /etc/helion/server.crt
+sudo chmod 0600 /etc/helion/server.key
 sudo chmod 0644 /etc/helion/server.crt
 ```
 
@@ -142,11 +142,17 @@ Tailscale identity.
 
 ## 5. Verify manually before enabling a service
 
-LAN-only bind (replace the address):
+Production manual validation (replace the address):
+
+The service example selects Production. Use that same explicit environment for
+this check, with an absolute data path, service-owned `0600` key and `0700` state
+directory. Do not first tag its directory as DEVELOPMENT. For disposable
+DEVELOPMENT checks use a separate directory and credentials; never retag or copy
+TEST state into Production. See [Production operations](production-operations.md).
 
 ```sh
 sudo -u helion /usr/bin/helion_server 4242 /var/lib/helion/commander.db \
-  --environment development --bind 192.168.1.50 \
+  --environment production --bind 192.168.1.50 \
   --cert /etc/helion/server.crt --key /etc/helion/server.key
 ```
 
@@ -279,7 +285,11 @@ application TLS enabled and do not add a public firewall rule.
 
 ## 11. Backup, upgrade, and uninstall
 
-Stop the service for a consistent backup:
+Stop the service for a consistent backup. Production shutdown checkpoints and
+creates a verified immutable backup under `.helion-backups`; follow
+[Production backup verification and restore planning](production-operations.md#production-backups-and-restore-verification).
+The archive below is an additional sensitive filesystem/configuration copy,
+not a verified HELION backup envelope or a destructive restore procedure:
 
 ```sh
 sudo systemctl stop helion-server
@@ -290,7 +300,10 @@ sudo systemctl start helion-server
 
 Upgrade by installing the new package over the old one. Packages do not own or
 delete `/var/lib/helion`, `/etc/helion`, or client preferences, so the database,
-TLS material, and `~/.config/helion/client.conf` survive upgrades.
+TLS material, and `~/.config/helion/client.conf` survive upgrades. This describes
+package ownership behavior; TEST-first migration/release and failed-deployment
+recovery rehearsal remain unstarted M8 work. Do not infer arbitrary version
+compatibility or a supported reverse migration from file preservation.
 
 Remove binaries without silently deleting player data:
 

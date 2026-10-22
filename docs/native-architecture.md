@@ -1,5 +1,9 @@
 # Native gameplay ownership boundaries
 
+Current canon is [DraftComp8](lore/HELION_World_Bible_draftcomp8.txt); this guide
+describes source-level ownership. UniNet and GSC are current prose names; legacy
+`GALNET`/`GalNetEvent`/`credits` symbols and executable labels remain unchanged.
+
 The native C++ server is the authoritative public-game foundation. The native
 client renders and requests actions; it never owns flight, combat, inventory,
 economic, or progression outcomes. The TypeScript/browser runtime remains a
@@ -22,7 +26,7 @@ from the existing client `View`; it contains copied player, station, asteroid,
 contact, target, feedback, and HUD state but has no networking, authority, or
 OpenGL ownership. Static and bounded dynamic geometry are separate GPU paths.
 The core path separates world geometry, geometric HUD indicators, textured
-bitmap text, and recent-message/GalNet presentation. `TextRenderer` owns one
+bitmap text, and recent-message/UniNet presentation. `TextRenderer` owns one
 bounded font atlas and one batched six-vertex quad per visible glyph; the GLSL
 text shader samples the glyph mask and multiplies it by the requested color.
 It consumes snapshot/log data but never sends commands or creates authoritative
@@ -40,14 +44,14 @@ Core text is deliberately small: a checked-in 5x7 bitmap alphabet is packed
 once into a 96x48 RGBA atlas with padded six-by-eight cells. Unsupported
 characters become `?`, UTF-8 sequences are bounded to one fallback glyph, and
 generated strings are clipped to fixed character/vertex bounds. This is
-sufficient for the current cockpit, mission, reputation, GalNet, and combat
+sufficient for the current cockpit, mission, reputation, UniNet, and combat
 feedback, but is not a general Unicode, font-download, or text-shaping
 subsystem.
 
 The Batch 8 core gameplay test keeps two concerns explicit. A TLS socket
 harness drives authoritative account, mission, mining, docking, combat,
 recovery, and reconnect predicates. Deterministic render fixtures then verify
-normal, mining, target, combat, docked, destroyed, and GalNet presentation
+normal, mining, target, combat, docked, destroyed, and UniNet presentation
 states through the real 3.3-core client path. This avoids making graphical
 automation depend on uncontrolled gameplay timing while still testing the
 authoritative loop and the renderer separately.
@@ -55,7 +59,7 @@ authoritative loop and the renderer separately.
 Batch 9 extends the same boundary with `UiState`. The client owns only bounded
 navigation/focus state and presentation-ready copies of server responses:
 connection status, profile fields, market rows derived from the shared station
-catalogue, mission identity/progress, owned/fitted module identifiers, GalNet
+catalogue, mission identity/progress, owned/fitted module identifiers, UniNet
 events, options, graphics diagnostics, and recent status messages. The core
 renderer receives that copy through `PresentationSnapshot`; it does not read
 network sockets, send commands, validate prices, or mutate persistence.
@@ -85,7 +89,7 @@ completion, and the persisted vertical-slice completion marker. First Ore
 continues using its original mission fields for compatibility; the appended
 career record owns the later stages and onboarding dismissal. The server alone
 changes stages, delivery cargo, rewards, reputation, combat completion, and
-GalNet state. The client displays copies through `UiState` and the core
+UniNet state. The client displays copies through `UiState` and the core
 cockpit.
 
 Career persistence is `career-v1 supply response purchased intro complete`,
@@ -103,7 +107,7 @@ stable ID; hull definitions remain immutable shared data. The legacy commander
 record projects the active vessel for backward compatibility, while `S` records
 persist the authoritative fleet. The ownership boundaries are:
 
-- **COMMANDER:** identity, credentials, credits, XP, progression, and future
+- **COMMANDER:** identity, credentials, GSC, XP, progression, and future
   guild membership.
 - **SHIP:** each owned instance has its own `flight::State` (hull, fuel, cargo,
   position and docking), upgrades, modules, visual variant, livery, wear, and storage state.
@@ -143,13 +147,13 @@ back with rewards when an atomic save fails.
 
 The First Ore contract is issued by Orion under Kepler Authority jurisdiction.
 The current hostile is a Red Wake raider. Vanta is present only as a
-registered organization and future-career hook. Deterministic GalNet events
+registered organization and future-career hook. Deterministic UniNet events
 are persisted only when these real state transitions occur. The canonical
 setting source is
-[`docs/lore/HELION_World_Bible_v0.10.docx`](lore/HELION_World_Bible_v0.10.docx);
+[World Bible DraftComp8](lore/HELION_World_Bible_draftcomp8.txt);
 it is a design source, not a claim that its later guild, alien, industry,
-station, security, Concordat, or territorial systems are implemented. The
-older v0.2 text remains historical reference material only.
+station, security, IGG, or territorial systems are implemented. The
+older v0.10 and v0.2 files remain historical reference material only.
 
 ## Extension path
 

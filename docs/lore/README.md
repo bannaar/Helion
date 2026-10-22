@@ -1,125 +1,91 @@
-# Helion world-bible integration
+# HELION canon and provenance
 
-The canonical setting and gameplay source is HELION World Bible v0.10, stored in
-both [`HELION_World_Bible_v0.10.md`](HELION_World_Bible_v0.10.md) and
-[`HELION_World_Bible_v0.10.docx`](HELION_World_Bible_v0.10.docx). Version 0.10
-is the current development canon, not a claim that every described system is
-already implemented. [`world-bible-v0.2.txt`](world-bible-v0.2.txt) is retained
-as a historical reference and must not override later canon.
+[World Bible DraftComp8](HELION_World_Bible_draftcomp8.txt) is the current working
+canon master. [Canon synchronization v0.21](HELION_CANON_CHANGELOG_AI_SYNC_v0.21.txt)
+provides the current checksum and terminology rules. The
+[canon/document reconciliation](../development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md)
+records the October 2026 audit, retained identifiers and unresolved questions.
 
-## Canonical rule
+World Bible controls lore; actual source/tests and
+[BATCH14_EXECUTION.md](../development/BATCH14_EXECUTION.md) control implementation
+truth. Active engineering instructions control authorized work. Richer canon is
+not evidence that gameplay exists. Batch 14 M0–M7 are complete; M8 and M9 are not
+started; Batch 14 is not complete; Batch 15 is not started.
 
-Lore should generate gameplay. New narrative material should identify the
-player action, simulation state, reward or consequence, and the runtime that
-owns that state. Browser and native implementations may arrive at different
-times, but they should use the same names and rules.
+## Current canon checksum
 
-## Canonical vocabulary
+The Severance occurred in **187 AS**. The present/game-start era is **1087 AS**,
+exactly **900 years after the Severance**. Known Space contains exactly **200
+persistent systems**, comprising **120 faction-controlled** and **80 Zero Space**:
 
-| Domain | Canonical entities |
+| Allocation | Systems |
+| --- | ---: |
+| Helion Commonwealth | 27 |
+| Solar Directorate | 25 |
+| Free Systems Compact | 25 |
+| Meridian League | 23 |
+| Aurelian Synod | 20 |
+| Zero Space | 80 |
+
+Zero Space is the persistent 0.0 Known Space frontier, distinct from The Null and
+Riftspace. Riftspace lies outside the count; approximately 48 initial systems is
+future direction only. Unknown Space may remain a broader scientific/mystery term.
+Survey knowledge progresses `DETECTED -> CLASSIFIED -> LOCATED -> SURVEYED`;
+technical `UNDETECTED` is an initial condition, not an earned stage.
+
+| Domain | Current canon |
 | --- | --- |
-| Human powers | Helion Commonwealth, Free Systems Compact, Solar Directorate, Meridian League, Aurelian Synod; Outer Reach is a region rather than a unified nation |
-| Corporations and yards | Orion Extraction Group, Aster Dynamics, Titan Forge, NovaGen, Horizon Systems, Helix Interstellar, Compact Yards, Meridian Shipyards |
-| Criminal groups | Vanta Syndicate, Red Wake, Wayfarers' Guild, The Hollow |
-| Interstellar institution | Helion Concordat: INSA, Gatewatch, Galactic Defense Force (GDF) |
-| Security | System Security, sovereign/local law enforcement, INSA intelligence, Blackstar Marshals |
-| Military | GDF, Commonwealth Navy, Directorate Fleet, Compact Mutual Defense Fleet, Meridian Security Fleet |
-| Alien civilizations / phenomena | Khepri, Vael, Choir, Null |
-| Alien-space systems | Helion Gates, Rifts, Unknown Space, the Veil |
+| Treaty/service framework | Inter-Galactic Governance (IGG), non-sovereign, not a sixth faction or owner of territory |
+| Coequal IGG arms | INSA, Gatewatch, Galactic Defense Force (GDF) |
+| Retained charter and phrase | Crossroads Charter; “INSA knows. Gatewatch understands. The GDF acts.” |
+| Information network | UniNet |
+| Currency | Galactic Standard Credit (GSC) |
+| Commonwealth capital | Crownspire |
+| Heavy military/industrial manufacturer | Ironstar Forge |
+| Lost agricultural colony | Verdance |
+| Advanced/hybrid discipline | Adaptive Systems Architecture (ASA); Adaptive Technology colloquially |
 
-Use these names in UI copy, protocol-visible labels, test fixtures, mission
-data, GalNet stories, reputation keys, and save migrations. Avoid parallel
-placeholder factions once a canonical equivalent exists.
+Humans do not have routine clone immortality or consequence-free resurrection.
+Protected mysteries remain unresolved. Veyra, the AsterTech marque question and
+the final HELION-native starter hull name remain deliberate canon review items.
 
-## Existing implementation alignment
+## Implementation and future design
 
-| Existing Helion feature | World-bible role | Integration status |
-| --- | --- | --- |
-| Kepler starting sector | Quiet frontier system where the opening career begins | Implemented foundation |
-| First Ore mission and mining loop | Orion Extraction Group introduction | Native contract issued by Orion under Kepler jurisdiction |
-| Station markets and hauling | Meridian-style trade and dynamic economy foundation | Implemented foundation |
-| Raiders and combat rewards | Vanta/Red Wake criminal pressure and bounty progression | Native Red Wake encounter, rewards, and standing changes |
-| Police and hostile contacts | System security, wanted state, interdiction, and bounty response | Browser foundation; native expansion pending |
-| GalNet news and chat | Simulation events, opportunities, political change, and alien escalation | Native deterministic transition events |
-| Reputation | Standing with powers, local authorities, corporations, and criminal groups | Native bounded multi-organization foundation |
-| Alien contacts | Khepri disposition and Vael archaeological progression | Browser foundation; staged native work |
+The authoritative game is a native C++ persistent server and native SDL2/OpenGL
+client. `src/` is legacy browser reference, not another production runtime or
+persistent universe. The server owns authoritative gameplay, environment and
+roles; clients and optional companions consume allowed data and request actions.
 
-## Implementation order
+DEVELOPMENT is local/disposable; PRIVATE TEST is isolated, noncanonical and
+resettable; PRODUCTION is canonical persistent state. TEST DEV_ADMIN authority
+never implies Production mutation authority; invited testers are not automatically
+administrators. See [TEST administration](../private-test-admin.md) and
+[Production operations](../production-operations.md) for implemented boundaries.
 
-### Phase 1 — Kepler career identity
+The future [AI Core design](../design/SHIP_AI_CORES.md),
+[roadmap](../development/HELION_ROADMAP.md) and
+[alpha/launcher plan](../development/ALPHA_READINESS.md) are direction only.
+Neither AI Cores nor the full player launcher is implemented. The existing
+local-play helper remains a DEVELOPMENT server/client startup tool.
 
-- Present First Ore as an Orion Extraction Group contract.
-- Give Kepler Authority a local reputation track distinct from major powers.
-- Attach canonical issuer, jurisdiction, legality, and reputation effects to
-  every mission.
-- Use GalNet to report mining output, pirate activity, market shortages, and
-  local security changes produced by real simulation state.
+Use current canon names in prose. Preserve compatibility-sensitive wire/save IDs,
+migration fixtures and stable identifiers until separately authorized migrations.
+For example, `credits`, `GALNET`, `CONCORDIA`, `TITAN_FORGE`, `TITAN_MULE` and
+`SIDEWINDER` do not define current lore wording. Existing executable display
+terminology debt is documented, not silently renamed in this checkpoint.
 
-### Phase 2 — Security, crime, and corporations
+## Historical sources
 
-- Add legal, restricted, and prohibited cargo categories by jurisdiction.
-- Add fines, bounties, scans, interdictions, and escalating wanted responses.
-- Introduce Vanta Syndicate and Red Wake missions as alternative career paths.
-- Associate equipment families and progression unlocks with corporations.
+[DraftComp7](history/HELION_World_Bible_draftcomp7.txt) and
+[canon sync v0.20](history/HELION_CANON_CHANGELOG_AI_SYNC_v0.20.txt) are preserved
+historical sources, including the full living-universe expansion. Only DraftComp7’s
+final empty line is normalized in the repository copy; the Desktop original is
+unchanged. Source/copy hashes and status are in the [history index](history/README.md).
 
-### Phase 3 — Regional economy and conflict
-
-- Drive prices from war, famine, construction, piracy, and supply events.
-- Add faction and corporation contracts with consequences for competing
-  standings.
-- Expand military careers, permits, restricted systems, and naval equipment.
-
-### Phase 4 — Rifts and first contact
-
-- Introduce unstable rifts as exploration hazards before routine alien combat.
-- Implement Khepri disposition as observable behavior, not a simple red/blue
-  faction flag.
-- Make research, restraint, salvage, diplomacy, and aggression viable player
-  choices with persistent consequences.
-
-### Phase 5 — Unknown Space and the Vael
-
-- Add expeditions, archaeological sites, translation, Veil interactions, and
-  controlled recovery of Vael technology.
-- Gate late-game alien technology behind knowledge, materials, reputation,
-  risk, and political consequences.
-
-## Data-contract guidance
-
-Future shared data should use stable lowercase identifiers separate from
-display text. Suggested namespaces:
-
-```text
-faction.commonwealth
-faction.compact
-faction.directorate
-faction.meridian
-authority.kepler
-corp.orion
-corp.aster
-corp.titan
-corp.novagen
-corp.horizon
-corp.helix
-criminal.vanta
-criminal.red_wake
-alien.khepri
-alien.vael
-```
-
-Reputation should support multiple simultaneous layers: major power, local
-authority, corporation, criminal organization, military branch, and alien
-disposition. Save formats and network protocols should transmit identifiers
-and numeric state; clients own presentation text.
-
-## Contribution checklist
-
-When implementing an item from the Bible:
-
-1. Cite the relevant Bible section in the issue or pull request.
-2. Declare the authoritative runtime and persistence owner.
-3. Define player action, validation, state transition, reward, and failure.
-4. Add deterministic tests for rules that affect economy, combat, reputation,
-   crime, or progression.
-5. Update project-state documentation without marking later Bible phases as
-   already implemented.
+[Historical World Bible v0.10 Markdown](HELION_World_Bible_v0.10.md),
+[v0.10 DOCX](HELION_World_Bible_v0.10.docx) and
+[v0.2 text](world-bible-v0.2.txt) remain unchanged historical/provenance material.
+Old institution, network, manufacturer, chronology and currency wording in these
+files is superseded. Their own historical “current” statements do not override
+DraftComp8 or the v0.21 synchronization rules. Historical prompts/handoffs likewise
+remain evidence of earlier work rather than current development authority.

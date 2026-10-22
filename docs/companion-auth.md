@@ -2,6 +2,14 @@
 
 Status: native-server authentication foundation for companion clients such as HELION Commander.
 
+Companion hardware is optional. HELION Commander, HELION Terminal, HELION Flight
+Deck and future mobile/cockpit/cyberdeck interfaces are product direction, not
+implemented clients or independent game backends. They must consume permission-
+filtered authoritative data; a UI's ability to conceal information never justifies
+receiving hidden truth. No companion token grants Production administrator
+authority. See [DraftComp8](lore/HELION_World_Bible_draftcomp8.txt) and the
+[future AI Core design](design/SHIP_AI_CORES.md) for direction, not additional scope.
+
 ## Purpose
 
 The native game login uses a username and password on each TLS connection. Companion clients must not persist the player's game password merely to reconnect.

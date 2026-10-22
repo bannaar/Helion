@@ -1,3 +1,17 @@
+HISTORICAL ENGINEERING SOURCE — v0.11 (retained body below)
+=========================================================
+This source records earlier Batch 14 instructions, not current canon authority
+or implementation status. Its references to World Bible v0.10 and superseded
+names are historical. Current canon: ../lore/HELION_World_Bible_draftcomp8.txt;
+checksum: ../lore/HELION_CANON_CHANGELOG_AI_SYNC_v0.21.txt; reconciliation:
+HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md. Active user instructions control
+engineering scope; source/tests and BATCH14_EXECUTION.md control implementation.
+As of 2026-10-22 M0-M7 are complete, M8/M9 not started, Batch 14 not complete,
+Batch 15 not started. Read HELION_ROADMAP.md for current sequencing. No historical
+prompt overrides newer approved direction. No milestone is started by this notice.
+
+BEGIN UNCHANGED HISTORICAL BODY
+==============================
 HELION BATCH 14
 OUTFITTING, MODULES, REGIONAL MARKET FOUNDATION, SYSTEM SECURITY,
 BINARY PROTOCOL, CLIENT STATE ARCHITECTURE, TEST INFRASTRUCTURE & PERSISTENT ONLINE SERVICE FOUNDATIONS

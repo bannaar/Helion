@@ -1,12 +1,16 @@
 # Helion native server and OpenGL client
 
+Current prose uses UniNet and GSC. Executable display labels may still read
+“GalNet” or “Credits”; literal `GALNET`/`credits` protocol/save keys and render
+fixture names remain unchanged. See the [v0.21 reconciliation](../docs/development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md).
+
 This standalone C++17 pair uses TLS over POSIX TCP sockets. The client opens an SDL2
 window with an OpenGL compatibility-profile fixed-function gameplay renderer
 (OpenGL 3.0 compatibility first, OpenGL 2.1 fallback). The OpenGL 3.3 core
 renderer presents live Kepler flight state with procedural VAO/VBO geometry,
-batched bitmap text, and a compact cockpit/HUD; legacy remains the default
-gameplay path. The client includes a playable top-down mining sector with
-server-authoritative flight and saved payouts.
+batched bitmap text, and a compact cockpit/HUD. Auto selection attempts hardware
+core first and recreates a clean legacy context on failure. The client includes a
+playable top-down mining sector with server-authoritative flight and saved payouts.
 Networking and the command parser remain
 usable from a terminal with `--terminal`.
 
@@ -34,7 +38,9 @@ portable archives, desktop launch, and dedicated-server setup. Build packages
 with `cmake --build build-native --target package`, or install with
 `cmake --install build-native --prefix /your/prefix`. The combined install
 provides `helion-play`, which creates a private local TLS certificate, starts
-the server, opens the client, and stops the server when the client exits.
+a DEVELOPMENT server, opens the client, and stops the server when the client exits.
+This is the local-play launcher/helper, not the future full player launcher; see
+[alpha readiness](../docs/development/ALPHA_READINESS.md).
 
 For manual development, first generate a local certificate:
 
@@ -59,7 +65,7 @@ password`, `/companion issue`, `/companion auth token`, `/companion list`,
 `/repair`, `/refuel`, `/outfit LIST|BUY|FIT|REMOVE`,
 `/shipyard LIST|OWNED|BUY hull-id|SWITCH instance-id`, `/launch`, `/flight`,
 `/input thrust turn brake`, `/mine`, `/dock`, and `/quit`.
-The optional server data-file stores commander profiles and GalNet
+The server persistence file stores commander profiles and UniNet
 messages durably and is replaced atomically after each write.
 
 Each data file has a persistent owner-only `.lock` sidecar. Only one server
@@ -78,17 +84,17 @@ directory private to the server user.
    the starter hold carries **8 units** and other hulls use their registry
    capacity. Asteroids are renewable in this first sector.
 4. Return to the amber base marker on the radar. Within **85 m** at less
-   than **35 m/s**, press **F** to dock and sell your cargo for **60 credits
-   and 5 XP per unit**. A full trip pays **480 credits and 40 XP**.
+   than **35 m/s**, press **F** to dock and sell your cargo for **60 GSC
+   and 5 XP per unit**. A full trip pays **480 GSC and 40 XP**.
 5. **Enter** opens the command/chat console; **Escape** closes it. Press **R**
    while docked to repair a damaged hull. Opening
    the console or losing focus brakes the ship. Credentials are masked in
    the graphical input and command log.
 
-Flight consumes fuel only while thrusting. The starter Sidewinder carries
+Flight consumes fuel only while thrusting. The starter shuttle (`SIDEWINDER` compatibility ID) carries
 100 fuel, and engine upgrades increase capacity by 20 per level. Return to a
 station and press **T** or enter `REFUEL` to fill the tank; the station charges
-2 credits per fuel unit at Kepler and 3 at Cinder. Fuel is server-owned and
+2 GSC per fuel unit at Kepler and 3 at Cinder. Fuel is server-owned and
 saved with the ship.
 
 The initial outfitting catalogue has mining, engine, defense, and weapon slots.
@@ -108,19 +114,19 @@ server-authoritative and survive reconnects.
 
 The server advances flight at a fixed 60 Hz and validates every mining and
 docking action. Clients send only bounded control inputs, never positions or
-rewards. Inputs expire after half a second. Credits, XP, upgrades, flight
+rewards. Inputs expire after half a second. GSC, XP, upgrades, flight
 position, hull damage, and unsold cargo are persisted after authoritative
 updates, so a restart resumes the commander's saved in-flight state. Asteroid
 impacts damage the hull based on collision speed. Hostile `RAIDER-N` NPCs
 pursue nearby launched ships and fire within 185 m. A disabled ship is
 recovered at its station with cargo lost, half hull, and a full safe fuel tank;
 repair remains available before the next launch. Hull
-upgrades increase maximum integrity and repairs cost credits per missing point.
+upgrades increase maximum integrity and repairs cost GSC per missing point.
 Each commander
 currently flies a separate instance of the same sector; shared asteroid
 depletion and full player ship replication are not yet implemented. Contact
 records and deterministic NPC traffic are exposed through multiplayer
-snapshots, and GalNet chat remains shared.
+snapshots, and UniNet chat remains shared.
 
 ## Graphics diagnostics
 
@@ -139,7 +145,7 @@ draws the player, stations, asteroids, haulers, commanders, Red Wake contacts,
 target reticles, mining/fire beams, and geometric hull/fuel/cargo/cooldown/
 docking/recovery indicators with `#version 330 core` shaders. Its built-in 5x7
 font and cockpit show commander, mission, standings, target, combat, mining,
-docking, recovery, and recent GalNet/action messages.
+docking, recovery, and recent UniNet/action messages.
 
 Validate the core hardware path with:
 
@@ -188,12 +194,12 @@ acceleration.
 
 Core station and account interfaces are selected with F1–F8 after secure
 authentication: station, profile, options/telemetry, market, contracts,
-outfitting, GalNet, and graphics diagnostics. F9 reopens the onboarding guide.
+outfitting, UniNet, and graphics diagnostics. F9 reopens the onboarding guide.
 Up/Down selects, Enter confirms,
 and Escape backs out. Market quantity uses `+`/`-` and buy/sell uses `B`/`S`;
 outfitting uses `B`/`F`/`R`. Core account fields are bounded and mask
 passwords. Mouse movement highlights controls and left-click activates one
-control event at a time; wheel/PageUp/PageDown scroll bounded GalNet content.
+control event at a time; wheel/PageUp/PageDown scroll bounded UniNet content.
 These controls submit the existing server commands and do not make
 prices, rewards, repairs, fuel, mission state, or module ownership client
 authoritative.
@@ -224,7 +230,7 @@ and not rebuilt per frame.
 
 ## Native assets and render check
 
-The built-in asset set includes a faceted Sidewinder with animated exhaust,
+The built-in asset set includes a faceted starter shuttle with animated exhaust,
 rotating Kepler station, seven ore asteroids, parallax stars, a mining beam
 and impact particles, radar, and an original bitmap cockpit font. Assets are
 procedural geometry in `client/render.cpp`; there are no downloaded textures,
@@ -303,7 +309,7 @@ LOADOUT owned=mining-basic,engine-basic,hull-standard fitted-mining=mining-basic
 
 The `OK DOCKED earned=...` line remains for protocol compatibility. The
 structured transaction is informational: the server derives the quantity from
-authoritative cargo and computes credits and XP; clients cannot supply or
+authoritative cargo and computes GSC and XP; clients cannot supply or
 override either value. Cargo removal and the reward are committed together,
 and a persistence failure rolls the profile back without sending a transaction
 record.
@@ -334,7 +340,7 @@ first-run help, accept and turn in First Ore, buy two parts at Cinder and
 deliver them to Kepler, then accept Red Wake Response and defeat the
 authoritative `RAIDER-N` with a fitted pulse laser. The client displays the
 issuer, jurisdiction, objective, progress, rewards, standings, combat
-feedback, GalNet events, and persistent established-pilot completion state.
+feedback, UniNet events, and persistent established-pilot completion state.
 The journey is available through keyboard or layout-derived mouse controls;
 normal play never requires raw commands. The append-only career record remains
 compatible with older profiles, and failed saves roll back the whole stage

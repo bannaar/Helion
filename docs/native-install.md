@@ -1,8 +1,13 @@
 # Install and play Helion (Linux)
 
+Current prose uses UniNet and GSC. Executable display labels may still read
+“GalNet” or “Credits”; literal `GALNET`/`credits` protocol/save keys and render
+fixture names remain unchanged. See the [v0.21 reconciliation](development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md).
+
 Helion 0.2 includes a native SDL2/OpenGL client and a standalone TLS server.
-The combined package provides a local-play launcher. Separate server and client
-packages support two machines. No browser or Node.js runtime is needed.
+The combined package provides a DEVELOPMENT local-play launcher/helper, not the
+future full player launcher; see [alpha readiness](development/ALPHA_READINESS.md).
+Separate server and client packages support two machines. No browser or Node.js runtime is needed.
 
 ## Install a built package
 
@@ -34,8 +39,8 @@ the Kepler career: First Ore, Cinder supply delivery, and Red Wake response.
 - Approach an ore asteroid within **85 m** below **35 m/s**, then press **E**.
 - Mine up to **8 units**, waiting **1.25 seconds** between extractions.
 - Follow the amber radar marker back to base; press **F** within **85 m**
-  below **35 m/s** to sell. Each unit pays **60 credits and 5 XP**.
-- **F5** opens contracts, **F4** market, **F6** outfitting, **F7** GalNet,
+  below **35 m/s** to sell. Each unit pays **60 GSC and 5 XP**.
+- **F5** opens contracts, **F4** market, **F6** outfitting, **F7** UniNet,
   and **F9** help. Mouse and keyboard both cover normal progression.
 - Select **Shipyard / Hulls and Owned Fleet** while docked to inspect local
   inventory, purchase an affordable hull, or activate a stored ship at the
@@ -44,7 +49,7 @@ the Kepler career: First Ore, Cinder supply delivery, and Red Wake response.
 Local saves and logs live in `$XDG_DATA_HOME/helion`, defaulting to
 `~/.local/share/helion`. `HELION_DATA_DIR` overrides this directory and
 `HELION_PORT` overrides the default local port 4242. Do not share the private
-key. Credits, XP, upgrades, market cargo, mined ore, position, velocity, and
+key. GSC, XP, upgrades, market cargo, mined ore, position, velocity, and
 dock state are saved after authoritative changes. Restarting the server resumes
 the commander's saved flight. Sign out by closing the client.
 

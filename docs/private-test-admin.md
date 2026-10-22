@@ -91,7 +91,7 @@ always use canonical prices; canonical definitions are unchanged.
 
 DEV_ADMIN and INVITED_TESTER bypass the shipyard's implemented reputation
 requirement predicate in TEST. Station offers, docking, pad compatibility,
-ownership, credits and physical storage constraints still apply. Current
+ownership, GSC balance and physical storage constraints still apply. Current
 canonical offers have no nonzero reputation gate; deterministic tests exercise a
 synthetic gated offer through the same predicate. Rank, permit, career and loyalty
 ship gates are metadata/future gameplay, not invented M6 systems.
@@ -218,12 +218,12 @@ inside a claimed TEST directory. This small policy seam
 supports future experimental capability checks. M6 adds no experimental gameplay
 feature, arbitrary feature-name activation, launcher CDN or deployment service.
 
-M7+ work remains subject to the Batch 14 plan: richer mission/rank/permit domain
-services and their admin adapters, cross-sector operations where implemented,
+Deferred follow-up remains subject to separate authorization and the Batch 14
+plan: richer mission/rank/permit domain services and their admin adapters, cross-sector operations where implemented,
 credential rotation/recovery and invitation reload, ledger lifecycle, remote audit
-collection, durable operational monitoring, production operations with separately
-designed privileges, snapshot lifecycle/migration tooling and release distribution.
-No M7 or Batch 15 implementation is included here.
+collection, durable operational monitoring, additional operational controls,
+snapshot lifecycle/migration tooling and release distribution. Richer gameplay/admin adapters are future scope, not automatically
+part of M8. Batch 15 remains unstarted.
 
 M7 follow-up: [Production operations](production-operations.md) now supplies the
 separate OS-service-account lifecycle/health/backup/verification foundation. It

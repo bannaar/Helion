@@ -5,6 +5,10 @@ stream; it neither authenticates players nor changes gameplay authority. Both
 transports dispatch to the existing authoritative server handlers. Persistence
 formats and the approved M3 galaxy are unchanged.
 
+Current currency prose uses GSC. Literal `credits` fields below are unchanged
+wire identifiers, not a competing currency. Canon authority is
+[DraftComp8](../lore/HELION_World_Bible_draftcomp8.txt).
+
 ## Negotiation and compatibility
 
 Every connection starts with bounded legacy text, `WELCOME Helion/2` and an
@@ -54,7 +58,7 @@ Snapshot offsets: nine IEEE-754 binary32 values at 0–35, in order
 `food:u16` at 47; `parts:u16` at 49; `station:u8` at 51;
 `hull:u16` at 52; `maxHull:u16` at 54; `destroyed:u8` at 56.
 Booleans must be 0/1. Floats must be finite and pass the existing supported
-world/ship ranges; credits/experience must fit the authoritative signed-int
+world/ship ranges; `credits`/`experience` must fit the authoritative signed-int
 range. Invalid snapshots leave destination state unchanged. Encoding rounds
 double values toward zero when necessary to avoid moving legal boundary values
 outside their validation range. No native struct layout is sent on the wire.
@@ -93,7 +97,8 @@ and diagnostics retain their bounded text payloads inside binary envelopes.
 Additional typed schemas need volume measurements and a new explicit version if
 their existing wire meaning changes. Per-environment approved build policies,
 durable idempotency keys, compression/deltas and client engine restructuring are
-not implemented by M4. M5 must be separately authorized after this checkpoint.
+not implemented by M4. These are the historical M4 scope limits; M5 and M6 are
+now complete, with current status in [BATCH14_EXECUTION.md](BATCH14_EXECUTION.md).
 
 ## M6 TEST administration extension
 

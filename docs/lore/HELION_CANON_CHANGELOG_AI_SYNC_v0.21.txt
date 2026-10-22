@@ -1,0 +1,197 @@
+HELION CANON CHANGELOG / AI SYNCHRONIZATION FILE v0.21
+====================================================
+Date: 2026-10-22
+Status: Current canon checksum and synchronization rules, after Batch 14 M7.
+
+AUTHORITY AND PROVENANCE
+------------------------
+1. docs/lore/HELION_World_Bible_draftcomp8.txt — current working master canon.
+2. This file — current canon checksum/change authority.
+3. docs/development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md — reconciliation.
+4. Active engineering goal and latest authorized milestone instructions.
+5. Actual source, tests and BATCH14_EXECUTION.md — implementation truth.
+6. Historical canon/prompts/handoffs — provenance only.
+
+World Bible controls canon; source/tests control implemented behavior; engineering
+instructions control intended and authorized work. A lore statement is not an
+implementation claim. No historical prompt overrides newer approved direction.
+
+DraftComp8 preserves DraftComp7's substantive lore and living-universe expansion,
+with a new October reconciliation layer. DraftComp7 and v0.20 sync sources
+are in docs/lore/history/; only the DraftComp7 import’s final empty line is
+normalized for Git whitespace checks. Desktop originals remain unchanged. The repository v0.10 Markdown/DOCX and v0.2 text are
+historical/provenance sources, not current authority. v0.20's initial DraftComp6
+reference was superseded by its own DraftComp7 addition. Its September handoffs
+do not define October implementation status. DraftComp8 corrects the inherited
+DraftComp6 self-reference without rewriting the historical original.
+
+STRICT CURRENT USER-FACING REPLACEMENTS
+---------------------------------------
+Superseded term                     Current term
+Helion Concordat / umbrella Concordat -> Inter-Galactic Governance / IGG
+GalNet                               -> UniNet
+Concordia [Commonwealth capital]      -> Crownspire
+Titan Forge                          -> Ironstar Forge
+New Eden [lost agricultural colony]   -> Verdance
+credits / Credits [currency wording]  -> Galactic Standard Credit / GSC
+nullsec / Null Space [frontier region] -> Zero Space
+287 AS [present/game-start]           -> 1087 AS
+approximately 100 years after Severance -> exactly 900 years after the Severance
+approximately 90 systems [final target] -> exactly 200 Known Space systems
+
+These are semantic rules for maintained current prose, not a global replacement
+script. Source/UI terminology debt is recorded for later approved implementation
+cleanup. No wire IDs, save fields, DB columns, migrations, stable IDs or fixtures
+are renamed in this documentation checkpoint. Literal protocol examples retain
+their actual spellings. Historical originals retain old terms with archive context.
+
+SCOPED RULES AND RETAINED NAMES
+------------------------------
+- Riftspace denotes persistent Rift-reached systems when that is the intended
+  meaning. Unknown Space remains a broader scientific/mystery term; no global rename.
+- Zero Space is the proper 0.0 frontier name; obsolete Null Security region prose
+  should use Zero Space / Zero security. The Null is a separate cosmic mystery.
+- Adaptive Systems Architecture (ASA) is the formal advanced/hybrid discipline.
+  Adaptive Technology remains allowed colloquially; it is not a superior-number tier.
+- Sidewinder is a superseded external-setting starter name, not immutable HELION
+  lore. Use generic starter shuttle pending approval of a final native name.
+  Preserve SIDEWINDER/sidewinder technical identity until an approved migration.
+- Veyra and AsterTech are unresolved review items, not automatic replacements.
+  Aster Dynamics remains the established manufacturer; the AsterTech marque question
+  remains open. Do not invent Veyra lore or replace Khepri/Vael with it.
+- Original heavy-family direction remains: Breaker, Aerie, Grand Aerie, Dominion;
+  Fleet Tender, Foundry Tender, Bulk Liner, Farline Liner. These are future roles,
+  not proof of playable ships or a one-to-one mapping from external settings.
+
+CURRENT CANON CHECKSUM
+----------------------
+Severance: 187 AS
+Current/game-start era: 1087 AS
+Elapsed time: exactly 900 years after the Severance
+Known Space: exactly 200 persistent systems
+Faction-controlled: 120 systems
+Zero Space: 80 systems
+  Helion Commonwealth: 27
+  Solar Directorate: 25
+  Free Systems Compact: 25
+  Meridian League: 23
+  Aurelian Synod: 20
+  Zero Space: 80
+
+Riftspace is outside the 200-system count. Approximately 48 initial Riftspace
+systems is future content direction only, not a Batch 14 requirement or an engine
+maximum. Zero Space is persistent 0.0 Known Space frontier, distinct from both
+The Null and Riftspace. Major-faction national territory has High/Low security
+using exact 0.2 steps, not ordinary national 0.0 heartlands. Future eligible
+Zero Space sovereignty does not change the 0.0 rating. Domain, security,
+sovereignty, structure ownership and viewer knowledge are separate concepts.
+Riftspace structure ownership does not confer system sovereignty.
+
+Survey knowledge: DETECTED -> CLASSIFIED -> LOCATED -> SURVEYED.
+The technical UNDETECTED initial state is not an earned survey stage.
+Read models omit unearned/unauthorized truth rather than trusting a UI to hide it.
+
+IGG: independent treaty authority / interstellar service framework.
+Not a sovereign galactic government, sixth major faction, owner of national
+territory or Zero Space, or ordinary domestic police.
+Coequal arms: INSA; Gatewatch; Galactic Defense Force (GDF).
+Crossroads Charter retained.
+Operational phrase retained: "INSA knows. Gatewatch understands. The GDF acts."
+UniNet: current information network; not instantaneous physical goods transport.
+Galactic Standard Credit (GSC): currency; faucets/sinks/transfers remain distinct.
+Crownspire: Commonwealth capital.
+Ironstar Forge: heavy military/industrial manufacturer; rugged visual identity retained.
+Verdance: presumed-lost agricultural colony, no obvious catastrophe or active civilization.
+Adaptive Systems Architecture (ASA): formal advanced/hybrid technology discipline.
+Human limits: no routine clone immortality or consequence-free resurrection.
+
+PRESERVED DRAFTCOMP7 CONTENT
+---------------------------
+Nine centuries of reconstruction, mature governments, guilds and corporate history
+remain canon. Gate origins, Architects, Severance, Choir, The Null, Veil, Khepri
+migration and other protected mysteries are not casually resolved. Present leaders,
+military/service characters, historical people, crews, criminals, cults, professional
+guilds, fleets, commercial/service brands, media, advertisements, ordinary workers
+and spacer culture are retained. Their inclusion is working worldbuilding, not a
+claim that all named people or social systems appear in the native game.
+
+AUTHORITATIVE ARCHITECTURE AND ENVIRONMENTS
+------------------------------------------
+Authoritative path: native C++ persistent server + native SDL2/OpenGL C++ client.
+src/ browser runtime: legacy/reference, not a peer production runtime, second
+authoritative universe or second persistent backend.
+Server owns authoritative position/velocity, docking/launching, ships, implemented
+equipment, inventory/cargo, economy, missions, security, implemented combat,
+progression, persistence, environment identity, roles and administration.
+Clients request actions; they do not grant themselves state.
+
+PRODUCTION: canonical persistent universe, can run with zero players.
+PRIVATE TEST: isolated, noncanonical, resettable developer/invited-tester service.
+DEVELOPMENT: local/disposable/diagnostic.
+DEV_ADMIN TEST privileges confer no Production gameplay mutation authority.
+INVITED_TESTER does not automatically gain developer administration.
+Environment and role claims from clients are non-authoritative.
+
+M7 established local service lifecycle, fail-closed startup, health/readiness,
+structured operations logs, lightweight process metrics, maintenance preparation,
+bounded drain, durable shutdown checkpoints, verified Production backups,
+non-destructive restore verification/planning and Linux/systemd examples.
+TEST snapshots remain separate from Production backups. No destructive Production
+restore or remote operations API is claimed; see docs/production-operations.md.
+
+OPTIONAL COMPANIONS
+-------------------
+Future clients may include HELION Commander, HELION Terminal, HELION Flight Deck,
+mobile/tablet interfaces, cockpit devices, Vita-style cockpit interfaces, Linux
+cyberdecks and other cockpit hardware. No companion is required to play.
+Companions consume permission-filtered data and submit permitted requests through
+existing server boundaries. They host no canonical simulation/backend, inherit no
+Production administrator authority and receive no hidden truth merely because the
+UI could conceal it. Current profile.read credentials are a narrow foundation,
+not implementation of every future device or general gameplay automation.
+
+FUTURE SHIP AI CORE DIRECTION — NOT IMPLEMENTED
+-----------------------------------------------
+Physical ship-installable computational equipment; possible civilian assistance,
+industrial, exploration, tactical, military/restricted, experimental, xenotech/Rift
+and unique advanced-intelligence categories. Advanced Cores may preserve identity,
+personality, pilot familiarity, experience and memories/history.
+Do not canonize exact mass/power/heat/processing/autonomy values, vendor/API
+requirements, class names, exact Sovereign AI counts or unrestricted exotic abilities.
+Engineering/balance requires separate approval and implementation.
+
+Deterministic native automation must work without LLMs. AI produces typed intents
+validated by authoritative gameplay systems, not a second simulation. Capability
+is separate from pilot authorization. Optional asynchronous cognitive providers
+require mandatory no-provider/Null-provider behavior and manual fallback.
+Damage/degradation changes Core capability, never the integrity of network or
+authorization checks. Extend HELION TLS/binary protocol, not a parallel AI network.
+Do not leak hidden truth to providers or companions. Vendors are not architectural
+authority. Internet, cloud AI, local LLM, voice recognition, TTS and companion
+hardware must not be prerequisites for local native play. Remote Production still
+requires networking. See docs/design/SHIP_AI_CORES.md for future engineering direction.
+
+BATCH AND ALPHA BOUNDARIES
+--------------------------
+M0-M7 complete at f02d9e38c32f22678664e55946bef3b700ac5d3c.
+M8 not started: Deployment, Packaging, Migration, Release and Recovery.
+M9 not started: Final Hardening, Security Review, Documentation Reconciliation
+and Batch 14 Completion. Batch 14 is NOT complete.
+This docs checkpoint is after M7, before M8; it is not M9 acceptance.
+Batch 15 not started; requires completed Batch 14 and explicit authorization.
+Future direction: equipment, outfitting, power/heat/internal systems, combat
+expansion, AI Cores, deterministic automation, authorization/degradation,
+persistent identity/personality/memory, optional cognition and companion AI.
+Existing limited modules/combat are preserved foundations, not this future expansion.
+The existing local-play helper is not the planned full launcher. Alpha/launcher
+planning and later Batches are directional; see HELION_ROADMAP.md and ALPHA_READINESS.md
+under docs/development/.
+
+UPDATE PROCEDURE
+-----------------
+Classify each occurrence as current stale prose, historical documentation,
+compatibility identifier, test/migration fixture, legacy browser reference or
+unknown requiring inspection. Correct current prose; preserve other cases with
+context. Verify chronology, allocation, names, authority domains and milestone
+status together. Never fix appearance by breaking persistence or protocol identity.
+Stop at the explicitly authorized checkpoint.

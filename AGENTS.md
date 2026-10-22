@@ -349,3 +349,30 @@ auth/db: OFF by default — sign-in, @/lib/db or migrations ONLY on an accounts 
 never:   build an app for a greeting/number/question; invent imagine_* calls;
          ask the user to run commands; delete or abandon /workspace/startup.sh
 ```
+
+## HELION native project authority — 2026-10-22
+
+For HELION native work, the current authoritative game is the persistent native
+C++ server plus native SDL2/OpenGL C++ client. The browser `src/` and App Builder
+workflow above concern legacy browser/reference work; do not scaffold a new web
+runtime, database or competing authority for native engineering or docs tasks.
+
+Read authority in these separate domains:
+
+1. [DraftComp8](docs/lore/HELION_World_Bible_draftcomp8.txt): current master canon.
+2. [Canon sync v0.21](docs/lore/HELION_CANON_CHANGELOG_AI_SYNC_v0.21.txt): checksum/change rules.
+3. [Reconciliation v0.21](docs/development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md): retained history and terminology decisions.
+4. Active engineering goal and latest explicitly authorized milestone instructions.
+5. Actual source/tests and [BATCH14_EXECUTION.md](docs/development/BATCH14_EXECUTION.md): implemented behavior and validation.
+6. Historical Bibles, prompts and handoffs: provenance only; no override of newer direction.
+
+World Bible controls lore; source/tests control implementation; engineering
+instructions control authorized work. Keep those claims separate. Use GSC,
+UniNet, IGG, Crownspire, Ironstar Forge, Verdance and Zero Space in current prose.
+Do not cosmetically rename compatibility IDs, wire/save fields or fixtures.
+
+Batch 14 M0–M7 are complete; M8 and M9 are not started; Batch 14 is not complete.
+Batch 15/Ship AI Cores remain future direction and require completed Batch 14 plus
+explicit authorization. The post-M7 docs checkpoint starts no engineering milestone.
+Preserve untracked `.agents/` and `plugins/`; do not stage them. Respect the active
+user's local-checkpoint/no-push stop boundary.

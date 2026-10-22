@@ -1,8 +1,8 @@
 # Helion
 
 Helion is a native, server-authoritative, persistent online science-fiction
-game. Its implementation and release baseline is the C++17 TLS server and
-SDL2/OpenGL client under `native/`, designed for Linux systems with OpenGL
+game in active alpha development. Its implementation and release baseline is the
+C++17 TLS server and SDL2/OpenGL client under `native/`, designed for Linux systems with OpenGL
 2.1-era hardware, including older Intel integrated graphics. The Three.js /
 TanStack application under `src/` is retained as a legacy design reference; it
 is not a peer authority path or the production game architecture.
@@ -10,11 +10,35 @@ is not a peer authority path or the production game architecture.
 The native runtime now provides a playable Kepler career arc, procedural
 ship/station/asteroid assets, account creation/login, durable commander
 profiles, shared chat, and mandatory verified TLS transport. Linux packages
-and a desktop local-play launcher are available. Separate server/client packages
+and a desktop local-play launcher/helper are available. The helper starts a local
+DEVELOPMENT server and client; the future full player launcher with account flow,
+authorized environment selection, updates/repair, STABLE/TEST channels, news/status
+and patch management is not implemented. See the
+[alpha-readiness plan](docs/development/ALPHA_READINESS.md). Separate server/client packages
 support a [Compaq 610 + EliteBook 8460p setup](docs/compaq610-server-elitebook-client.md).
 See [installation](docs/native-install.md) and
-[project state](docs/PROJECT_STATE.md). Native development follows World Bible
-v0.10 and grows incrementally from the validated server-authoritative slice.
+[project state](docs/PROJECT_STATE.md). Current lore authority is
+[World Bible DraftComp8](docs/lore/HELION_World_Bible_draftcomp8.txt), with the
+[v0.21 canon checksum](docs/lore/HELION_CANON_CHANGELOG_AI_SYNC_v0.21.txt).
+The World Bible controls canon; repository source/tests and the
+[execution record](docs/development/BATCH14_EXECUTION.md) establish implementation
+truth. Batch 14 **M0–M7 are complete**; **M8 and M9 are not started**. Batch 14 is
+not complete, and Batch 15 is not started. The latest implementation checkpoint is
+`f02d9e38c32f22678664e55946bef3b700ac5d3c` (M7).
+
+Current canon begins in **1087 AS**, exactly **900 years after the Severance**
+(187 AS). Known Space has exactly **200 persistent systems**: **120
+faction-controlled** and **80 Zero Space**. Inter-Galactic Governance (IGG) is a
+non-sovereign treaty/service framework; UniNet is the information network and
+Galactic Standard Credit (GSC) the currency. Crownspire, Ironstar Forge and
+Verdance are current canon names. Future Riftspace lies outside the 200-system
+count. Lore and future systems are not claims of current playable scope.
+
+Operator references: [Production operations](docs/production-operations.md),
+[PRIVATE TEST administration](docs/private-test-admin.md),
+[native installation](docs/native-install.md),
+[server installation/configuration](docs/native-server.md) and
+[client installation](docs/native-client.md).
 
 ## Native development screenshots
 
@@ -152,10 +176,13 @@ software rendering and the selected context.
 
 The native game currently provides account persistence, the Kepler career
 slice, mining, station markets, missions, upgrades and modules, combat and
-recovery, reputation, GalNet, live contacts, persistent owned ships, distinct
+recovery, reputation, UniNet events, live contacts, persistent owned ships, distinct
 hull performance, and authoritative Kepler/Cinder shipyards. Later World Bible
 systems remain future native work unless the project-state documentation says
-otherwise.
+otherwise. Current executables still use some superseded display labels; wire/save
+identifiers such as `GALNET`, `credits` and `TITAN_MULE` remain compatible. See the
+[v0.21 reconciliation](docs/development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md)
+for the distinction between current canon, display cleanup and stable identifiers.
 
 ## License and contribution
 

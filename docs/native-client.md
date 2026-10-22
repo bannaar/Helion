@@ -1,5 +1,10 @@
 # Helion standalone client
 
+Current canon calls the news network UniNet and currency GSC. The executable
+still displays legacy labels such as “GalNet” and “Credits”; `/galnet`, `GALNET`,
+`GameEngineState::GALNET` and fixture names are unchanged compatibility interfaces.
+This guide uses current canon in prose without claiming a source/UI rename.
+
 The standalone client is an SDL2 application with a fixed-function gameplay
 renderer and an OpenGL 3.3 core gameplay renderer. It is
 designed to run on Linux machines with OpenGL 2.1-class hardware, including
@@ -114,8 +119,8 @@ Arrow keys also work. Approach a teal asteroid to within 85 m at no more than
 capacity is eight units. Thrust consumes fuel from the authoritative 100-unit
 starter tank. Use the radar's amber base marker to return to Kepler station,
 then press **F** within 85 m at low speed to dock and sell. Each ore unit earns
-60 credits and 5 XP, saved by the server. After a
-successful dock, the client shows the authoritative sale quantity, credit
+60 GSC and 5 XP, saved by the server. After a
+successful dock, the client shows the authoritative sale quantity, GSC
 reward, and XP reward in the activity line; rejected actions remain visible
 with their server-provided reason.
 
@@ -148,9 +153,9 @@ window focus applies the brake. The server also stops stale controls after
 half a second. The client smooths received positions for display; the server
 owns movement, collision, cargo, and rewards.
 
-Credits, XP, upgrades, market cargo, mined ore, position, velocity, and dock
+GSC, XP, upgrades, market cargo, mined ore, position, velocity, and dock
 state survive server restarts. Each commander still has separate asteroid
-depletion, while GalNet chat and live contact positions are shared.
+depletion, while UniNet chat and live contact positions are shared.
 
 ## Client state controller (Batch 14 M5)
 
@@ -177,7 +182,8 @@ The presentation states are `BOOT`, `CONNECTING`, `LOGIN`, `ORBIT_VIEW`,
 the existing contract panel. `ORBIT_VIEW` is the integration/waiting boundary
 for an authenticated player whose authoritative flight state is unknown. It
 uses the account/status presentation with gameplay disabled; it adds no orbital
-gameplay. GalNet's existing name, IDs and wire commands remain compatible.
+gameplay. The legacy `GALNET` state ID and wire commands remain compatible;
+the current lore-facing name is UniNet.
 
 The normal path is `BOOT -> CONNECTING -> LOGIN`, after TLS and explicit
 protocol negotiation (or explicit legacy selection). Sending LOGIN/CREATE only
@@ -253,8 +259,8 @@ it does not bypass production guards or inject local gameplay state.
 The fixed-function renderer first requests an OpenGL 3.0 compatibility
 context. If that attempt fails or produces an unusable/core context, the
 client destroys it and retries with OpenGL 2.1 compatibility. It never selects
-OpenGL 3.3 core for this renderer; a future core-profile renderer would need
-shaders and a separate migration.
+OpenGL 3.3 core for the fixed-function renderer; the separate implemented core
+renderer uses shaders and its own context/resource path.
 
 The target was verified with Intel HD Graphics 3000 / PCI `8086:0116`, kernel
 driver `i915`, Mesa 25.2.8, and Mesa userspace driver `crocus`. `glxinfo -B`
@@ -329,10 +335,10 @@ SDL_VIDEODRIVER=x11 ./build-native/native/helion_client 127.0.0.1 4242 \
 Core mode renders the player, Kepler and Cinder, asteroids, hauler traffic,
 other commanders, Red Wake contacts, target reticles, mining and weapon beams,
 and destroyed-state markers. Its cockpit shows commander/system context,
-credits, XP, hull, fuel, cargo, weapon readiness, mission issuer and
+GSC, XP, hull, fuel, cargo, weapon readiness, mission issuer and
 jurisdiction, organization standings, target affiliation/range/hull, and
 docked, mining, combat, and recovery states. A bounded recent-message panel
-shows GalNet headlines, mission, mining, combat, reward, docking, and error
+shows UniNet headlines, mission, mining, combat, reward, docking, and error
 feedback from the existing client log. The same server-authoritative controls
 and commands remain in use.
 
@@ -374,14 +380,14 @@ ordinary SDL input events through the production UI handler.
 Core mode also provides station and account interfaces through the same text
 and geometric pipelines. `F1` opens station services when docked; `F2` opens
 profile/reputation, `F3` toggles telemetry and opens options, `F4` opens the
-market, `F5` the First Ore mission, `F6` outfitting, `F7` GalNet, and `F8`
+market, `F5` the First Ore mission, `F6` outfitting, `F7` UniNet, and `F8`
 graphics diagnostics. `Up`/`Down` selects, `Enter` confirms, and `Escape`
 returns to the previous station/flight view. Market uses `B`/`S` and `+`/`-`
 for bounded unit quantities. Outfitting uses `B`/`F`/`R` for buy, fit, and
 remove. Account input remains in the existing bounded console; passwords are
 masked in the core presentation and never copied into logs. Mouse movement
 highlights controls and left-click activates one control event at a time; wheel
-and PageUp/PageDown scroll bounded GalNet content. Hit regions use the same
+and PageUp/PageDown scroll bounded UniNet content. Hit regions use the same
 letterboxed layout as rendering, so resizing preserves alignment. Disabled or
 pending transaction controls cannot submit commands.
 
@@ -411,7 +417,7 @@ alone does not prove leak freedom.
 
 Three-frame 960×600 X11 hardware fixtures measured 0.222 ms in normal flight,
 0.346 ms mining, 0.242 ms combat, 0.252 ms station, 0.234 ms market, 0.225 ms
-mission, 0.315 ms docked GalNet, and 0.286 ms completion. All used four draw
+mission, 0.315 ms docked UniNet, and 0.286 ms completion. All used four draw
 calls and one 96×48, 18,432-byte atlas. Across these states, text used
 1,854–2,760 vertices (59,328–88,320 bytes); world geometry used 726–819
 vertices and UI geometry 42–138 vertices. These are bounded diagnostics, not
@@ -432,7 +438,7 @@ parity, not visual identity.
 | Onboarding, help | CORE_EQUIVALENT | Core help overlay and dismissal/reopen controls |
 | Station, contracts, market, cargo | CORE_EQUIVALENT | Mouse/keyboard controls submit existing server commands |
 | Outfitting, repair/refuel | CORE_EQUIVALENT | Docked controls retain server-side validation |
-| Profile, reputation, GalNet | CORE_EQUIVALENT | Bounded core text views and persisted server records |
+| Profile, reputation, UniNet | CORE_EQUIVALENT | Bounded core text views and persisted server records |
 | Options, graphics diagnostics | CORE_EQUIVALENT | Core menu plus actual context/renderer report |
 | Flight, contacts, targeting | CORE_EQUIVALENT | Live server snapshot and selected-target reticle |
 | Legacy decorative cockpit/radar styling | LEGACY_ONLY_NONCRITICAL | Core uses geometric HUD and spatial contact indicators |
@@ -452,9 +458,9 @@ diagnostic leak, not a missing action or server-authority bypass.
 For two-machine installation and certificate SAN setup, use the
 [Compaq 610 + EliteBook 8460p guide](compaq610-server-elitebook-client.md).
 
-The station UI presents existing server data only: station context, credits,
+The station UI presents existing server data only: station context, GSC,
 hull, fuel, cargo, shared station prices, First Ore issuer/jurisdiction and
-state, loadout ownership/fitting, profile progression, GalNet events, and
+state, loadout ownership/fitting, profile progression, UniNet events, and
 graphics diagnostics. It queues the existing `PROFILE`, `MISSION`, `BUY`,
 `SELL`, `OUTFIT`, `REPAIR`, `REFUEL`, and `GALNET` requests and displays their
 responses. It does not calculate or apply economic outcomes.
@@ -463,7 +469,7 @@ Deterministic core fixtures cover `account`, `station`, `market`, `mission`,
 `outfit`, `profile`, `galnet`, `options`, `graphics`, and `error` in addition
 to the flight/combat states. The TLS career test checks secure account
 creation, profile and loadout inspection, market buy/sell, mission identity,
-mining, docking, mission reward/reputation, GalNet, combat, recovery, and
+mining, docking, mission reward/reputation, UniNet, combat, recovery, and
 reconnect; graphical rendering is checked independently at those state
 boundaries.
 
@@ -516,8 +522,12 @@ Categories=Game;
 
 The installed combined package already supplies this desktop entry. For
 a manual remote shortcut, set Exec to `helion_client HOST PORT` plus `--ca`
-when using a private CA. The launcher is a desktop shortcut. Account commands are entered in the in-game
-console; the graphical console masks passwords while typing and in its log.
+when using a private CA. These desktop shortcuts and the `helion-play` local-play
+helper are not the future full player launcher. Account creation/login already
+exists in the native client; unified launcher account flow, authorized environment
+selection, STABLE/TEST updates, repair and patch management remain future work.
+See [alpha readiness](development/ALPHA_READINESS.md). The graphical account
+fields and console mask passwords while typing and in the log.
 
 ## 7. Troubleshooting
 
@@ -584,10 +594,10 @@ local-play certificate setup, and dedicated-server instructions.
 Core mode presents First Ore from Orion Extraction Group, Kepler Supply (buy
 two parts at Cinder and deliver them to Kepler), and Red Wake Response (fit and
 use the pulse laser) without raw commands. Progress, rewards, standings,
-salvage, completion, and GalNet headlines are server-owned and saved
+salvage, completion, and UniNet headlines are server-owned and saved
 atomically. Completion recognizes an established Kepler pilot and leaves free
 play open. The first-run guide is skippable with Enter, dismissible with
 Escape, and reopenable with F9; F1–F8 open station, profile, options, market,
-contracts, outfitting, GalNet, and graphics. Menus support keyboard focus,
+contracts, outfitting, UniNet, and graphics. Menus support keyboard focus,
 one-shot mouse clicks, and bounded wheel scrolling. Passwords are masked and
 never enter snapshots or diagnostics. Native audio remains a later polish item.

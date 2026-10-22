@@ -1,5 +1,9 @@
 # Helion Native Installation and Operations Guide
 
+Current prose uses UniNet and GSC. Executable display labels may still read
+“GalNet” or “Credits”; literal `GALNET`/`credits` protocol/save keys and render
+fixture names remain unchanged. See the [v0.21 reconciliation](development/HELION_CANON_AND_DOC_RECONCILIATION_v0.21.md).
+
 This guide installs Helion 0.2's standalone C++ server and SDL2/OpenGL client on Linux Mint, Ubuntu, or another Debian-based Linux system. It covers local play, separate server and client installations, verified TLS, packages, updates, backups, and troubleshooting.
 
 The current native release includes:
@@ -8,7 +12,7 @@ The current native release includes:
 - salted scrypt password hashes and protected commander saves;
 - a 60 Hz server-authoritative flight simulation;
 - mining, docking, station trading, missions, ship upgrades, and progression;
-- persistent position, velocity, dock state, cargo, credits, XP, missions, and upgrades;
+- persistent position, velocity, dock state, cargo, GSC, XP, missions, and upgrades;
 - live player and NPC contacts;
 - an SDL2/OpenGL 2.1 client for older Linux graphics hardware;
 - `.deb` and portable `.tar.gz` packaging;
@@ -28,7 +32,7 @@ Use one of these routes:
 The native code is currently developed on branch:
 
 ```text
-helion-local-recovery-2026-09-14
+batch14/implementation-v0.11
 ```
 
 ## 2. Install a built package
@@ -46,7 +50,7 @@ Launch **Helion** from the XFCE Games menu or run:
 helion-play
 ```
 
-The launcher automatically:
+The local-play launcher/helper automatically:
 
 1. creates a private user data directory;
 2. generates a loopback-only development certificate when needed;
@@ -72,6 +76,9 @@ User data is stored in:
 ~/.local/share/helion
 ```
 
+This helper is not the future full player launcher; see
+[alpha readiness](development/ALPHA_READINESS.md).
+
 The directory contains the commander database, TLS key and certificate, and logs. Keep it private and never commit or share its private key.
 
 ## 3. Obtain the source
@@ -88,12 +95,13 @@ For a fresh clone, authenticate with GitHub and clone the current branch:
 
 ```bash
 cd ~
-git clone --branch helion-local-recovery-2026-09-14 \
+git clone --branch batch14/implementation-v0.11 \
   https://github.com/bannaar/Helion.git
 cd Helion
 ```
 
-The repository is private, so GitHub authentication is required. Do not put a password or token directly in the command.
+Use GitHub authentication if access requires it; never put a password or token
+directly in the command. The active Batch 14 branch is not a completed release.
 
 ## 4. Install build dependencies
 
@@ -271,7 +279,7 @@ Flight controls:
 
 Mine within 85 m of an ore asteroid while travelling below 35 m/s. The extractor has a 1.25-second cooldown and the starter hold carries eight units. Return to the amber station marker and dock within 85 m below 35 m/s to sell ore.
 
-The server persists credits, XP, upgrades, missions, market cargo, mined ore, position, velocity, yaw, dock state, and station. Restarting the server resumes the saved commander state.
+The server persists GSC, XP, upgrades, missions, market cargo, mined ore, position, velocity, yaw, dock state, and station. Restarting the server resumes the saved commander state.
 
 ## 9. Build only the server
 
@@ -321,16 +329,18 @@ ctest --test-dir build-client --output-on-failure
 
 Use a certificate whose Subject Alternative Name matches the exact DNS name or IP address clients use. A loopback development certificate is not valid for a remote hostname or Tailscale address.
 
-Start a remotely reachable server:
+Start a remotely reachable disposable DEVELOPMENT server using its own data
+directory. For canonical Production, follow section 12 and
+[Production operations](production-operations.md); do not reuse this directory:
 
 ```bash
 ./helion_server \
   4242 \
-  /var/lib/helion/commander.db \
+  /var/lib/helion-dev/commander.db \
   --environment development \
   --bind 0.0.0.0 \
-  --cert /etc/helion/fullchain.pem \
-  --key /etc/helion/private-key.pem \
+  --cert /etc/helion-dev/fullchain.pem \
+  --key /etc/helion-dev/private-key.pem \
   --max-clients 32
 ```
 
@@ -360,7 +370,7 @@ sudo useradd --system \
   --home-dir /var/lib/helion \
   --shell /usr/sbin/nologin \
   helion
-sudo install -d -o helion -g helion -m 750 /var/lib/helion
+sudo install -d -o helion -g helion -m 700 /var/lib/helion
 sudo install -d -o root -g helion -m 750 /etc/helion
 ```
 
@@ -371,11 +381,15 @@ cd ~/Helion
 sudo cmake --install build-server --prefix /opt/helion
 ```
 
-Copy the certificate and key to `/etc/helion`, set ownership deliberately, and keep the key unreadable by other users:
+For Production use a fresh or already Production-tagged `0700` state directory.
+Do not reuse a DEVELOPMENT/TEST marker or untagged legacy save. Copy the matching,
+currently valid certificate and key to `/etc/helion`; Production requires a
+service-owned, regular, singly linked `0600` private key:
 
 ```bash
-sudo chown root:helion /etc/helion/fullchain.pem /etc/helion/private-key.pem
-sudo chmod 640 /etc/helion/fullchain.pem /etc/helion/private-key.pem
+sudo chown helion:helion /etc/helion/fullchain.pem /etc/helion/private-key.pem
+sudo chmod 600 /etc/helion/private-key.pem
+sudo chmod 644 /etc/helion/fullchain.pem
 ```
 
 Create `/etc/systemd/system/helion-server.service`:
@@ -391,7 +405,8 @@ Type=simple
 User=helion
 Group=helion
 WorkingDirectory=/var/lib/helion
-ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/commander.db --environment development --bind 0.0.0.0 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem --max-clients 32
+UMask=0077
+ExecStart=/opt/helion/bin/helion_server 4242 /var/lib/helion/commander.db --environment production --bind 127.0.0.1 --cert /etc/helion/fullchain.pem --key /etc/helion/private-key.pem --max-clients 32
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -399,10 +414,17 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/helion
+KillSignal=SIGTERM
+TimeoutStopSec=60
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+Review the bind address/firewall before enabling remote access; the example is
+loopback-only. The packaged template also supplies explicit drain/maintenance
+settings. See [Production operations](production-operations.md) for local
+readiness checks, maintenance and shutdown failure semantics.
 
 Enable and inspect it:
 
@@ -447,14 +469,18 @@ cp ~/.local/share/helion/commander.db \
 chmod 600 ~/.local/share/helion/commander.db.backup
 ```
 
-For a system service:
+For a Production system service, stop it cleanly and use M7’s immutable verified
+backup plus offline `BACKUP`, `VERIFY_BACKUP` and `PLAN_RESTORE` workflow in
+[Production operations](production-operations.md#production-backups-and-restore-verification).
+M6 TEST snapshots are separate. M7 supplies no destructive Production restore.
+Retain several verified recovery points and protect configuration/TLS/audit
+separately; never overwrite the only recovery copy. The local DEVELOPMENT copy
+above is not a Production backup envelope.
 
-```bash
-sudo systemctl stop helion-server
-sudo cp /var/lib/helion/commander.db \
-  /var/lib/helion/commander.db.backup
-sudo chmod 600 /var/lib/helion/commander.db.backup
-```
+The following commands rebuild a clean source checkout; they are not a
+validated arbitrary-version Production upgrade/rollback procedure. M8 migration,
+TEST-first release and failed-deployment recovery rehearsal are not started.
+Use an approved compatible release and a verified pre-upgrade recovery point.
 
 Update a clean Git checkout:
 
@@ -571,7 +597,7 @@ LIBGL_ALWAYS_SOFTWARE=1 \
 
 The native client/server now forms a playable career slice with secure
 transport, mining, trading, missions, upgrades, combat and recovery, functional
-hull damage and repair, reputation, GalNet, persistent flight, live contacts,
+hull damage and repair, reputation, UniNet, persistent flight, live contacts,
 owned ships, and authoritative shipyards. Remaining major systems include
 broader mission chains, deeper regional economy simulation, shared asteroid
 depletion, player collision, multi-system travel, complete outfitting and

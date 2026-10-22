@@ -1,4 +1,12 @@
-# Native ship architecture (Batch 13)
+# Native ship architecture (Batch 13 foundation, Batch 14 extensions)
+
+Current lore authority is [DraftComp8](lore/HELION_World_Bible_draftcomp8.txt).
+This guide records implemented registry/balance and compatibility. Current prose
+uses Ironstar Forge, UniNet and GSC; the executable registry still displays
+“Titan Forge”, “Sidewinder” and other legacy labels. `TITAN_FORGE`, `TITAN_MULE`,
+`SIDEWINDER`/`sidewinder`, wire keys and persisted identities are unchanged. The
+final HELION-native starter hull name is unresolved; “starter shuttle” is generic.
+Tables below describe existing native balance, not newly approved lore numbers.
 
 The native TLS server owns ship definitions, commander fleets, active-ship
 selection, movement, cargo limits, damage, purchases, and persistence. The
@@ -13,7 +21,7 @@ client receives presentation frames and never prices or commits a hull.
   has a stable unique ID, hull ID, name, flight/cargo/damage state, per-ship
   upgrades and fitted modules, livery, wear state, and stored/deployed state.
 - Manufacturer and operator are separate registry references. In particular,
-  Valiant and Intrepid are Titan Forge constructions operated by the
+  Valiant and Intrepid are Ironstar Forge constructions operated by the
   Commonwealth Navy.
 - A visual-variant profile is a third, separate presentation identity. Owned
   ships persist their variant (`CIVILIAN`, `CORPORATE`, `COMMONWEALTH_NAVY`,
@@ -48,23 +56,23 @@ remain a future migration rather than a parallel Batch 14 inventory.
 
 ## Playable registry and native-scale balance
 
-| Hull ID | Manufacturer | Operator | Pad | Price | Mass | Speed | Accel | Handling | Hull | Shields* | Cargo | Laden / unladen range* |
+| Hull ID | Manufacturer (current canon name) | Operator | Pad | Price (GSC) | Mass | Speed | Accel | Handling | Hull | Shields* | Cargo | Laden / unladen range* |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `SIDEWINDER` | Independent Yards | Civilian | Small | starter | 25 | 200 | 130 | 6 | 100 | 0 | 8 | 6.2 / 7.0 |
-| `TITAN_MULE` | Titan Forge | Civilian | Small | 2,800 | 45 | 180 | 120 | 4 | 120 | 60 | 14 | 9.2 / 11.5 |
+| `TITAN_MULE` | Ironstar Forge | Civilian | Small | 2,800 | 45 | 180 | 120 | 4 | 120 | 60 | 14 | 9.2 / 11.5 |
 | `COMPACT_MILITIA` | Compact Yards | Free Systems Compact | Small | 4,200 | 50 | 260 | 175 | 7 | 150 | 120 | 2 | 6.8 / 8.4 |
 | `ASTER_RAPTOR` | Aster Dynamics | Civilian | Small | 8,000 | 30 | 420 | 280 | 10 | 80 | 150 | 0 | 6.2 / 7.8 |
-| `COMMONWEALTH_VALIANT` | Titan Forge | Commonwealth Navy | Medium | 14,000 | 180 | 220 | 150 | 6 | 500 | 400 | 40 | 8.5 / 10.2 |
-| `COMMONWEALTH_INTREPID` | Titan Forge | Commonwealth Navy | Medium | 24,000 | 450 | 200 | 135 | 5 | 1,200 | 800 | 120 | 10.5 / 12.8 |
+| `COMMONWEALTH_VALIANT` | Ironstar Forge | Commonwealth Navy | Medium | 14,000 | 180 | 220 | 150 | 6 | 500 | 400 | 40 | 8.5 / 10.2 |
+| `COMMONWEALTH_INTREPID` | Ironstar Forge | Commonwealth Navy | Medium | 24,000 | 450 | 200 | 135 | 5 | 1,200 | 800 | 120 | 10.5 / 12.8 |
 | `COMPACT_RANGER` | Compact Yards | Civilian | Medium | 17,500 | 420 | 220 | 150 | 5 | 900 | 600 | 150 | 25.5 / 32.8 |
 | `ASTER_CLIPPER` | Aster Dynamics | Civilian | Medium | 12,500 | 600 | 300 | 200 | 6 | 500 | 600 | 150 | 22.5 / 28.8 |
 
-`*` Shields and jump ranges are canonical metadata prepared for later systems;
+`*` Shields and jump ranges are registry design metadata prepared for later systems;
 the current native game does not simulate shields, boost, or FSD travel.
 
-The native simulation previously hard-coded Sidewinder acceleration 130,
+The native simulation previously hard-coded legacy `SIDEWINDER` acceleration 130,
 turn rate 2.2 rad/s, hull 100, fuel 100, and cargo 8. Those values remain the
-starter baseline. For the seven hulls specified by World Bible v0.10, top
+starter baseline. For the seven hulls specified by the historical World Bible v0.10, top
 speed, boost, handling, hull, shields, mass, cargo, jump range, hardpoints, and
 utility counts match the Bible. Purchase price, acceleration, turn rate, fuel,
 sensors, and capability flags remain native gameplay tuning where the Bible
@@ -90,15 +98,15 @@ validation when committing the action.
 
 ## Shipyards and pads
 
-Kepler supports Small and Medium pads but carries only the early Titan Mule and
-Compact Militia. Cinder supports Small and Medium pads and carries the Raptor,
-Clipper, Ranger, Valiant, and Intrepid. Sidewinder is a starter and is not sold.
+Kepler supports Small and Medium pads but carries only the early Mule (`TITAN_MULE`)
+and Compact Militia. Cinder supports Small and Medium pads and carries the Raptor,
+Clipper, Ranger, Valiant, and Intrepid. The starter shuttle (`SIDEWINDER`) is not sold.
 No Large-pad hull is in the Batch 13 fleet.
 
 `SHIPYARD LIST`, `SHIPYARD OWNED`, `SHIPYARD BUY <hull-id>`, and
 `SHIPYARD SWITCH <instance-id>` are server-validated. A purchase requires a
 docked, operational active ship, local availability, pad support, a known hull,
-and sufficient credits. Saves are atomic and failures restore credits and fleet
+and sufficient GSC. Saves are atomic and failures restore GSC and fleet
 state. Batch 13 permits one instance of each hull, which makes repeated purchase
 requests and reconnect replay idempotent while the ownership schema itself can
 represent multiple arbitrary instances. Switching requires both vessels to be
@@ -115,7 +123,7 @@ one deterministic `SIDEWINDER` instance derived from commander identity and
 sequence 1. The migration writes atomically, and loading the migrated file does
 not create another ship.
 
-Credits, XP, missions, reputation, career state, GalNet, cargo, location,
+GSC, XP, missions, reputation, career state, UniNet, cargo, location,
 velocity, hull condition, fuel, upgrades, modules, and credentials retain their
 existing ownership and migration behavior. New organization standings missing
 from an older reputation summary are added neutrally.
@@ -123,7 +131,7 @@ from an older reputation summary are added neutrally.
 ## Visual foundation
 
 Manufacturer profiles encode silhouette, construction, materials, and aging for
-Aster Dynamics, Titan Forge, Orion Extraction Group, Horizon Systems, Compact
+Aster Dynamics, Ironstar Forge, Orion Extraction Group, Horizon Systems, Compact
 Yards, Meridian Shipyards, and Helix Interstellar. Operator profiles encode
 Commonwealth, Directorate, Compact, civilian, and Vanta treatments. Vanta is an
 operator/conversion identity, not a standardized manufacturer.
@@ -131,7 +139,7 @@ operator/conversion identity, not a standardized manufacturer.
 Human-engineered, Khepri-grown, and Vael-mathematically-constructed technology
 profiles are separate. No Khepri or Vael vessel is placed in a player shipyard,
 and no Architect, Choir, or Null ship is defined. The core renderer selects
-distinct current-fleet silhouettes for Aster, Titan, Compact, and the starter,
+distinct current-fleet silhouettes for Aster, Ironstar, Compact, and the starter,
 with separate medium-hull shapes rather than scaled-up small craft;
 unimplemented manufacturer families remain metadata for future authored assets,
 not a procedural ship generator.
@@ -144,11 +152,14 @@ livery, visible equipment, and full damage/wear layers remain deferred.
 ## Canon reconciliation
 
 The v0.10 World Bible was added to the working tree during final validation and
-its ship sections were reconciled directly. It confirms the Clipper as an Aster
-Dynamics-built medium fast freighter; the native registry records
-`ASTER_CLIPPER` as Aster-built and civilian-operated. It also confirms Valiant
-and Intrepid as Titan Forge licensed construction under Commonwealth identity.
+its ship sections were reconciled directly at that historical Batch 13 checkpoint.
+It is now a historical design source, superseded by DraftComp8. That reconciliation
+identified the Clipper as an Aster Dynamics-built medium fast freighter; the native
+registry records `ASTER_CLIPPER` as Aster-built and civilian-operated. Valiant and
+Intrepid retain the licensed heavy-manufacturer/Commonwealth relationship, now
+called Ironstar Forge in current canon; the registry label/ID remains legacy.
 The legacy browser registry still contains Elite-like placeholder hulls and a
-different balance scale and is not used as native fleet canon. Sidewinder does
-not appear in v0.10's ship specification tables, so its existing native starter
-identity and balance are intentionally preserved for compatibility.
+different balance scale and is not used as native fleet canon. The legacy starter
+name does not appear in v0.10's ship specification tables. Its existing native
+starter ID and balance are intentionally preserved for compatibility; the
+external-setting display name is not locked current lore.
